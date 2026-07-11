@@ -5,14 +5,14 @@ Updated: 2026-07-11 UTC
 ## Read first
 
 - Read this project's `AGENTS.md` before changing anything. SQLite is the source of truth for runtime and user-visible data; deployment/configuration belongs in `.env`.
-- Titan is authoritative: `olafurbui@192.168.1.10`, project `/home/olafurbui/Projects/tv-kit`. Do not use NFS from midget.
+- Source lives in `~/Projects/tv-kit` on midget and Titan (Syncthing-mirrored; `.git` on Titan only). Deployment is `tvctl kit sync` — a no-build rsync to the TV's `~/.tv-kit/src` with hot reload (`bun --watch` + Vite HMR). Git push is background archiving only. NFS is fully retired, including the TV's old `~/Projects` automount.
 
 ## Live system
 
-- `tvserverd.service` (port 3110), dashboard 3111, remote 3112, SQLite at `data/tv-kit.sqlite` (WAL, FK on).
+- `tvserverd.service` (port 3110), dashboard 3111, remote 3112 — all systemd user units on the TV running from `~/.tv-kit/src`; SQLite at `~/.tv-kit/data/tv-kit.sqlite` (WAL, FK on).
 - `tvserverd-radioscraper.timer` daily with `Persistent=true`; catalog currently 27 validated stations.
 - RÚV channels, catalog, episodes, EPG, and news are persisted in SQLite. `tvserverd` owns a non-blocking child-process scheduler for daily RÚV catalog/EPG/archive maintenance and hourly news; there are intentionally no separate RÚV systemd units.
-- TV browser: Flatpak Chrome in kiosk mode with `--kiosk --autoplay-policy=no-user-gesture-required` (see AGENTS.md "TV kiosk browser"). Currently running as transient user unit `tv-kiosk`; the persistent `tv-kiosk.service` user unit has NOT been installed/enabled on the TV yet.
+- TV browser: `tv-kiosk.service` user unit (installed and enabled) runs Flatpak Chrome with `--kiosk --incognito --autoplay-policy=no-user-gesture-required ...`. Pre-start it kills stray `/app/extra/chrome` processes, purges stale service-worker caches, and waits until the dashboard answers (prevents the boot-race/stale-SW white screen).
 
 ## Completed since previous handoff
 
