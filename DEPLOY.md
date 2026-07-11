@@ -40,12 +40,19 @@ tvctl kit restart   # restart services (kiosk pre-kills stray Chrome)
 tvctl kit logs [unit] [lines]
 ```
 
-## Data contract
+## TV layout and data contract
 
-The TV's SQLite at `~/Projects/tv-kit/data/tv-kit.sqlite` is the live source
-of truth. `data/`, `node_modules/`, and `.git` are never rsynced; the DB is
-seeded once by `kit setup` (migrated from the legacy `/var/lib/tv-kit` copy)
-and never overwritten by deploys. `.env` lives in the tree and is synced.
+The TV's app home is `~/.tv-kit/`:
+
+- `src/` — the rsynced source tree (includes the shared `.env`)
+- `data/tv-kit.sqlite` — the live SQLite source of truth (migrated once from
+  the legacy `/var/lib/tv-kit` copy by `kit setup`, never touched by deploys)
+- `env` — TV-local overrides loaded after `src/.env` (e.g. `TV_KIT_DB`)
+- `deps.sha` — dependency-install marker
+
+`data/`, `node_modules/`, `.git`, and sqlite files are never rsynced. The
+background archive commits whatever Syncthing has delivered to Titan at that
+moment; an edit made seconds earlier may land in the next archive instead.
 
 Runtime endpoints: `http://192.168.1.12:3110` (API/WS), `:3111` (dashboard),
 `:3112` (remote).

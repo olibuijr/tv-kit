@@ -2,9 +2,10 @@
 
 ## Runtime architecture
 
-- Source may be edited in `~/Projects/tv-kit` on either midget or Titan; Syncthing mirrors the working tree while `.git` remains host-local.
-- Titan is the authoritative Git/build/deployment host. `deploy.sh` pushes verified source, updates Titan with `git pull --ff-only`, builds there, and deploys the runtime to the TV computer.
-- The TV computer is the only runtime host. `tvserverd.service`, SQLite, the dashboard, remote static server, RÚV/radio background scraping, and kiosk all run on TV. Do not run TV Kit services on Titan.
+- Source may be edited in `~/Projects/tv-kit` on either midget or Titan; Syncthing mirrors the working tree while `.git` remains host-local (Titan only).
+- TV Kit is a **no-build** project deployed with `tvctl kit sync` (deployment lives in the `tvctl` CLI; `deploy.sh` is a deprecated shim). Sync rsyncs source to the TV's `~/.tv-kit/src`; `bun --watch` and Vite HMR pick edits up instantly, so code-only deploys restart nothing. Git commit+push (fired from Titan in the background by `kit sync`) is archiving only and never gates a deploy.
+- The TV computer is the only runtime host. Its app home is `~/.tv-kit/` (`src/` synced source, `data/tv-kit.sqlite` live DB, `env` TV-local overrides such as `TV_KIT_DB`). `tvserverd.service`, SQLite, the dashboard/remote Vite dev servers, RÚV/radio background scraping, and kiosk all run on TV as systemd user units. Do not run TV Kit services on Titan.
+- The TV's legacy `/opt/tv-kit` compiled deployment and the dead `~/Projects` NFS automount were retired by `tvctl kit setup`; never reintroduce either.
 - The TV dashboard and Android tablet remote are clients of the TV-local `tvserverd`. They must not create a second authoritative state store or write directly to SQLite.
 
 ## Data is never hardcoded
