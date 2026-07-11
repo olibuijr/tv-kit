@@ -569,3 +569,5 @@ process.once("SIGINT", shutdown);
 process.once("exit", () => ruvScheduler.stop());
 
 console.log(`tvserverd listening on port ${config.port}`);
+
+// hot-reload smoke test
