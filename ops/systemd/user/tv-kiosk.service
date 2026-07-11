@@ -11,6 +11,10 @@ Environment=WAYLAND_DISPLAY=wayland-0
 # never pile up or steal the kiosk window.
 ExecStartPre=-/usr/bin/flatpak kill com.google.Chrome
 ExecStartPre=-/usr/bin/pkill -9 -f com.google.Chrome
+# Chrome never retries a dead page; wait until the dashboard answers so a
+# boot-time race cannot leave a stuck white screen (bounded by timeout below).
+ExecStartPre=/usr/bin/bash -c 'until curl -fsS --max-time 2 http://127.0.0.1:3111/ >/dev/null 2>&1; do sleep 1; done'
+TimeoutStartSec=120
 ExecStart=/usr/bin/flatpak run com.google.Chrome --kiosk --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen http://127.0.0.1:3111
 ExecStopPost=-/usr/bin/pkill -9 -f com.google.Chrome
 Restart=always
