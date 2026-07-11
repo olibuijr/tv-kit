@@ -41,6 +41,7 @@ export const config = Object.freeze({
   ruvSchedulerStartDelayMs: number("RUV_SCHEDULER_START_DELAY_MS", 1_000, 3_600_000),
   ruvSchedulerPollMs: number("RUV_SCHEDULER_POLL_MS", 10_000, 3_600_000),
   ruvChildTimeoutMs: number("RUV_CHILD_TIMEOUT_MS", 60_000, 3_600_000),
+  ruvScraperBin: optional("RUV_SCRAPER_BIN"),
   ruvScrapeConcurrency: number("RUV_SCRAPE_CONCURRENCY", 1, 16),
   ruvCatalogConcurrency: number("RUV_CATALOG_CONCURRENCY", 1, 16),
   ruvFetchTimeoutMs: number("RUV_FETCH_TIMEOUT_MS", 1_000, 120_000),

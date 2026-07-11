@@ -2,6 +2,7 @@
 # Build on Titan; deploy runtime artifacts only to /opt/tv-kit on TV.
 set -euo pipefail
 project="$HOME/Projects/tv-kit"
+tv_host="olafurbui@192.168.1.12"
 message="${*:-Deploy TV Kit $(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
 
 if [[ "$(uname -n)" != titan ]]; then
@@ -28,17 +29,17 @@ cp ops/systemd/system/tvserverd.service .deploy-stage/
 
 # The TV deliberately has no repository, Bun, Node, or build tooling. It receives only
 # the compiled daemon and static assets. Root access is intentionally required for /opt.
-ssh tv 'sudo -n true' || {
+ssh "$tv_host" 'sudo -n true' || {
 	echo 'TV prerequisite: grant olafurbui passwordless sudo for /usr/bin/install, /usr/bin/systemctl, /usr/bin/tee, and /bin/mkdir, then rerun deploy.sh.' >&2
 	exit 1
 }
 
-tar -C .deploy-stage -cf - . | ssh tv '
+tar -C .deploy-stage -I 'zstd -1 -T0' -cf - . | ssh "$tv_host" '
   set -euo pipefail
   sudo systemctl stop tvserverd.service 2>/dev/null || true
   incoming=$(mktemp -d)
   trap "rm -rf $incoming" EXIT
-  tar -C "$incoming" -xf -
+  zstd -d -q | tar -C "$incoming" -xf -
   sudo install -d -o root -g root -m 0755 /opt/tv-kit /opt/tv-kit/bin /opt/tv-kit/dashboard /opt/tv-kit/remote /etc/tv-kit
   sudo rm -rf /opt/tv-kit/bin /opt/tv-kit/dashboard /opt/tv-kit/remote
   sudo mv "$incoming/bin" "$incoming/dashboard" "$incoming/remote" /opt/tv-kit/
@@ -47,14 +48,14 @@ tar -C .deploy-stage -cf - . | ssh tv '
   sudo install -o root -g root -m 0644 "$incoming/tvserverd.service" /etc/systemd/system/tvserverd.service
 '
 # Deployment values and DB are runtime state, never Git or frontend artifacts.
-ssh tv 'sudo install -d -o olafurbui -g olafurbui -m 0700 /var/lib/tv-kit'
-scp -q .env tv:/tmp/tv-kit.env
-ssh tv 'sudo install -o root -g olafurbui -m 0640 /tmp/tv-kit.env /etc/tv-kit/tv-kit.env; rm -f /tmp/tv-kit.env'
+ssh "$tv_host" 'sudo install -d -o olafurbui -g olafurbui -m 0700 /var/lib/tv-kit'
+scp -q .env "$tv_host":/tmp/tv-kit.env
+ssh "$tv_host" 'sudo install -o root -g olafurbui -m 0640 /tmp/tv-kit.env /etc/tv-kit/tv-kit.env; rm -f /tmp/tv-kit.env'
 db_path=$(awk -F= '$1=="DB_PATH" {print substr($0,index($0,"=")+1)}' .env | tail -1)
 db_path=${db_path:-data/tv-kit.sqlite}
 [[ $db_path = /* ]] || db_path="$project/$db_path"
 [[ ! -f $db_path ]] || {
-	scp -q "$db_path" tv:/tmp/tv-kit.sqlite
-	ssh tv 'sudo install -o olafurbui -g olafurbui -m 0600 /tmp/tv-kit.sqlite /var/lib/tv-kit/tv-kit.sqlite; rm -f /tmp/tv-kit.sqlite'
+	scp -q "$db_path" "$tv_host":/tmp/tv-kit.sqlite
+	ssh "$tv_host" 'sudo install -o olafurbui -g olafurbui -m 0600 /tmp/tv-kit.sqlite /var/lib/tv-kit/tv-kit.sqlite; rm -f /tmp/tv-kit.sqlite'
 }
-ssh tv 'sudo systemctl daemon-reload; sudo systemctl enable --now tvserverd.service; sudo systemctl is-active --quiet tvserverd.service; curl -fsS --max-time 5 http://127.0.0.1:3110/health >/dev/null; sudo journalctl -u tvserverd.service -n 25 --no-pager'
+ssh "$tv_host" 'sudo systemctl daemon-reload; sudo systemctl enable --now tvserverd.service; sudo systemctl is-active --quiet tvserverd.service; curl -fsS --max-time 5 http://127.0.0.1:3110/health >/dev/null; sudo journalctl -u tvserverd.service -n 25 --no-pager'

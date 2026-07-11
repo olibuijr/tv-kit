@@ -538,7 +538,7 @@ const ruvScheduler = new RuvScheduler({
   },
   spawn(job: RuvJob) {
     const child = Bun.spawn({
-      cmd: [process.execPath, "apps/server/src/ruvscraper.ts", job],
+      cmd: config.ruvScraperBin ? [config.ruvScraperBin, job] : [process.execPath, "apps/server/src/ruvscraper.ts", job],
       cwd: projectRoot,
       env: process.env,
       stdout: "pipe",
