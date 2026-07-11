@@ -1,68 +1,60 @@
 #!/usr/bin/env bash
+# Build on Titan; deploy runtime artifacts only to /opt/tv-kit on TV.
 set -euo pipefail
-
 project="$HOME/Projects/tv-kit"
-repo_url="${TV_KIT_REPO_URL:-https://github.com/olibuijr/tv-kit.git}"
-message="${*:-Deploy TV Kit $(date -u +'%Y-%m-%d %H:%M:%S UTC')}"
-host="$(uname -n)"
+message="${*:-Deploy TV Kit $(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
 
-# ~/Projects is Syncthing-mirrored between midget and Titan, but .git is deliberately
-# local. Titan performs the authoritative commit when the caller has no local clone.
-if [[ "$host" != titan ]]; then
-  if [[ -d "$project/.git" ]]; then
-    cd "$project"
-    git add -A
-    git diff --cached --quiet || git commit -m "$message"
-    git push origin HEAD:main
-  fi
-  printf -v quoted_message '%q' "$message"
-  exec ssh titan "cd ~/Projects/tv-kit && ./deploy.sh $quoted_message"
+if [[ "$(uname -n)" != titan ]]; then
+	printf -v q '%q' "$message"
+	exec ssh titan "cd ~/Projects/tv-kit && ./deploy.sh $q"
 fi
-
 cd "$project"
-git remote get-url origin >/dev/null 2>&1 || git remote add origin "$repo_url"
+
 git add -A
 git diff --cached --quiet || git commit -m "$message"
-git push -u origin HEAD:main
+git push origin HEAD:main
 git pull --ff-only origin main
-commit="$(git rev-parse --short HEAD)"
 
-echo '[1/5] Test and build on Titan'
 bun install --frozen-lockfile
 bun --env-file=/dev/null test
 bun run typecheck
 bun run build
+rm -rf .deploy-stage
+mkdir -p .deploy-stage/bin .deploy-stage/dashboard .deploy-stage/remote
+bun build --compile apps/server/src/index.ts --outfile .deploy-stage/bin/tvserverd
+cp -a apps/dashboard/dist/. .deploy-stage/dashboard/
+cp -a apps/remote/dist/. .deploy-stage/remote/
+cp ops/systemd/system/tvserverd.service .deploy-stage/
 
-echo '[2/5] Stop legacy Titan runtime and prepare TV checkout'
-systemctl --user disable --now tvserverd.service 2>/dev/null || true
-rm -f "$HOME/.config/systemd/user/tvserverd.service"
-systemctl --user daemon-reload
-ssh tv "set -e; if [[ -d ~/Projects/tv-kit/.git ]]; then cd ~/Projects/tv-kit && git pull --ff-only origin main; else mkdir -p ~/Projects && git clone '$repo_url' ~/Projects/tv-kit; fi"
+# The TV deliberately has no repository, Bun, Node, or build tooling. It receives only
+# the compiled daemon and static assets. Root access is intentionally required for /opt.
+ssh tv 'sudo -n true' || {
+	echo 'TV prerequisite: grant olafurbui passwordless sudo for /usr/bin/install, /usr/bin/systemctl, /usr/bin/tee, and /bin/mkdir, then rerun deploy.sh.' >&2
+	exit 1
+}
 
-echo '[3/5] Transfer protected runtime state to TV'
-ssh tv 'systemctl --user stop tv-kiosk.service tvserverd.service 2>/dev/null || true'
-scp -q .env tv:Projects/tv-kit/.env
-# SQLite is runtime state, not repository source. Copy a consistent stopped snapshot.
-db_path="$(awk -F= '$1=="DB_PATH"{print substr($0,index($0,"=")+1)}' .env | tail -1)"
-db_path="${db_path:-data/tv-kit.sqlite}"
-[[ "$db_path" = /* ]] || db_path="$project/$db_path"
-if [[ -f "$db_path" ]]; then
-  ssh tv 'mkdir -p ~/Projects/tv-kit/data'
-  scp -q "$db_path" tv:Projects/tv-kit/data/tv-kit.sqlite
-fi
-
-echo '[4/5] Install clients and services on TV'
-stage="$(mktemp -d)"; trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/dashboard" "$stage/remote"
-cp -a apps/dashboard/dist/. "$stage/dashboard/"
-cp -a apps/remote/dist/. "$stage/remote/"
-tar -C "$stage" -cf - dashboard remote | ssh tv 'set -e; root="$HOME/.local/share/tv-kit"; mkdir -p "$root"; rm -rf "$root/dashboard" "$root/remote"; tar -C "$root" -xf -'
-tar -C ops/systemd/user -cf - tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service | ssh tv 'mkdir -p ~/.config/systemd/user; tar -C ~/.config/systemd/user -xf -'
-
-ssh tv 'set -e; systemctl --user daemon-reload; systemctl --user enable --now tvserverd.service tv-dashboard.service tv-remote.service; for p in 3110 3111 3112; do for _ in $(seq 1 80); do curl -fsS --max-time 1 http://127.0.0.1:$p/health >/dev/null 2>&1 || curl -fsS --max-time 1 http://127.0.0.1:$p/ >/dev/null 2>&1; [[ $? = 0 ]] && break || true; sleep .25; done; done; flatpak kill com.google.Chrome 2>/dev/null || true; systemctl --user restart tv-kiosk.service'
-
-echo '[5/5] Tune RÚV and verify on TV'
-ssh tv "cd ~/Projects/tv-kit && bun -e 'const ws=new WebSocket(\"ws://127.0.0.1:3110/ws?client=pi\",{headers:{Origin:\"http://127.0.0.1:3111\"}});ws.onopen=()=>{ws.send(JSON.stringify({action:\"ruv-channel\",value:\"ruv\"}));setTimeout(()=>ws.close(),500)}'"
-sleep 2
-ssh tv 'curl -fsS --max-time 3 http://127.0.0.1:3110/health >/dev/null; systemctl --user is-active --quiet tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service'
-printf 'Deployed %s on TV: dashboard http://192.168.1.12:3111, remote http://192.168.1.12:3112\n' "$commit"
+tar -C .deploy-stage -cf - . | ssh tv '
+  set -euo pipefail
+  sudo systemctl stop tvserverd.service 2>/dev/null || true
+  incoming=$(mktemp -d)
+  trap "rm -rf $incoming" EXIT
+  tar -C "$incoming" -xf -
+  sudo install -d -o root -g root -m 0755 /opt/tv-kit /opt/tv-kit/bin /opt/tv-kit/dashboard /opt/tv-kit/remote /etc/tv-kit
+  sudo rm -rf /opt/tv-kit/bin /opt/tv-kit/dashboard /opt/tv-kit/remote
+  sudo mv "$incoming/bin" "$incoming/dashboard" "$incoming/remote" /opt/tv-kit/
+  sudo chown -R root:root /opt/tv-kit
+  sudo chmod 0755 /opt/tv-kit/bin/tvserverd
+  sudo install -o root -g root -m 0644 "$incoming/tvserverd.service" /etc/systemd/system/tvserverd.service
+'
+# Deployment values and DB are runtime state, never Git or frontend artifacts.
+ssh tv 'sudo install -d -o olafurbui -g olafurbui -m 0700 /var/lib/tv-kit'
+scp -q .env tv:/tmp/tv-kit.env
+ssh tv 'sudo install -o root -g olafurbui -m 0640 /tmp/tv-kit.env /etc/tv-kit/tv-kit.env; rm -f /tmp/tv-kit.env'
+db_path=$(awk -F= '$1=="DB_PATH" {print substr($0,index($0,"=")+1)}' .env | tail -1)
+db_path=${db_path:-data/tv-kit.sqlite}
+[[ $db_path = /* ]] || db_path="$project/$db_path"
+[[ ! -f $db_path ]] || {
+	scp -q "$db_path" tv:/tmp/tv-kit.sqlite
+	ssh tv 'sudo install -o olafurbui -g olafurbui -m 0600 /tmp/tv-kit.sqlite /var/lib/tv-kit/tv-kit.sqlite; rm -f /tmp/tv-kit.sqlite'
+}
+ssh tv 'sudo systemctl daemon-reload; sudo systemctl enable --now tvserverd.service; sudo systemctl is-active --quiet tvserverd.service; curl -fsS --max-time 5 http://127.0.0.1:3110/health >/dev/null; sudo journalctl -u tvserverd.service -n 25 --no-pager'
