@@ -2,8 +2,10 @@
 
 ## Runtime architecture
 
-- Titan is authoritative for this project. `tvserverd.service` owns the API and WebSocket state on port configured by `PORT`; `tvserverd-radioscraper.timer` runs the radio catalog validator every configured interval.
-- The TV dashboard and Android tablet remote are clients of `tvserverd`. They must not create a second authoritative state store or write directly to SQLite.
+- Source may be edited in `~/Projects/tv-kit` on either midget or Titan; Syncthing mirrors the working tree while `.git` remains host-local.
+- Titan is the authoritative Git/build/deployment host. `deploy.sh` pushes verified source, updates Titan with `git pull --ff-only`, builds there, and deploys the runtime to the TV computer.
+- The TV computer is the only runtime host. `tvserverd.service`, SQLite, the dashboard, remote static server, RÚV/radio background scraping, and kiosk all run on TV. Do not run TV Kit services on Titan.
+- The TV dashboard and Android tablet remote are clients of the TV-local `tvserverd`. They must not create a second authoritative state store or write directly to SQLite.
 
 ## Data is never hardcoded
 
@@ -25,7 +27,7 @@
 - Read stations from the configured Spilarinn catalog URL only in `radioscraper`; clients read the validated SQLite catalog through `tvserverd`.
 - Validate streams with a bounded GET because Icecast commonly rejects HEAD. Follow redirects and retain only streams whose final response is HTTP 200.
 - A successful scrape atomically upserts new/changed stations and removes failed or missing stations. A failed upstream fetch or an all-stream network failure must preserve the last healthy catalog.
-- Record every scraper run, counts, timestamps, and errors in SQLite. The daily systemd timer must use `Persistent=true` so a missed run is recovered.
+- Record every scraper run, counts, timestamps, and errors in SQLite. RÚV scraping is an asynchronous child process supervised by `tvserverd`; it must be due-driven, non-overlapping, and terminated cleanly with the daemon.
 
 ## Verification
 

@@ -1,76 +1,68 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-canonical_host="titan"
-project="/home/olafurbui/Projects/tv-kit"
+project="$HOME/Projects/tv-kit"
+repo_url="${TV_KIT_REPO_URL:-https://github.com/olibuijr/tv-kit.git}"
+message="${*:-Deploy TV Kit $(date -u +'%Y-%m-%d %H:%M:%S UTC')}"
+host="$(uname -n)"
 
-if [[ "$(uname -n)" != "$canonical_host" ]]; then
-  printf -v quoted ' %q' "$@"
-  exec ssh "$canonical_host" "cd $(printf %q "$project") && ./deploy.sh${quoted}"
+# ~/Projects is Syncthing-mirrored between midget and Titan, but .git is deliberately
+# local. Titan performs the authoritative commit when the caller has no local clone.
+if [[ "$host" != titan ]]; then
+  if [[ -d "$project/.git" ]]; then
+    cd "$project"
+    git add -A
+    git diff --cached --quiet || git commit -m "$message"
+    git push origin HEAD:main
+  fi
+  printf -v quoted_message '%q' "$message"
+  exec ssh titan "cd ~/Projects/tv-kit && ./deploy.sh $quoted_message"
 fi
 
 cd "$project"
-message="${*:-Deploy TV Kit $(date -u +'%Y-%m-%d %H:%M:%S UTC')}"
+git remote get-url origin >/dev/null 2>&1 || git remote add origin "$repo_url"
+git add -A
+git diff --cached --quiet || git commit -m "$message"
+git push -u origin HEAD:main
+git pull --ff-only origin main
+commit="$(git rev-parse --short HEAD)"
 
-echo "[1/6] Install, test, type-check, and build on Titan"
+echo '[1/5] Test and build on Titan'
 bun install --frozen-lockfile
 bun --env-file=/dev/null test
 bun run typecheck
 bun run build
 
-echo "[2/6] Commit verified source on Titan"
-if [[ ! -d .git ]]; then
-  git init -b main
-  git config user.name "${GIT_AUTHOR_NAME:-Ólafur Búi}"
-  git config user.email "${GIT_AUTHOR_EMAIL:-olafurbui@users.noreply.github.com}"
-fi
-git add -A
-if ! git diff --cached --quiet; then
-  git commit -m "$message"
-fi
-commit="$(git rev-parse --short HEAD)"
+echo '[2/5] Stop legacy Titan runtime and prepare TV checkout'
+systemctl --user disable --now tvserverd.service 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/tvserverd.service"
+systemctl --user daemon-reload
+ssh tv "set -e; if [[ -d ~/Projects/tv-kit/.git ]]; then cd ~/Projects/tv-kit && git pull --ff-only origin main; else mkdir -p ~/Projects && git clone '$repo_url' ~/Projects/tv-kit; fi"
 
-echo "[3/6] Stage built clients"
-stage="$(mktemp -d)"
-trap 'rm -rf "$stage"' EXIT
+echo '[3/5] Transfer protected runtime state to TV'
+ssh tv 'systemctl --user stop tv-kiosk.service tvserverd.service 2>/dev/null || true'
+scp -q .env tv:Projects/tv-kit/.env
+# SQLite is runtime state, not repository source. Copy a consistent stopped snapshot.
+db_path="$(awk -F= '$1=="DB_PATH"{print substr($0,index($0,"=")+1)}' .env | tail -1)"
+db_path="${db_path:-data/tv-kit.sqlite}"
+[[ "$db_path" = /* ]] || db_path="$project/$db_path"
+if [[ -f "$db_path" ]]; then
+  ssh tv 'mkdir -p ~/Projects/tv-kit/data'
+  scp -q "$db_path" tv:Projects/tv-kit/data/tv-kit.sqlite
+fi
+
+echo '[4/5] Install clients and services on TV'
+stage="$(mktemp -d)"; trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/dashboard" "$stage/remote"
 cp -a apps/dashboard/dist/. "$stage/dashboard/"
 cp -a apps/remote/dist/. "$stage/remote/"
+tar -C "$stage" -cf - dashboard remote | ssh tv 'set -e; root="$HOME/.local/share/tv-kit"; mkdir -p "$root"; rm -rf "$root/dashboard" "$root/remote"; tar -C "$root" -xf -'
+tar -C ops/systemd/user -cf - tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service | ssh tv 'mkdir -p ~/.config/systemd/user; tar -C ~/.config/systemd/user -xf -'
 
-echo "[4/6] Deploy static artifacts and user services to TV"
-tar -C "$stage" -cf - dashboard remote | ssh tv '
-  set -euo pipefail
-  root="$HOME/.local/share/tv-kit"
-  incoming="$(mktemp -d "$HOME/.local/share/tv-kit-incoming.XXXXXX")"
-  trap '\''rm -rf "$incoming"'\'' EXIT
-  tar -C "$incoming" -xf -
-  install -d "$root"
-  rm -rf "$root/dashboard.previous" "$root/remote.previous"
-  [[ ! -d "$root/dashboard" ]] || mv "$root/dashboard" "$root/dashboard.previous"
-  [[ ! -d "$root/remote" ]] || mv "$root/remote" "$root/remote.previous"
-  mv "$incoming/dashboard" "$root/dashboard"
-  mv "$incoming/remote" "$root/remote"
-'
-ssh tv 'install -d "$HOME/.config/systemd/user"'
-tar -C ops/systemd/user -cf - tv-dashboard.service tv-remote.service tv-kiosk.service | ssh tv 'tar -C "$HOME/.config/systemd/user" -xf -'
+ssh tv 'set -e; systemctl --user daemon-reload; systemctl --user enable --now tvserverd.service tv-dashboard.service tv-remote.service; for p in 3110 3111 3112; do for _ in $(seq 1 80); do curl -fsS --max-time 1 http://127.0.0.1:$p/health >/dev/null 2>&1 || curl -fsS --max-time 1 http://127.0.0.1:$p/ >/dev/null 2>&1; [[ $? = 0 ]] && break || true; sleep .25; done; done; flatpak kill com.google.Chrome 2>/dev/null || true; systemctl --user restart tv-kiosk.service'
 
-echo "[5/6] Start clients and kiosk on TV"
-ssh tv '
-  set -euo pipefail
-  systemctl --user stop tv-kiosk.service 2>/dev/null || true
-  systemctl --user daemon-reload
-  systemctl --user enable --now tv-dashboard.service tv-remote.service tv-kiosk.service
-  for port in 3111 3112; do
-    for _ in $(seq 1 40); do
-      curl -fsS --max-time 1 "http://127.0.0.1:${port}/" >/dev/null && break
-      sleep .25
-    done
-    curl -fsS --max-time 2 "http://127.0.0.1:${port}/" >/dev/null
-  done
-'
-
-echo "[6/6] Verify deployment from Titan"
-curl -fsS --max-time 3 http://192.168.1.12:3111/ >/dev/null
-curl -fsS --max-time 3 http://192.168.1.12:3112/ >/dev/null
-curl -fsS --max-time 3 http://127.0.0.1:3110/health >/dev/null
-printf 'Deployed commit %s\nDashboard: http://192.168.1.12:3111\nRemote:    http://192.168.1.12:3112\n' "$commit"
+echo '[5/5] Tune RÚV and verify on TV'
+ssh tv "cd ~/Projects/tv-kit && bun -e 'const ws=new WebSocket(\"ws://127.0.0.1:3110/ws?client=pi\",{headers:{Origin:\"http://127.0.0.1:3111\"}});ws.onopen=()=>{ws.send(JSON.stringify({action:\"ruv-channel\",value:\"ruv\"}));setTimeout(()=>ws.close(),500)}'"
+sleep 2
+ssh tv 'curl -fsS --max-time 3 http://127.0.0.1:3110/health >/dev/null; systemctl --user is-active --quiet tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service'
+printf 'Deployed %s on TV: dashboard http://192.168.1.12:3111, remote http://192.168.1.12:3112\n' "$commit"
