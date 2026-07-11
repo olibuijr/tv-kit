@@ -1,16 +1,20 @@
 [Unit]
-Description=TV Kit tablet remote static client
-After=network-online.target
+Description=TV Kit tablet remote (Vite dev server, hot module reload)
 Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.local/share/tv-kit/remote
-ExecStart=/usr/bin/python -m http.server 3112 --bind 0.0.0.0
+WorkingDirectory=%h/.tv-kit/src
+EnvironmentFile=-%h/.tv-kit/env
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/env bun run dev:remote
 Restart=always
 RestartSec=2
+TimeoutStopSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+SyslogIdentifier=tv-remote
 
 [Install]
 WantedBy=default.target

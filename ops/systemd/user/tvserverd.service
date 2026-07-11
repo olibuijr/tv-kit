@@ -1,16 +1,19 @@
 [Unit]
-Description=Homeboard TV server daemon
+Description=TV Kit API and WebSocket server (hot reload)
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Projects/tv-kit
-EnvironmentFile=%h/Projects/tv-kit/.env
+WorkingDirectory=%h/.tv-kit/src
+EnvironmentFile=%h/.tv-kit/src/.env
+EnvironmentFile=-%h/.tv-kit/env
 Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin
-ExecStart=/usr/bin/env bun apps/server/src/index.ts
+ExecStart=/usr/bin/env bun --watch apps/server/src/index.ts
 Restart=always
 RestartSec=2
+# bun --watch's supervisor swallows SIGTERM; don't wait 90s before SIGKILL.
+TimeoutStopSec=5
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

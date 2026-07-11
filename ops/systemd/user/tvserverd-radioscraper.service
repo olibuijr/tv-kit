@@ -6,8 +6,9 @@ After=network-online.target tvserverd.service
 [Service]
 Type=oneshot
 TimeoutStartSec=2min
-WorkingDirectory=%h/Projects/tv-kit
-EnvironmentFile=%h/Projects/tv-kit/.env
+WorkingDirectory=%h/.tv-kit/src
+EnvironmentFile=%h/.tv-kit/src/.env
+EnvironmentFile=-%h/.tv-kit/env
 Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin
 ExecStart=/usr/bin/env bun apps/server/src/radioscraper.ts
 UMask=0077
