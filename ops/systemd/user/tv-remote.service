@@ -1,0 +1,16 @@
+[Unit]
+Description=TV Kit tablet remote static client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/tv-kit/remote
+ExecStart=/usr/bin/python -m http.server 3112 --bind 0.0.0.0
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

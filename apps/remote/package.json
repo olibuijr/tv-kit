@@ -1,0 +1,7 @@
+{
+  "name": "@tv-kit/remote",
+  "private": true,
+  "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
+  "dependencies": {"lucide-svelte": "latest"},
+  "devDependencies": {"@sveltejs/vite-plugin-svelte": "latest", "svelte": "latest", "vite": "latest"}
+}

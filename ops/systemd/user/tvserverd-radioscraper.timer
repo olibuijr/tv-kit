@@ -1,0 +1,12 @@
+[Unit]
+Description=Validate Homeboard radio stations every 24 hours
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=24h
+AccuracySec=1min
+Persistent=true
+Unit=tvserverd-radioscraper.service
+
+[Install]
+WantedBy=timers.target

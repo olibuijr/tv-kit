@@ -1,0 +1,15 @@
+[Unit]
+Description=TV Kit Chrome kiosk
+After=graphical-session.target tv-dashboard.service
+Wants=tv-dashboard.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:1
+Environment=WAYLAND_DISPLAY=wayland-0
+ExecStart=/usr/bin/flatpak run com.google.Chrome --kiosk --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen http://127.0.0.1:3111
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

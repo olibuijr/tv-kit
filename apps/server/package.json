@@ -1,0 +1,5 @@
+{
+  "name": "@tv-kit/server",
+  "private": true,
+  "scripts": {"dev": "bun --watch src/index.ts"}
+}

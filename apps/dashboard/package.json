@@ -1,0 +1,7 @@
+{
+  "name": "@tv-kit/dashboard",
+  "private": true,
+  "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
+  "dependencies": {"hls.js": "^1.6.15", "lucide-svelte": "latest"},
+  "devDependencies": {"@sveltejs/vite-plugin-svelte": "latest", "svelte": "latest", "vite": "latest"}
+}
