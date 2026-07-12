@@ -1,7 +1,7 @@
 ---
 id: TASK-005
 title: "Add schedules mock to agent chat"
-status: in-progress
+status: review
 priority: high
 assignee: "pi"
 epic: ""
@@ -33,3 +33,4 @@ Prototype a polished Schedules page inside TV Kit chat for natural-language and 
 - Added a requested one-run Titan LLM batch demo for cleaning 403 filenames with animated progress.
 - `tvctl kit check`: 21 tests, 0 failures, 0 Svelte errors/warnings.
 - Browser verified schedules navigation and modal; screenshot: `/tmp/tv-kit-schedules-mock.png`.
+- Browser pressed the mock filename task: run control disabled while active and live progress advanced from 32/403 to 288/403.
