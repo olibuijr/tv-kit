@@ -2,7 +2,14 @@ import type { Command, View } from "../../../packages/protocol";
 
 export type ParsedCommand = Command & { label?: string };
 
-const views = new Set<View>(["home", "tv", "radio", "media", "news"]);
+const views = new Set<View>([
+	"home",
+	"tv",
+	"radio",
+	"media",
+	"deildu",
+	"news",
+]);
 const noValueActions = new Set([
 	"toggle-play",
 	"toggle-mute",
@@ -87,7 +94,8 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 		(action === "radio" ||
 			action === "radio-favorite" ||
 			action === "ruv-program" ||
-			action === "program-favorite") &&
+			action === "program-favorite" ||
+			action === "deildu-play") &&
 		finiteNumber(candidate.value, 1, Number.MAX_SAFE_INTEGER, true)
 	) {
 		return {
@@ -98,7 +106,9 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 		};
 	}
 	if (
-		(action === "seek" || action === "media-progress") &&
+		(action === "seek" ||
+			action === "media-progress" ||
+			action === "media-duration") &&
 		finiteNumber(candidate.value, 0, Number.MAX_SAFE_INTEGER)
 	) {
 		return {
@@ -222,19 +232,22 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 		};
 	}
 	if (action === "deildu-scrape") {
-		if (candidate.value !== undefined && candidate.value !== null &&
-			(typeof candidate.value !== "object" || Array.isArray(candidate.value)))
+		if (
+			candidate.value !== undefined &&
+			candidate.value !== null &&
+			(typeof candidate.value !== "object" || Array.isArray(candidate.value))
+		)
 			return null;
-		const val = candidate.value as { pages?: unknown } | undefined;
+		const value = candidate.value as { pages?: unknown } | undefined;
 		let pages: number | undefined;
-		if (val?.pages !== undefined) {
-			if (!finiteNumber(val.pages, 1, 50, true)) return null;
-			pages = val.pages as number;
+		if (value?.pages !== undefined) {
+			if (!finiteNumber(value.pages, 1, 20, true)) return null;
+			pages = value.pages as number;
 		}
 		return {
 			type: "command",
 			action,
-			value: pages !== undefined ? { pages } : undefined,
+			value: pages === undefined ? undefined : { pages },
 			...(label === undefined ? {} : { label }),
 		} as ParsedCommand;
 	}

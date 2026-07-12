@@ -27,6 +27,7 @@
   let player: HlsPlayer | undefined;
   let localError = "";
   let lastProgress = 0;
+  let reportedDuration = 0;
   let trackSignature = "";
   let observedId = "";
   let observedCurrent = 0;
@@ -92,7 +93,13 @@
 
   function ready() {
     localError = "";
-    if (mediaElement) try { attachAnalyser(mediaElement); } catch { /* optional */ }
+    if (mediaElement) {
+      try { attachAnalyser(mediaElement); } catch { /* optional */ }
+      if (!media.live && Number.isFinite(mediaElement.duration) && mediaElement.duration > 0 && Math.abs(mediaElement.duration - reportedDuration) > 1) {
+        reportedDuration = mediaElement.duration;
+        command("media-duration", mediaElement.duration);
+      }
+    }
     command("player-status", "ready");
   }
 

@@ -58,7 +58,18 @@ import {
 	serveTorrentMedia,
 	torrentVideoUrl,
 } from "./torrentMedia";
-import { scrapeDeildu, scrapeState } from "./deilduScraper";
+import {
+	getDeilduItem,
+	listDeilduCategories,
+	listDeilduItems,
+	scrapeDeildu,
+	scrapeState,
+} from "./deilduScraper";
+import {
+	serveDeilduStream,
+	startDeilduPlayback,
+	stopDeilduStream,
+} from "./deilduStream";
 
 process.title = "tvserverd";
 
@@ -342,6 +353,72 @@ function playTorrentMedia(id: string) {
 	return true;
 }
 
+async function playDeilduItem(id: number) {
+	const item = getDeilduItem(id);
+	if (!item || !item.playable) return false;
+	state.previousView = state.view;
+	state.view = "deildu";
+	state.playing = false;
+	state.media = {
+		id: `deildu-${item.id}`,
+		kind:
+			item.mediaKind === "audio"
+				? "music"
+				: item.mediaKind === "tv"
+					? "tv"
+					: "movie",
+		title: item.title,
+		subtitle: "Undirbý torrent-straum…",
+		source: `Deildu · ${item.categoryName}`,
+		src: "",
+		artwork: "",
+		live: false,
+		currentTime: 0,
+		duration: 0,
+		playbackRate: 1,
+		subtitleTrack: "Slökkt",
+		audioTrack: "Aðalhljóð",
+		subtitles: ["Slökkt"],
+		textTracks: [],
+		audioTracks: ["Aðalhljóð"],
+		epg: [],
+		panel: null,
+		fullscreen: true,
+		favorite: false,
+		status: "loading",
+	};
+	state.lastAction = `Tengi við Deildu: ${item.title}`;
+	broadcast();
+	try {
+		const playback = await startDeilduPlayback(id, broadcast);
+		const refreshed = getDeilduItem(id) ?? item;
+		state.media = {
+			...state.media,
+			kind: playback.kind,
+			title: playback.title,
+			subtitle: playback.fileName,
+			source: `Deildu · ${refreshed.categoryName}`,
+			src: playback.src,
+			status: "loading",
+		};
+		state.playing = true;
+		state.lastAction = `Spila af Deildu: ${playback.title}`;
+		upsertMedia(state.media);
+		recordPlayback(state.media);
+		broadcast();
+		return true;
+	} catch (error) {
+		await stopDeilduStream();
+		const message = error instanceof Error ? error.message : "Deildu-spilun mistókst";
+		state.playing = false;
+		state.media.status = "error";
+		state.media.subtitle = message;
+		state.lastAction = message;
+		broadcast();
+		return false;
+	}
+}
+
 function castSourceLabel(source: CastSource) {
 	if (source === "airplay") return "Apple AirPlay";
 	if (source === "miracast") return "Android Miracast";
@@ -558,6 +635,10 @@ const boundedInt = (
 const server = Bun.serve({
 	port: config.port,
 	hostname: "0.0.0.0",
+	idleTimeout: Math.min(
+		255,
+		Math.ceil(config.deilduStreamRangeWaitMs / 1_000) + 5,
+	),
 	async fetch(req, server) {
 		let url: URL;
 		try {
@@ -654,6 +735,14 @@ const server = Bun.serve({
 				torrentMatch[2] === "poster" ? "poster" : "video",
 			);
 		}
+		const deilduStreamMatch = url.pathname.match(
+			/^\/deildu\/stream\/(\d{1,12})$/,
+		);
+		if (deilduStreamMatch) {
+			if (req.method !== "GET" && req.method !== "HEAD")
+				return errorResponse(req, "method not allowed", 405);
+			return serveDeilduStream(req, Number(deilduStreamMatch[1]));
+		}
 		if (req.method !== "GET") {
 			const response = errorResponse(req, "method not allowed", 405);
 			response.headers.set("Allow", "GET, OPTIONS");
@@ -678,7 +767,9 @@ const server = Bun.serve({
 				{
 					...dashboardContent(),
 					torrentMovies: listTorrentMedia(),
-					deilduScrape: scrapeState,
+					deilduCategories: listDeilduCategories(),
+					deilduItems: listDeilduItems(),
+					deilduScrape: { ...scrapeState },
 				},
 				60,
 			);
@@ -799,8 +890,14 @@ const server = Bun.serve({
 				return;
 			}
 			if (message.action === "deildu-scrape") {
-				scrapeDeildu(message.value?.pages);
-				broadcast();
+				void scrapeDeildu(message.value?.pages, () => {
+					state.lastAction = scrapeState.message;
+					broadcast();
+				});
+				return;
+			}
+			if (message.action === "deildu-play") {
+				void playDeilduItem(message.value);
 				return;
 			}
 			if (message.action === "ruv-program") {
@@ -909,7 +1006,10 @@ const server = Bun.serve({
 				state.previousView = state.view;
 				state.view = next;
 			} else if (message.action === "power") state.power = !state.power;
-			else if (
+			else if (message.action === "media-duration") {
+				state.media.duration = message.value;
+				upsertMedia(state.media);
+			} else if (
 				message.action === "seek" ||
 				message.action === "media-progress"
 			) {
@@ -1005,16 +1105,45 @@ const ruvScheduler = new RuvScheduler({
 });
 ruvScheduler.start();
 
+const runDeilduIfDue = () => {
+	if (
+		scrapeState.running ||
+		(scrapeState.lastRun &&
+			Date.now() - scrapeState.lastRun < config.deilduSyncIntervalMs)
+	)
+		return;
+	void scrapeDeildu(config.deilduScrapePages, () => {
+		state.lastAction = scrapeState.message;
+		broadcast();
+	});
+};
+const deilduStartTimer = setTimeout(
+	runDeilduIfDue,
+	config.deilduSchedulerStartDelayMs,
+);
+deilduStartTimer.unref();
+const deilduSyncTimer = setInterval(
+	runDeilduIfDue,
+	config.deilduSyncIntervalMs,
+);
+deilduSyncTimer.unref();
+
 let shuttingDown = false;
 function shutdown() {
 	if (shuttingDown) return;
 	shuttingDown = true;
+	clearTimeout(deilduStartTimer);
+	clearInterval(deilduSyncTimer);
 	ruvScheduler.stop();
+	void stopDeilduStream();
 	void server.stop(true);
 	setTimeout(() => process.exit(0), 1_000).unref();
 }
 process.once("SIGTERM", shutdown);
 process.once("SIGINT", shutdown);
-process.once("exit", () => ruvScheduler.stop());
+process.once("exit", () => {
+	ruvScheduler.stop();
+	void stopDeilduStream();
+});
 
 console.log(`tvserverd listening on port ${config.port}`);

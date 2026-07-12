@@ -28,6 +28,21 @@ Object.assign(Bun.env, {
 	VITE_TVSERVER_URL: "http://127.0.0.1:31999",
 	TV_KIT_DB: join(root, "tv-kit.sqlite"),
 	TORRENT_MEDIA_DIR: join(root, "torrents"),
+	DEILDU_BASE_URL: "https://example.invalid/deildu",
+	DEILDU_USERNAME: "",
+	DEILDU_PASSWORD: "",
+	DEILDU_PASSKEY: "",
+	DEILDU_USER_AGENT: "tv-kit-test",
+	DEILDU_SYNC_INTERVAL_MS: "60000",
+	DEILDU_SCHEDULER_START_DELAY_MS: "1000",
+	DEILDU_SCRAPE_PAGES: "1",
+	DEILDU_SCRAPE_PACING_MS: "0",
+	DEILDU_FETCH_TIMEOUT_MS: "5000",
+	DEILDU_ARIA2_BIN: "/usr/bin/false",
+	DEILDU_STREAM_RPC_PORT: "31998",
+	DEILDU_STREAM_START_TIMEOUT_MS: "5000",
+	DEILDU_STREAM_RANGE_WAIT_MS: "5000",
+	DEILDU_STREAM_BUFFER_BYTES: "1048576",
 	RADIO_SOURCE_URL: "https://example.invalid/radio",
 	RADIO_SOURCE_NAME: "test",
 	RADIO_SYNC_INTERVAL_MS: "86400000",
@@ -74,6 +89,8 @@ const database = await import("../apps/server/src/db");
 const ruv = await import("../apps/server/src/ruvdb");
 const scraper = await import("../apps/server/src/ruvscraper");
 const torrent = await import("../apps/server/src/torrentMedia");
+const deildu = await import("../apps/server/src/deilduScraper");
+const deilduStream = await import("../apps/server/src/deilduStream");
 const { db } = database;
 
 const media = {
@@ -182,7 +199,7 @@ afterAll(() => {
 });
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
-	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 	expect(database.databaseIntegrity()).toBe("ok");
 	database.seedStateIfMissing(state("fyrsta"));
 	database.seedStateIfMissing(state("annað"));
@@ -728,6 +745,113 @@ test("torrent movie is DB-backed and serves HTTP byte ranges", async () => {
 			"big-buck-bunny",
 		).status,
 	).toBe(416);
+});
+
+test("Deildu catalog schema, browse parser, and commands are typed", () => {
+	expect(deildu.listDeilduCategories()).toHaveLength(14);
+	expect(deildu.parseSizeBytes("2.02 GB")).toBe(2_168_958_484);
+	const html = `<table class="torrentlist"><tr>${[
+		"",
+		'<a title="Full Movie (2026) 1080p">Full Movie (...)</a>',
+		'<a href="download.php/1224612/x.torrent">Sækja</a>',
+		"0",
+		"0",
+		"2026-07-11 21:13:16",
+		"2.02 GB",
+		"2 sinnum",
+		"3",
+		"1",
+	].map((cell) => `<td>${cell}</td>`).join("")}</tr></table>`;
+	expect(deildu.parseBrowsePage(html, 6)).toEqual([
+		{
+			id: 1_224_612,
+			categoryId: 6,
+			title: "Full Movie (2026) 1080p",
+			sizeBytes: 2_168_958_484,
+			seeders: 3,
+			leechers: 1,
+			addedAt: Date.parse("2026-07-11T21:13:16Z"),
+		},
+	]);
+	expect(
+		parseCommandMessage({ type: "command", action: "deildu-play", value: 42 }),
+	).toEqual({ type: "command", action: "deildu-play", value: 42 });
+	expect(
+		parseCommandMessage({
+			type: "command",
+			action: "deildu-scrape",
+			value: { pages: 2 },
+		}),
+	).toEqual({ type: "command", action: "deildu-scrape", value: { pages: 2 } });
+	expect(
+		parseCommandMessage({
+			type: "command",
+			action: "deildu-scrape",
+			value: { pages: 21 },
+		}),
+	).toBeNull();
+});
+
+function bencode(value: unknown): string {
+	if (typeof value === "number") return `i${value}e`;
+	if (typeof value === "string") return `${Buffer.byteLength(value)}:${value}`;
+	if (Array.isArray(value)) return `l${value.map(bencode).join("")}e`;
+	return `d${Object.entries(value as Record<string, unknown>)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([key, item]) => `${bencode(key)}${bencode(item)}`)
+		.join("")}e`;
+}
+
+test("Deildu torrent metadata selects safe file offsets", () => {
+	const payload = new TextEncoder().encode(
+		bencode({
+			info: {
+				files: [
+					{ length: 10, path: ["sample.txt"] },
+					{ length: 20, path: ["episode.mp4"] },
+				],
+				name: "Show",
+				"piece length": 16_384,
+				pieces: "12345678901234567890",
+			},
+		}),
+	);
+	expect(deilduStream.parseTorrentMetadata(payload)).toMatchObject({
+		name: "Show",
+		pieceLength: 16_384,
+		totalLength: 30,
+		multiFile: true,
+		files: [
+			{ index: 1, path: "sample.txt", length: 10, offset: 0 },
+			{ index: 2, path: "episode.mp4", length: 20, offset: 10 },
+		],
+	});
+});
+
+test("completed Deildu download serves HTTP byte ranges", async () => {
+	const now = Date.now();
+	db.query(
+		`INSERT INTO deildu_items
+		 (id,category_id,title,size_bytes,seeders,leechers,last_seen_at,updated_at)
+		 VALUES (42,6,'Test movie',1024,1,0,?,?)`,
+	).run(now, now);
+	const directory = join(root, "torrents/deildu/42");
+	mkdirSync(directory, { recursive: true });
+	writeFileSync(join(directory, "movie.mp4"), Buffer.alloc(1024, 7));
+	db.query(
+		`INSERT INTO deildu_downloads
+		 (item_id,file_index,file_path,file_size,status,downloaded_bytes,error,updated_at)
+		 VALUES (42,1,'42/movie.mp4',1024,'ready',1024,'',?)`,
+	).run(now);
+	const response = await deilduStream.serveDeilduStream(
+		new Request("http://127.0.0.1:31999/deildu/stream/42", {
+			headers: { Range: "bytes=100-109" },
+		}),
+		42,
+	);
+	expect(response.status).toBe(206);
+	expect(response.headers.get("Content-Range")).toBe("bytes 100-109/1024");
+	expect((await response.arrayBuffer()).byteLength).toBe(10);
 });
 
 test("program-favorite command parses like other integer commands", () => {

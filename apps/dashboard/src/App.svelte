@@ -11,6 +11,7 @@
   import { startSolarTheme, type SolarTheme } from "../../../packages/protocol/solar";
   import { tvServerUrl, tvServerWebSocketUrl, type DashboardContent, type HomeState, type Station } from "../../../packages/protocol";
   import { contentIsStale, deriveRuvNow, EMPTY_DASHBOARD_CONTENT, eventProgress, fetchDashboardContent, formatClock, formatDate, formatDuration, formatTime, relativeTime } from "../../../packages/protocol/content";
+  import DeilduPage from "./DeilduPage.svelte";
   import GlobalPlayer from "./GlobalPlayer.svelte";
   import RadioPage from "./RadioPage.svelte";
 
@@ -129,6 +130,8 @@
         {/each}
       </section>
     </main>
+  {:else if state.view === "deildu"}
+    <DeilduPage categories={content.deilduCategories} items={content.deilduItems} scrape={content.deilduScrape}/>
   {:else if state.view === "media"}
     <main class="page">
       <div class="heading"><div><span>SARPURINN</span><h1>Kvikmyndir og þættir</h1></div><div><strong>{torrentMovies.length + movies.length + shows.length} titlar</strong><small>Efni í boði núna</small></div></div>

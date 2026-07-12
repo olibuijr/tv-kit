@@ -7,6 +7,21 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 	programs: [],
 	movies: [],
 	torrentMovies: [],
+	deilduCategories: [],
+	deilduItems: [],
+	deilduScrape: {
+		running: false,
+		status: "idle",
+		message: "",
+		lastRun: null,
+		lastError: "",
+		inserted: 0,
+		updated: 0,
+		itemCount: 0,
+		categoryCount: 0,
+		completedPages: 0,
+		totalPages: 0,
+	},
 	news: [],
 	continueWatching: [],
 	myList: [],
@@ -25,6 +40,9 @@ export async function fetchDashboardContent(
 		...content,
 		movies: content.movies ?? [],
 		torrentMovies: content.torrentMovies ?? [],
+		deilduCategories: content.deilduCategories ?? [],
+		deilduItems: content.deilduItems ?? [],
+		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,
 	};
 }
 

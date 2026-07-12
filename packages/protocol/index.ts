@@ -1,4 +1,4 @@
-export type View = "home" | "tv" | "radio" | "media" | "news";
+export type View = "home" | "tv" | "radio" | "media" | "deildu" | "news";
 export type MediaKind =
 	| "radio"
 	| "music"
@@ -192,12 +192,65 @@ export type TorrentMedia = {
 	totalBytes: number;
 };
 
+export type DeilduMediaKind = "movie" | "tv" | "audio" | "other";
+export type DeilduDownloadStatus =
+	| "missing"
+	| "starting"
+	| "downloading"
+	| "paused"
+	| "ready"
+	| "error";
+
+export type DeilduCategory = {
+	id: number;
+	name: string;
+	mediaKind: DeilduMediaKind;
+	playable: boolean;
+	sortOrder: number;
+	itemCount: number;
+};
+
+export type DeilduItem = {
+	id: number;
+	categoryId: number;
+	categoryName: string;
+	mediaKind: DeilduMediaKind;
+	playable: boolean;
+	title: string;
+	sizeBytes: number;
+	seeders: number;
+	leechers: number;
+	addedAt: number | null;
+	status: DeilduDownloadStatus;
+	downloadedBytes: number;
+	totalBytes: number;
+	error: string;
+	updatedAt: number;
+};
+
+export type DeilduScrapeState = {
+	running: boolean;
+	status: "idle" | "running" | "complete" | "partial" | "error";
+	message: string;
+	lastRun: number | null;
+	lastError: string;
+	inserted: number;
+	updated: number;
+	itemCount: number;
+	categoryCount: number;
+	completedPages: number;
+	totalPages: number;
+};
+
 export type DashboardContent = {
 	generatedAt: number;
 	channels: RuvNow[];
 	programs: RuvProgram[];
 	movies: RuvProgram[];
 	torrentMovies: TorrentMedia[];
+	deilduCategories: DeilduCategory[];
+	deilduItems: DeilduItem[];
+	deilduScrape: DeilduScrapeState;
 	news: RuvNewsArticle[];
 	continueWatching: ContinueWatchingItem[];
 	myList: RuvProgram[];
@@ -250,8 +303,10 @@ export type Command =
 				| "seek"
 				| "playback-rate"
 				| "media-progress"
+				| "media-duration"
 				| "ruv-program"
-				| "program-favorite";
+				| "program-favorite"
+				| "deildu-play";
 			value: number;
 	  }
 	| {

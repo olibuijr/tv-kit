@@ -350,6 +350,79 @@ const migrations = [
     );
   `,
 	},
+	{
+		version: 9,
+		sql: `
+    CREATE TABLE deildu_categories (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      media_kind TEXT NOT NULL CHECK(media_kind IN ('movie','tv','audio','other')),
+      playable INTEGER NOT NULL DEFAULT 0 CHECK(playable IN (0,1)),
+      sort_order INTEGER NOT NULL
+    );
+    INSERT INTO deildu_categories (id, name, media_kind, playable, sort_order) VALUES
+      (1, 'Tónlist', 'audio', 1, 1),
+      (2, 'Kvikmyndir', 'movie', 1, 2),
+      (3, 'Leikir', 'other', 0, 3),
+      (4, 'Forrit', 'other', 0, 4),
+      (5, 'Sjónvarpsefni', 'tv', 1, 5),
+      (6, 'Kvikmyndir', 'movie', 1, 6),
+      (7, 'Hljóðbækur', 'audio', 1, 7),
+      (8, 'Sjónvarpsefni', 'tv', 1, 8),
+      (9, 'Fræðsluefni', 'tv', 1, 9),
+      (10, 'Íslenskt', 'other', 1, 10),
+      (11, 'Teiknimyndir', 'movie', 1, 11),
+      (12, 'Þættir', 'tv', 1, 12),
+      (13, 'Íþróttir', 'tv', 1, 13),
+      (14, 'Annað', 'other', 0, 14);
+    CREATE TABLE deildu_items (
+      id INTEGER PRIMARY KEY,
+      category_id INTEGER NOT NULL REFERENCES deildu_categories(id),
+      title TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      seeders INTEGER NOT NULL DEFAULT 0,
+      leechers INTEGER NOT NULL DEFAULT 0,
+      added_at INTEGER,
+      last_seen_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX deildu_items_category_added
+      ON deildu_items(category_id, added_at DESC, id DESC);
+    CREATE TABLE deildu_scrape_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      status TEXT NOT NULL CHECK(status IN ('running','complete','partial','error')),
+      category_count INTEGER NOT NULL DEFAULT 0,
+      item_count INTEGER NOT NULL DEFAULT 0,
+      added_count INTEGER NOT NULL DEFAULT 0,
+      updated_count INTEGER NOT NULL DEFAULT 0,
+      error TEXT
+    );
+    CREATE INDEX deildu_scrape_runs_started
+      ON deildu_scrape_runs(started_at DESC);
+    CREATE TABLE deildu_downloads (
+      item_id INTEGER PRIMARY KEY REFERENCES deildu_items(id) ON DELETE CASCADE,
+      file_index INTEGER NOT NULL DEFAULT 0,
+      file_path TEXT NOT NULL DEFAULT '',
+      file_size INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'missing'
+        CHECK(status IN ('missing','starting','downloading','paused','ready','error')),
+      downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+      error TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO deildu_items (
+      id, category_id, title, size_bytes, seeders, leechers,
+      added_at, last_seen_at, updated_at
+    )
+    SELECT CAST(substr(id, 8) AS INTEGER), 2, title, total_bytes, 0, 0,
+      updated_at, updated_at, updated_at
+    FROM torrent_media
+    WHERE id GLOB 'deildu-[0-9]*';
+    DELETE FROM torrent_media WHERE id GLOB 'deildu-[0-9]*';
+  `,
+	},
 ];
 
 db.exec(

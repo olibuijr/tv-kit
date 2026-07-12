@@ -7,7 +7,14 @@ import type {
 	View,
 } from "../../../packages/protocol";
 
-const views = new Set<View>(["home", "tv", "radio", "media", "news"]);
+const views = new Set<View>([
+	"home",
+	"tv",
+	"radio",
+	"media",
+	"deildu",
+	"news",
+]);
 const kinds = new Set<MediaKind>([
 	"radio",
 	"music",

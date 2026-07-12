@@ -8,6 +8,7 @@
   import ChevronLeft from "lucide-svelte/icons/chevron-left";
   import ChevronRight from "lucide-svelte/icons/chevron-right";
   import Expand from "lucide-svelte/icons/expand";
+  import Film from "lucide-svelte/icons/film";
   import Gauge from "lucide-svelte/icons/gauge";
   import Heart from "lucide-svelte/icons/heart";
   import Home from "lucide-svelte/icons/home";
@@ -31,8 +32,9 @@
   import { startSolarTheme, type SolarTheme } from "../../../packages/protocol/solar";
   import { tvServerUrl, tvServerWebSocketUrl, type DashboardContent, type HomeState, type RuvProgramResponse, type Station } from "../../../packages/protocol";
   import { deriveRuvNow, EMPTY_DASHBOARD_CONTENT, eventProgress, fetchDashboardContent, formatClock, formatDate, formatDuration, formatTime, interpolateMediaTime, relativeTime } from "../../../packages/protocol/content";
+  import DeilduPage from "./DeilduPage.svelte";
 
-  type Tab = "Heim" | "Fjarstýring" | "Útvarp" | "Sarpur" | "Fréttir";
+  type Tab = "Heim" | "Fjarstýring" | "Útvarp" | "Deildu" | "Sarpur" | "Fréttir";
   let state: HomeState | undefined;
   let connected = false;
   let socket: WebSocket;
@@ -75,8 +77,9 @@
   }
   function openTab(tab: Tab) {
     activeTab = tab;
-    const view = tab === "Útvarp" ? "radio" : tab === "Sarpur" ? "media" : tab === "Fréttir" ? "news" : tab === "Heim" ? "home" : "tv";
+    const view = tab === "Útvarp" ? "radio" : tab === "Deildu" ? "deildu" : tab === "Sarpur" ? "media" : tab === "Fréttir" ? "news" : tab === "Heim" ? "home" : "tv";
     command("view", view, tab);
+    if (tab === "Deildu") void refreshContent();
   }
   function selectStation(station: Station) { activeTab = "Útvarp"; command("radio", station.id, `Spila ${station.name}`); }
   function toggleStation(station: Station) { command("radio-favorite", station.id, favouriteIds.has(station.id) ? "Fjarlægt úr uppáhaldi" : "Sett í uppáhald"); }
@@ -122,7 +125,11 @@
       socket.onclose = () => { connected = false; retry = window.setTimeout(connect, 1_200); };
       socket.onmessage = ({ data }) => {
         const message = JSON.parse(data);
-        if (message.type === "state") state = message.state;
+        if (message.type === "state") {
+          const changedAction = message.state.lastAction !== state?.lastAction;
+          state = message.state;
+          if (activeTab === "Deildu" && changedAction) void refreshContent();
+        }
       };
     };
     const visibility = () => { if (document.visibilityState === "visible") { now = Date.now(); void refreshContent(); } };
@@ -170,6 +177,8 @@
       </section>
     {:else if activeTab === "Útvarp"}
       <section class="radio-browser panel"><div class="panel-heading"><div><RadioTower size={20}/><h2>Íslenskt útvarp</h2></div><span>{stations.length} stöðvar</span></div>{#if favouriteStations.length}<h3><Heart size={15} fill="currentColor"/> Uppáhaldsstöðvar</h3><div class="radio-grid">{#each favouriteStations as station (station.id)}<article in:receive={{key:station.id}} out:send={{key:station.id}} animate:flip={{duration:320}}><button class="tune" on:click={() => selectStation(station)}>{#if station.logoUrl}<img src={station.logoUrl} alt=""/>{/if}<span><strong>{station.name}</strong><small>{station.terrestrial?`${station.frequency.toFixed(1)} FM`:"Á netinu"}</small></span></button><button class="heart" on:click={() => toggleStation(station)}><Heart size={17} fill="currentColor"/></button></article>{/each}</div>{/if}<h3><RadioTower size={15}/> Allar stöðvar</h3><div class="radio-grid">{#each otherStations as station (station.id)}<article in:receive={{key:station.id}} out:send={{key:station.id}} animate:flip={{duration:320}}><button class="tune" on:click={() => selectStation(station)}>{#if station.logoUrl}<img src={station.logoUrl} alt=""/>{/if}<span><strong>{station.name}</strong><small>{station.terrestrial?`${station.frequency.toFixed(1)} FM`:"Á netinu"}</small></span></button><button class="heart" on:click={() => toggleStation(station)}><Heart size={17}/></button></article>{/each}</div></section>
+    {:else if activeTab === "Deildu"}
+      <DeilduPage categories={content.deilduCategories} items={content.deilduItems} scrape={content.deilduScrape} {command}/>
     {:else if activeTab === "Sarpur"}
       <section class="program-browser panel"><div class="panel-heading"><div><Tv size={20}/><h2>Kvikmyndir og þættir</h2></div><label><Search size={17}/><input bind:value={search} placeholder="Leita að þætti" aria-label="Leita í Sarpinum"/></label></div>{#if detailLoading}<div class="empty">Sæki þætti…</div>{:else if selectedProgram}<div class="program-detail"><div class="detail-head"><button class="back" on:click={() => selectedProgram=undefined}><ChevronLeft size={18}/> Til baka</button><button class="list-toggle" class:active={programFavoriteIds.has(selectedProgram.program.id)} on:click={() => toggleProgramFavorite(selectedProgram.program.id)}><Heart size={16} fill={programFavoriteIds.has(selectedProgram.program.id) ? "currentColor" : "none"}/>{programFavoriteIds.has(selectedProgram.program.id) ? "Á mínum lista" : "Setja á minn lista"}</button></div><h2>{selectedProgram.program.title}</h2><p>{selectedProgram.program.description || selectedProgram.program.shortDescription}</p><div class="episode-list">{#each selectedProgram.episodes.filter(item=>item.available).slice(0,30) as episode}<article>{#if episode.image}<img src={episode.image} alt=""/>{/if}<div><strong>{episode.title}</strong><span>{formatDuration(episode.duration)} · {episode.firstRun ? new Date(episode.firstRun).toLocaleDateString("is-IS") : ""}{#if episode.progress?.finished} · Séð{/if}</span>{#if episode.progress && !episode.progress.finished && episode.progress.position >= 10}<i class="ep-progress"><b style={`width:${Math.min(100,Math.round(episode.progress.position/Math.max(1,episode.progress.duration||episode.duration)*100))}%`}></b></i>{/if}</div><button aria-label={episode.progress && !episode.progress.finished && episode.progress.position >= 10 ? `Halda áfram með ${episode.title}` : `Spila ${episode.title}`} on:click={() => command("ruv-episode",episode.id,episode.progress && !episode.progress.finished && episode.progress.position >= 10 ? `Halda áfram: ${episode.title}` : `Spila ${episode.title}`)}><Play size={18}/></button></article>{/each}</div></div>{:else}{#if !search.trim() && (movies.length || torrentMovies.length)}<h3 class="rail-title"><Play size={15}/> Kvikmyndir</h3><div class="rail">{#each torrentMovies as item (item.id)}<button class="list-card" disabled={item.status !== "ready"} on:click={() => command("torrent-media",item.id,`Spila torrent: ${item.title}`)}>{#if item.artwork}<img src={item.artwork} alt=""/>{:else}<Tv size={22}/>{/if}<span><strong>{item.title}</strong><small>{torrentStatus(item.status)} · {item.license}</small></span></button>{/each}{#each movies as program (program.id)}<button class="list-card" on:click={() => openProgram(program.id)}>{#if program.image||program.portraitImage}<img src={program.image||program.portraitImage} alt=""/>{:else}<Tv size={22}/>{/if}<span>{program.title}</span></button>{/each}</div>{/if}{#if !search.trim() && continueItems.length}<h3 class="rail-title"><Play size={15}/> Halda áfram að horfa</h3><div class="rail">{#each continueItems as item (item.episode.id)}<button class="continue-card" on:click={() => command("ruv-episode",item.episode.id,`Halda áfram: ${item.episode.programTitle}`)}>{#if item.episode.image}<img src={item.episode.image} alt=""/>{:else}<Tv size={22}/>{/if}<span><strong>{item.episode.programTitle}</strong><small>{item.episode.title}</small></span><i><b style={`width:${Math.round(item.progress*100)}%`}></b></i></button>{/each}</div>{/if}{#if !search.trim() && myListPrograms.length}<h3 class="rail-title"><Heart size={15} fill="currentColor"/> Minn listi</h3><div class="rail">{#each myListPrograms as program (program.id)}<button class="list-card" on:click={() => openProgram(program.id)}>{#if program.image||program.portraitImage}<img src={program.image||program.portraitImage} alt=""/>{:else}<Tv size={22}/>{/if}<span>{program.title}</span></button>{/each}</div>{/if}{#if !search.trim()}<h3 class="rail-title"><Tv size={15}/> Þættir</h3>{/if}<div class="program-grid">{#each visiblePrograms as program}<button on:click={() => openProgram(program.id)}>{#if program.image||program.portraitImage}<img src={program.image||program.portraitImage} alt=""/>{:else}<Tv size={25}/>{/if}<span><strong>{program.title}</strong><small>{program.latestEpisode?.title??"Enginn þáttur tiltækur"}</small></span></button>{/each}</div>{/if}</section>
     {:else}
@@ -177,7 +186,7 @@
     {/if}
   </main>
 
-  <nav aria-label="Aðalvalmynd">{#each [{name:"Heim",icon:Home},{name:"Fjarstýring",icon:Radio},{name:"Útvarp",icon:RadioTower},{name:"Sarpur",icon:Tv},{name:"Fréttir",icon:Newspaper}] as tab}<button class:active={activeTab===tab.name} on:click={() => openTab(tab.name as Tab)}><svelte:component this={tab.icon} size={20}/><span>{tab.name}</span></button>{/each}</nav>
+  <nav aria-label="Aðalvalmynd">{#each [{name:"Heim",icon:Home},{name:"Fjarstýring",icon:Radio},{name:"Útvarp",icon:RadioTower},{name:"Deildu",icon:Film},{name:"Sarpur",icon:Tv},{name:"Fréttir",icon:Newspaper}] as tab}<button class:active={activeTab===tab.name} on:click={() => openTab(tab.name as Tab)}><svelte:component this={tab.icon} size={20}/><span>{tab.name}</span></button>{/each}</nav>
   {#if feedback}<div class="toast" aria-live="polite">{feedback}</div>{/if}
 </div>
 {:else}<div class="loading"><Home size={34}/><strong>Tengist tvserverd…</strong></div>{/if}

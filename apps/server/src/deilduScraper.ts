@@ -1,482 +1,488 @@
-/**
- * deilduScraper.ts — Deildu.net torrent scraper for TV Kit.
- *
- * Ported from BunFast's deildu-client.ts + deildu-peer-scrape.ts.
- * Discovers movie torrents from Deildu.net and inserts them into
- * the torrent_media catalog. Credentials from env vars.
- *
- * Commands (via WebSocket):
- *   deildu-scrape: { type: "command", action: "deildu-scrape", value: { pages?: number } }
- *
- * Env vars:
- *   DEILDU_PASSKEY  — required for scraping (from Deildu.net profile)
- *   DEILDU_USERNAME — optional, needed for browse.php (login)
- *   DEILDU_PASSWORD — optional, needed for browse.php (login)
- */
+import type {
+	DeilduCategory,
+	DeilduItem,
+	DeilduMediaKind,
+	DeilduScrapeState,
+} from "../../../packages/protocol";
+import { config } from "./config";
+import { db, statement } from "./db";
 
-import { statement } from "./db";
-
-// ── Types ────────────────────────────────────────────────────────────
-
-export interface DeilduScrapeState {
-	running: boolean;
-	lastRun: number | null;
-	lastError: string | null;
-	inserted: number;
-	updated: number;
-	currentPage: number;
-}
-
-interface DeilduTorrentMeta {
+type CategoryRow = {
 	id: number;
-	guid: string;
 	name: string;
-	sizeBytes: number;
-}
+	media_kind: DeilduMediaKind;
+	playable: number;
+	sort_order: number;
+	item_count: number;
+};
 
-interface PeerRow {
+type ItemRow = {
+	id: number;
+	category_id: number;
+	category_name: string;
+	media_kind: DeilduMediaKind;
+	playable: number;
 	title: string;
+	size_bytes: number;
 	seeders: number;
 	leechers: number;
-	torrentId: string;
-	catName: string | null;
-}
+	added_at: number | null;
+	status: DeilduItem["status"];
+	downloaded_bytes: number;
+	total_bytes: number;
+	error: string;
+	updated_at: number;
+};
 
-// ── State ────────────────────────────────────────────────────────────
+export type DeilduBrowseItem = {
+	id: number;
+	categoryId: number;
+	title: string;
+	sizeBytes: number;
+	seeders: number;
+	leechers: number;
+	addedAt: number | null;
+};
 
-export const scrapeState: DeilduScrapeState = {
+type RunRow = {
+	started_at: number;
+	finished_at: number | null;
+	status: "running" | "complete" | "partial" | "error";
+	category_count: number;
+	item_count: number;
+	added_count: number;
+	updated_count: number;
+	error: string | null;
+};
+
+const idleState: DeilduScrapeState = {
 	running: false,
+	status: "idle",
+	message: "",
 	lastRun: null,
-	lastError: null,
+	lastError: "",
 	inserted: 0,
 	updated: 0,
-	currentPage: 0,
+	itemCount: 0,
+	categoryCount: 0,
+	completedPages: 0,
+	totalPages: 0,
 };
 
-// ── Credentials ──────────────────────────────────────────────────────
-
-const GUID_OFFSET = 1_000_000_000_000;
-
-function passkey(): string {
-	return Bun.env.DEILDU_PASSKEY?.trim() ?? "";
+function latestState(): DeilduScrapeState {
+	const row = statement(
+		"SELECT * FROM deildu_scrape_runs ORDER BY started_at DESC LIMIT 1",
+	).get() as RunRow | null;
+	if (!row) return { ...idleState };
+	const interrupted = row.status === "running";
+	return {
+		...idleState,
+		status: interrupted ? "error" : row.status,
+		message: interrupted
+			? "Fyrri Deildu-samstilling stöðvaðist"
+			: row.status === "complete"
+				? "Deildu-efni uppfært"
+				: "Deildu-samstilling lauk með villu",
+		lastRun: row.finished_at ?? row.started_at,
+		lastError: interrupted
+			? "Samstilling stöðvaðist áður en henni lauk"
+			: (row.error ?? ""),
+		inserted: row.added_count,
+		updated: row.updated_count,
+		itemCount: row.item_count,
+		categoryCount: row.category_count,
+	};
 }
 
-function deilduCreds(): {
-	username: string;
-	password: string;
-	passkey: string;
-} | null {
-	const username = Bun.env.DEILDU_USERNAME?.trim();
-	const password = Bun.env.DEILDU_PASSWORD?.trim();
-	const pk = passkey();
-	if (!username || !password || !pk) return null;
-	return { username, password, passkey: pk };
+export const scrapeState: DeilduScrapeState = latestState();
+
+const categoryQuery = `
+	SELECT c.*, COUNT(i.id) AS item_count
+	FROM deildu_categories c
+	LEFT JOIN deildu_items i ON i.category_id=c.id
+	GROUP BY c.id
+	ORDER BY c.sort_order, c.id
+`;
+
+const itemSelect = `
+	SELECT i.id, i.category_id, c.name AS category_name,
+		c.media_kind, c.playable, i.title, i.size_bytes,
+		i.seeders, i.leechers, i.added_at,
+		COALESCE(d.status, 'missing') AS status,
+		COALESCE(d.downloaded_bytes, 0) AS downloaded_bytes,
+		CASE WHEN d.file_size > 0 THEN d.file_size ELSE i.size_bytes END AS total_bytes,
+		COALESCE(d.error, '') AS error,
+		MAX(i.updated_at, COALESCE(d.updated_at, 0)) AS updated_at
+	FROM deildu_items i
+	JOIN deildu_categories c ON c.id=i.category_id
+	LEFT JOIN deildu_downloads d ON d.item_id=i.id
+`;
+
+function categoryDto(row: CategoryRow): DeilduCategory {
+	return {
+		id: row.id,
+		name: row.name,
+		mediaKind: row.media_kind,
+		playable: Boolean(row.playable),
+		sortOrder: row.sort_order,
+		itemCount: row.item_count,
+	};
 }
 
-// ── Minimal bencode decoder ──────────────────────────────────────────
-
-class Bencode {
-	constructor(
-		private buf: Uint8Array,
-		private pos = 0,
-	) {}
-
-	decode(): unknown {
-		const c = this.buf[this.pos];
-		if (c === 0x64) return this.decodeDict();
-		if (c === 0x6c) return this.decodeList();
-		if (c === 0x69) return this.decodeInt();
-		return this.decodeBytes();
-	}
-
-	private decodeInt(): number {
-		this.pos++;
-		const end = this.buf.indexOf(0x65, this.pos);
-		const n = Number(
-			new TextDecoder().decode(this.buf.subarray(this.pos, end)),
-		);
-		this.pos = end + 1;
-		return n;
-	}
-
-	private decodeBytes(): Uint8Array {
-		const colon = this.buf.indexOf(0x3a, this.pos);
-		const len = Number(
-			new TextDecoder().decode(this.buf.subarray(this.pos, colon)),
-		);
-		const start = colon + 1;
-		const bytes = this.buf.subarray(start, start + len);
-		this.pos = start + len;
-		return bytes;
-	}
-
-	private decodeList(): unknown[] {
-		this.pos++;
-		const out: unknown[] = [];
-		while (this.buf[this.pos] !== 0x65) out.push(this.decode());
-		this.pos++;
-		return out;
-	}
-
-	private decodeDict(): Record<string, unknown> {
-		this.pos++;
-		const out: Record<string, unknown> = {};
-		while (this.buf[this.pos] !== 0x65) {
-			const key = new TextDecoder().decode(this.decodeBytes());
-			out[key] = this.decode();
-		}
-		this.pos++;
-		return out;
-	}
+function itemDto(row: ItemRow): DeilduItem {
+	return {
+		id: row.id,
+		categoryId: row.category_id,
+		categoryName: row.category_name,
+		mediaKind: row.media_kind,
+		playable: Boolean(row.playable),
+		title: row.title,
+		sizeBytes: row.size_bytes,
+		seeders: row.seeders,
+		leechers: row.leechers,
+		addedAt: row.added_at,
+		status: row.status,
+		downloadedBytes: row.downloaded_bytes,
+		totalBytes: row.total_bytes,
+		error: row.error,
+		updatedAt: row.updated_at,
+	};
 }
 
-// ── Torrent metadata via download.php ────────────────────────────────
-
-async function fetchTorrentMeta(
-	id: number,
-	pk: string,
-): Promise<DeilduTorrentMeta | null> {
-	const url = `https://deildu.net/download.php/${id}/x.torrent?passkey=${pk}`;
-	let resp: Response;
-	try {
-		resp = await fetch(url, { headers: { "User-Agent": "tvserverd/1.0" } });
-	} catch {
-		return null;
-	}
-	if (!resp.ok) return null;
-
-	try {
-		const buf = new Uint8Array(await resp.arrayBuffer());
-		const root = new Bencode(buf).decode() as Record<string, unknown>;
-		const info = root.info as Record<string, unknown> | undefined;
-		if (!info) return null;
-		const rawName = info.name;
-		const name =
-			rawName instanceof Uint8Array && rawName.length > 2
-				? new TextDecoder("utf-8", { fatal: false }).decode(rawName)
-				: "";
-		if (name.length < 3) return null;
-
-		let sizeBytes = 0;
-		if (typeof info.length === "number") {
-			sizeBytes = info.length;
-		} else if (Array.isArray(info.files)) {
-			for (const f of info.files as Record<string, unknown>[]) {
-				sizeBytes += typeof f.length === "number" ? f.length : 0;
-			}
-		}
-
-		return { id, guid: String(GUID_OFFSET + id), name, sizeBytes };
-	} catch {
-		return null;
-	}
+export function listDeilduCategories(): DeilduCategory[] {
+	return (statement(categoryQuery).all() as CategoryRow[]).map(categoryDto);
 }
 
-// ── Authenticated browsing ───────────────────────────────────────────
-
-let cachedCookie: string | null = null;
-let cookieExpires = 0;
-
-async function loginAndGetCookie(): Promise<string | null> {
-	if (cachedCookie && Date.now() < cookieExpires) return cachedCookie;
-
-	const creds = deilduCreds();
-	if (!creds) return null;
-
-	try {
-		const form = new URLSearchParams();
-		form.set("username", creds.username);
-		form.set("password", creds.password);
-		form.set("keeplogged", "1");
-
-		const resp = await fetch("https://deildu.net/takelogin.php", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent": "tvserverd/1.0",
-			},
-			body: form.toString(),
-			redirect: "manual",
-		});
-
-		const cookies = resp.headers.getSetCookie
-			? resp.headers.getSetCookie()
-			: [resp.headers.get("set-cookie") ?? ""];
-		let uid = "",
-			pass = "";
-		for (const c of cookies) {
-			const u = c.match(/uid=([^;]+)/);
-			if (u) uid = u[1];
-			const p = c.match(/pass=([^;]+)/);
-			if (p) pass = p[1];
-		}
-		if (!uid || !pass) return null;
-
-		cachedCookie = `uid=${uid}; pass=${pass}`;
-		cookieExpires = Date.now() + 55 * 60 * 1000;
-		return cachedCookie;
-	} catch {
-		return null;
-	}
+export function listDeilduItems(limitPerCategory = 100): DeilduItem[] {
+	const bounded = Math.max(1, Math.min(500, Math.trunc(limitPerCategory)));
+	return (
+		statement(`
+			WITH ranked AS (
+				SELECT i.*, ROW_NUMBER() OVER (
+					PARTITION BY i.category_id
+					ORDER BY COALESCE(i.added_at, 0) DESC, i.id DESC
+				) AS category_rank
+				FROM deildu_items i
+			)
+			${itemSelect.replace("FROM deildu_items i", "FROM ranked i")}
+			WHERE i.category_rank <= ?
+			ORDER BY c.sort_order, COALESCE(i.added_at, 0) DESC, i.id DESC
+		`).all(bounded) as ItemRow[]
+	).map(itemDto);
 }
 
-async function fetchAuthenticated(url: string): Promise<string | null> {
-	const cookie = await loginAndGetCookie();
-	if (!cookie) return null;
-
-	try {
-		const resp = await fetch(url, {
-			headers: { Cookie: cookie, "User-Agent": "tvserverd/1.0" },
-		});
-		if (!resp.ok) return null;
-		return resp.text();
-	} catch {
-		return null;
-	}
+export function getDeilduItem(id: number): DeilduItem | null {
+	const row = statement(`${itemSelect} WHERE i.id=?`).get(id) as ItemRow | null;
+	return row ? itemDto(row) : null;
 }
 
-// ── Page parser ──────────────────────────────────────────────────────
-
-const CATEGORY_NAMES: Record<number, string> = {
-	1: "Tónlist",
-	2: "Kvikmyndir",
-	3: "Leikir",
-	4: "Forrit",
-	5: "Sjónvarpsefni",
-	6: "Kvikmyndir",
-	7: "Hljóðbækur",
-	8: "Sjónvarpsefni",
-	9: "Fræðsluefni",
-	10: "Íslenskt",
-	11: "Teiknimyndir",
-	12: "Þættir",
-	13: "Íþróttir",
-	14: "Annað",
-};
-
-function parseBrowsePage(html: string, categoryId?: number): PeerRow[] {
-	const rows: PeerRow[] = [];
-	const tableRe =
-		/<table[^>]*class="torrentlist"[^>]*>([\s\S]*?)<\/table>/i;
-	const tableMatch = html.match(tableRe);
-	if (!tableMatch) return rows;
-
-	let currentCat = categoryId
-		? (CATEGORY_NAMES[categoryId] ?? null)
-		: null;
-
-	const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-	let rm: RegExpExecArray | null;
-	while ((rm = rowRe.exec(tableMatch[1])) !== null) {
-		const rowHtml = rm[1];
-
-		if (/class="colhead/.test(rowHtml)) {
-			const catMatch = rowHtml.match(/browse\.php\?cat=(\d+)/);
-			if (catMatch)
-				currentCat = CATEGORY_NAMES[parseInt(catMatch[1], 10)] ?? null;
-			continue;
-		}
-		if (/class="headbg"/.test(rowHtml)) continue;
-
-		const tds = rowHtml.match(/<td[^>]*>[\s\S]*?<\/td>/gi);
-		if (!tds || tds.length < 10) continue;
-
-		const texts = tds.map((td) =>
-			td
-				.replace(/<[^>]+>/g, "")
-				.replace(/&nbsp;/g, " ")
-				.trim(),
-		);
-		const title = texts[1];
-		const seeders = parseInt(texts[8], 10);
-		const leechers = parseInt(texts[9], 10);
-		if (!title || isNaN(seeders)) continue;
-
-		const idMatch = rowHtml.match(/download\.php\/(\d+)\//);
-		if (!idMatch) continue;
-
-		rows.push({
-			title,
-			seeders,
-			leechers,
-			torrentId: idMatch[1],
-			catName: currentCat,
-		});
-	}
-	return rows;
+function decodeHtml(value: string) {
+	return value
+		.replace(/&#(\d+);/g, (_, code: string) =>
+			String.fromCodePoint(Number(code)),
+		)
+		.replace(/&#x([\da-f]+);/gi, (_, code: string) =>
+			String.fromCodePoint(Number.parseInt(code, 16)),
+		)
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;|&apos;/g, "'")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">");
 }
 
-// ── DB operations ────────────────────────────────────────────────────
-
-function insertTorrentMedia(
-	id: string,
-	title: string,
-	torrentUri: string,
-	filePath: string,
-	totalBytes: number,
-) {
-	const upsert = statement(`
-    INSERT OR IGNORE INTO torrent_media
-      (id, title, description, source, license, torrent_uri, file_path,
-       artwork_path, duration, status, downloaded_bytes, total_bytes, updated_at)
-    VALUES (?, ?, ?, 'Deildu.net', 'unknown', ?, ?, '', 0, 'missing', 0, ?, ?)
-  `);
-	upsert.run(
-		id,
-		title,
-		`Deildu.net kvikmynd #${title}`,
-		torrentUri,
-		filePath,
-		totalBytes,
-		Date.now(),
+function text(value: string) {
+	return decodeHtml(
+		value
+			.replace(/<br\s*\/?>/gi, " ")
+			.replace(/<[^>]+>/g, " ")
+			.replace(/&nbsp;|&#160;/gi, " ")
+			.replace(/\s+/g, " ")
+			.trim(),
 	);
 }
 
-// ── Main scrape function ─────────────────────────────────────────────
+export function parseSizeBytes(value: string) {
+	const match = value.trim().match(/^([\d.,]+)\s*(B|KB|MB|GB|TB)$/i);
+	if (!match) return 0;
+	const amount = Number(match[1].replace(",", "."));
+	if (!Number.isFinite(amount) || amount < 0) return 0;
+	const power = ["B", "KB", "MB", "GB", "TB"].indexOf(match[2].toUpperCase());
+	return Math.round(amount * 1024 ** power);
+}
 
-export async function scrapeDeildu(pages = 3): Promise<DeilduScrapeState> {
-	const pk = passkey();
-	if (!pk) {
-		scrapeState.lastError = "DEILDU_PASSKEY not configured";
-		return { ...scrapeState };
+function parseAddedAt(value: string): number | null {
+	if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return null;
+	const timestamp = Date.parse(`${value.replace(" ", "T")}Z`);
+	return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+export function parseBrowsePage(
+	html: string,
+	categoryId: number,
+): DeilduBrowseItem[] {
+	const table = html.match(
+		/<table[^>]*class=["'][^"']*torrentlist[^"']*["'][^>]*>([\s\S]*?)<\/table>/i,
+	)?.[1];
+	if (!table) return [];
+
+	const items: DeilduBrowseItem[] = [];
+	for (const match of table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+		const row = match[1];
+		const id = Number(row.match(/download\.php\/(\d+)\//i)?.[1]);
+		if (!Number.isSafeInteger(id) || id < 1) continue;
+		const cells = row.match(/<td[^>]*>[\s\S]*?<\/td>/gi) ?? [];
+		if (cells.length < 10) continue;
+		const titleCell = cells[1];
+		const titleAttribute = titleCell.match(/\btitle=["']([^"']+)["']/i)?.[1];
+		const title = text(titleAttribute ?? titleCell);
+		const seeders = Number.parseInt(text(cells[8]), 10);
+		const leechers = Number.parseInt(text(cells[9]), 10);
+		if (!title || !Number.isSafeInteger(seeders) || seeders < 0) continue;
+		items.push({
+			id,
+			categoryId,
+			title: title.slice(0, 512),
+			sizeBytes: parseSizeBytes(text(cells[6])),
+			seeders,
+			leechers:
+				Number.isSafeInteger(leechers) && leechers >= 0 ? leechers : 0,
+			addedAt: parseAddedAt(text(cells[5])),
+		});
 	}
+	return items;
+}
 
+let cachedCookie = "";
+let cookieExpires = 0;
+
+function credentialsConfigured() {
+	return Boolean(
+		config.deilduUsername && config.deilduPassword && config.deilduPasskey,
+	);
+}
+
+async function login() {
+	if (cachedCookie && Date.now() < cookieExpires) return cachedCookie;
+	if (!credentialsConfigured())
+		throw new Error("Deildu-auðkenni vantar í verndað umhverfi");
+
+	const form = new URLSearchParams({
+		username: config.deilduUsername,
+		password: config.deilduPassword,
+		keeplogged: "1",
+	});
+	const response = await fetch(`${config.deilduBaseUrl}/takelogin.php`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/x-www-form-urlencoded",
+			"User-Agent": config.deilduUserAgent,
+		},
+		body: form.toString(),
+		redirect: "manual",
+		signal: AbortSignal.timeout(config.deilduFetchTimeoutMs),
+	});
+	const cookies = response.headers.getSetCookie();
+	let uid = "";
+	let pass = "";
+	for (const cookie of cookies) {
+		uid = cookie.match(/(?:^|;\s*)uid=([^;]+)/)?.[1] ?? uid;
+		pass = cookie.match(/(?:^|;\s*)pass=([^;]+)/)?.[1] ?? pass;
+	}
+	if (!uid || !pass) throw new Error("Deildu-innskráning mistókst");
+	cachedCookie = `uid=${uid}; pass=${pass}`;
+	cookieExpires = Date.now() + 55 * 60 * 1000;
+	return cachedCookie;
+}
+
+async function fetchPage(categoryId: number, page: number) {
+	const response = await fetch(
+		`${config.deilduBaseUrl}/browse.php?page=${page}&cat=${categoryId}`,
+		{
+			headers: {
+				Cookie: await login(),
+				"User-Agent": config.deilduUserAgent,
+			},
+			signal: AbortSignal.timeout(config.deilduFetchTimeoutMs),
+		},
+	);
+	if (!response.ok) throw new Error(`Deildu svaraði HTTP ${response.status}`);
+	return response.text();
+}
+
+function progress(
+	patch: Partial<DeilduScrapeState>,
+	onProgress?: () => void,
+) {
+	Object.assign(scrapeState, patch);
+	onProgress?.();
+}
+
+const delay = (ms: number) =>
+	ms ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+
+export async function scrapeDeildu(
+	pages = config.deilduScrapePages,
+	onProgress?: () => void,
+): Promise<DeilduScrapeState> {
 	if (scrapeState.running) return { ...scrapeState };
+	const boundedPages = Math.max(1, Math.min(20, Math.trunc(pages)));
+	const categories = listDeilduCategories();
+	const startedAt = Date.now();
+	const run = statement(
+		`INSERT INTO deildu_scrape_runs
+		 (started_at,status,category_count,item_count,added_count,updated_count)
+		 VALUES (?,'running',0,0,0,0)`,
+	).run(startedAt);
+	const runId = Number(run.lastInsertRowid);
+	progress(
+		{
+			running: true,
+			status: "running",
+			message: "Tengi við Deildu…",
+			lastError: "",
+			inserted: 0,
+			updated: 0,
+			itemCount: 0,
+			categoryCount: 0,
+			completedPages: 0,
+			totalPages: categories.length * boundedPages,
+		},
+		onProgress,
+	);
 
-	scrapeState.running = true;
-	scrapeState.lastError = null;
-	scrapeState.inserted = 0;
-	scrapeState.updated = 0;
-	scrapeState.currentPage = 0;
-
-	const LOG = (msg: string) => {
-		console.log(`[deildu-scrape] ${msg}`);
-		scrapeState.lastError = msg;
-	};
+	const found = new Map<number, DeilduBrowseItem>();
+	const successfulCategories = new Set<number>();
+	const errors: string[] = [];
 
 	try {
-		// Try authenticated browsing first, fall back to passkey-only backfill
-		const cookie = await loginAndGetCookie();
-		if (cookie) {
-			LOG("logged in, scraping browse pages...");
-
-			for (let page = 0; page < pages; page++) {
-				scrapeState.currentPage = page + 1;
-				const url = `https://deildu.net/browse.php?page=${page}&cat=2`; // cat=2 = Kvikmyndir (movies)
-				const html = await fetchAuthenticated(url);
-				if (!html) {
-					LOG(`page ${page} returned no HTML, stopping`);
+		for (const category of categories) {
+			let categorySucceeded = false;
+			for (let page = 0; page < boundedPages; page++) {
+				progress(
+					{
+						message: `${category.name} · síða ${page + 1}/${boundedPages}`,
+					},
+					onProgress,
+				);
+				try {
+					const items = parseBrowsePage(
+						await fetchPage(category.id, page),
+						category.id,
+					);
+					categorySucceeded = true;
+					for (const item of items) found.set(item.id, item);
+					progress(
+						{
+							completedPages: scrapeState.completedPages + 1,
+							itemCount: found.size,
+						},
+						onProgress,
+					);
+					if (items.length < 100) break;
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					errors.push(`${category.name}: ${message}`);
 					break;
 				}
-
-				const rows = parseBrowsePage(html, 2);
-				LOG(`page ${page}: ${rows.length} torrents`);
-
-				for (const row of rows) {
-					const sourceId = `deildu-${row.torrentId}`;
-					const torrentUri = `https://deildu.net/download.php/${row.torrentId}/x.torrent?passkey=${pk}`;
-					const filePath = `deildu/${row.torrentId}/${row.title}`;
-
-					// Check if already in DB
-					const existing = statement(
-						"SELECT id FROM torrent_media WHERE id = ?",
-					).get(sourceId);
-					if (existing) {
-						scrapeState.updated++;
-						continue;
-					}
-
-					// Get file size from torrent metadata
-					const meta = await fetchTorrentMeta(
-						parseInt(row.torrentId, 10),
-						pk,
-					);
-					const totalBytes = meta?.sizeBytes ?? 0;
-
-					insertTorrentMedia(
-						sourceId,
-						row.title,
-						torrentUri,
-						filePath,
-						totalBytes,
-					);
-					scrapeState.inserted++;
-
-					// Rate limit
-					await new Promise((r) => setTimeout(r, 300));
-				}
-
-				await new Promise((r) => setTimeout(r, 500));
+				await delay(config.deilduScrapePacingMs);
 			}
-		} else {
-			// Fallback: just backfill from the newest RSS ID
-			LOG("no login credentials, using passkey-only backfill...");
-			const newestId = await fetchNewestRssId(pk);
-			if (newestId) {
-				await backfillRange(newestId, Math.max(0, newestId - 100), pk);
-			} else {
-				LOG("could not determine newest torrent ID");
-			}
+			if (categorySucceeded) successfulCategories.add(category.id);
+			await delay(config.deilduScrapePacingMs);
 		}
-	} catch (err) {
-		scrapeState.lastError = (err as Error).message;
-		LOG(`error: ${scrapeState.lastError}`);
-	} finally {
-		scrapeState.running = false;
-		scrapeState.lastRun = Date.now();
-	}
 
-	return { ...scrapeState };
-}
+		let inserted = 0;
+		let updated = 0;
+		const seenAt = Date.now();
+		db.transaction(() => {
+			const exists = statement("SELECT 1 FROM deildu_items WHERE id=?");
+			const upsert = statement(`
+				INSERT INTO deildu_items (
+					id,category_id,title,size_bytes,seeders,leechers,
+					added_at,last_seen_at,updated_at
+				) VALUES (?,?,?,?,?,?,?,?,?)
+				ON CONFLICT(id) DO UPDATE SET
+					category_id=excluded.category_id,
+					title=excluded.title,
+					size_bytes=excluded.size_bytes,
+					seeders=excluded.seeders,
+					leechers=excluded.leechers,
+					added_at=COALESCE(excluded.added_at,deildu_items.added_at),
+					last_seen_at=excluded.last_seen_at,
+					updated_at=excluded.updated_at
+			`);
+			for (const item of found.values()) {
+				if (exists.get(item.id)) updated++;
+				else inserted++;
+				upsert.run(
+					item.id,
+					item.categoryId,
+					item.title,
+					item.sizeBytes,
+					item.seeders,
+					item.leechers,
+					item.addedAt,
+					seenAt,
+					seenAt,
+				);
+			}
+		})();
 
-async function fetchNewestRssId(pk: string): Promise<number | null> {
-	const username = Bun.env.DEILDU_USERNAME?.trim();
-	if (!username) return null;
-	const url = `https://deildu.net/get_rss.php?feed=direct&user=${encodeURIComponent(username)}&cat=2&passkey=${encodeURIComponent(pk)}`;
-	try {
-		const resp = await fetch(url, {
-			headers: { "User-Agent": "tvserverd/1.0" },
-		});
-		if (!resp.ok) return null;
-		const xml = await resp.text();
-		const guids = [...xml.matchAll(/<guid[^>]*>(\d+)<\/guid>/g)].map(
-			(m) => Number(m[1]) - GUID_OFFSET,
+		const status: DeilduScrapeState["status"] = errors.length
+			? found.size
+				? "partial"
+				: "error"
+			: "complete";
+		const lastError = errors.join(" · ").slice(0, 2_000);
+		const finishedAt = Date.now();
+		statement(
+			`UPDATE deildu_scrape_runs SET
+			 finished_at=?,status=?,category_count=?,item_count=?,
+			 added_count=?,updated_count=?,error=? WHERE id=?`,
+		).run(
+			finishedAt,
+			status,
+			successfulCategories.size,
+			found.size,
+			inserted,
+			updated,
+			lastError || null,
+			runId,
 		);
-		return guids.length ? Math.max(...guids) : null;
-	} catch {
-		return null;
+		progress(
+			{
+				running: false,
+				status,
+				message:
+					status === "complete"
+						? `${found.size} Deildu-færslur uppfærðar`
+						: `${found.size} færslur uppfærðar með viðvörunum`,
+				lastRun: finishedAt,
+				lastError,
+				inserted,
+				updated,
+				itemCount: found.size,
+				categoryCount: successfulCategories.size,
+			},
+			onProgress,
+		);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const finishedAt = Date.now();
+		statement(
+			`UPDATE deildu_scrape_runs
+			 SET finished_at=?,status='error',error=? WHERE id=?`,
+		).run(finishedAt, message.slice(0, 2_000), runId);
+		progress(
+			{
+				running: false,
+				status: "error",
+				message: "Deildu-samstilling mistókst",
+				lastRun: finishedAt,
+				lastError: message,
+			},
+			onProgress,
+		);
 	}
-}
-
-async function backfillRange(
-	fromId: number,
-	toId: number,
-	pk: string,
-): Promise<void> {
-	const LOG = (msg: string) => {
-		console.log(`[deildu-scrape] ${msg}`);
-		scrapeState.lastError = msg;
-	};
-
-	let found = 0;
-	for (let id = fromId; id >= toId && id > 0; id--) {
-		const sourceId = `deildu-${id}`;
-		const existing = statement(
-			"SELECT id FROM torrent_media WHERE id = ?",
-		).get(sourceId);
-		if (existing) continue;
-
-		const meta = await fetchTorrentMeta(id, pk);
-		if (!meta) continue;
-
-		found++;
-		const torrentUri = `https://deildu.net/download.php/${id}/x.torrent?passkey=${pk}`;
-		const filePath = `deildu/${id}/${meta.name}`;
-		insertTorrentMedia(sourceId, meta.name, torrentUri, filePath, meta.sizeBytes);
-		scrapeState.inserted++;
-
-		await new Promise((r) => setTimeout(r, 250));
-	}
-
-	LOG(`backfill: ${fromId}→${toId}, found ${found}`);
+	return { ...scrapeState };
 }
