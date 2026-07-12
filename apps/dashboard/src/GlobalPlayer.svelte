@@ -139,7 +139,7 @@
   <div class="player-copy" aria-live="polite">
     <span>{kindLabel[media.kind] ?? media.kind}{media.live ? " · Í BEINNI" : ""}</span>
     <strong>{displayTitle}</strong>
-    <small>{displaySubtitle}{#if displaySource}<b> · {displaySource}</b>{/if}</small>
+    <small>{displaySubtitle}{#if displaySource}<b>&nbsp;· {displaySource}</b>{/if}</small>
     <div class="timeline"><time>{media.live ? "Í beinni" : formatTime(displayTime)}</time><i><b style={`width:${progress}%`}></b></i><time>{media.live ? "Í loftinu" : formatTime(media.duration)}</time></div>
   </div>
 
