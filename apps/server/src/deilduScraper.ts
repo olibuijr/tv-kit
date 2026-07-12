@@ -26,6 +26,7 @@ type ItemRow = {
 	media_kind: DeilduMediaKind;
 	playable: number;
 	title: string;
+	metadata: string;
 	size_bytes: number;
 	seeders: number;
 	leechers: number;
@@ -110,7 +111,7 @@ const categoryQuery = `
 
 const itemSelect = `
 	SELECT i.id, i.category_id, c.name AS category_name,
-		c.media_kind, c.playable, i.title, i.size_bytes,
+		c.media_kind, c.playable, i.title, i.metadata, i.size_bytes,
 		i.seeders, i.leechers, i.added_at, i.ai_cleaned,
 		COALESCE(d.status, 'missing') AS status,
 		COALESCE(d.downloaded_bytes, 0) AS downloaded_bytes,
@@ -134,6 +135,11 @@ function categoryDto(row: CategoryRow): DeilduCategory {
 }
 
 function itemDto(row: ItemRow): DeilduItem {
+	let posterPath = "";
+	try {
+		const metadata = JSON.parse(row.metadata) as { tmdb?: { poster_path?: unknown } };
+		if (typeof metadata.tmdb?.poster_path === "string") posterPath = metadata.tmdb.poster_path;
+	} catch { /* legacy metadata remains without artwork */ }
 	return {
 		id: row.id,
 		categoryId: row.category_id,
@@ -141,6 +147,7 @@ function itemDto(row: ItemRow): DeilduItem {
 		mediaKind: row.media_kind,
 		playable: Boolean(row.playable),
 		title: row.title,
+		artwork: posterPath && config.tmdbImageBase ? `${config.tmdbImageBase}${posterPath}` : "",
 		sizeBytes: row.size_bytes,
 		seeders: row.seeders,
 		leechers: row.leechers,

@@ -123,6 +123,7 @@ export const config = Object.freeze({
 	),
 	tmdbApiKey: optional("TMDB_API_KEY"),
 	tmdbApiBase: optional("TMDB_API_BASE").replace(/\/$/, ""),
+	tmdbImageBase: optional("TMDB_IMAGE_BASE").replace(/\/$/, ""),
 	castIngressToken: optional("CAST_INGRESS_TOKEN"),
 	latitude: required("HOME_LATITUDE"),
 	longitude: required("HOME_LONGITUDE"),

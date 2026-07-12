@@ -217,6 +217,7 @@ export type DeilduItem = {
 	mediaKind: DeilduMediaKind;
 	playable: boolean;
 	title: string;
+	artwork: string;
 	sizeBytes: number;
 	seeders: number;
 	leechers: number;
