@@ -741,13 +741,18 @@ const server = Bun.serve({
 				return badRequest(req, "invalid JSON");
 			}
 			const message =
-				payload && typeof payload === "object" && !Array.isArray(payload) &&
+				payload &&
+				typeof payload === "object" &&
+				!Array.isArray(payload) &&
 				typeof (payload as Record<string, unknown>).message === "string"
 					? (payload as Record<string, string>).message.trim()
 					: "";
 			if (!message || message.length > 2_000)
 				return badRequest(req, "message must be 1–2000 characters");
-			const history = listAgentChatMessages(40).map(({ role, content }) => ({ role, content }));
+			const history = listAgentChatMessages(40).map(({ role, content }) => ({
+				role,
+				content,
+			}));
 			appendAgentChatMessage("user", message);
 			try {
 				const result = await chatWithLocalAgent({
@@ -763,7 +768,9 @@ const server = Bun.serve({
 						tuneChannel: (slug) => tuneTvSlug(slug),
 						togglePlayback: () => {
 							state.playing = !state.playing;
-							state.lastAction = state.playing ? "Spilun hafin" : "Spilun í pásu";
+							state.lastAction = state.playing
+								? "Spilun hafin"
+								: "Spilun í pásu";
 							broadcast();
 						},
 						setVolume: (volume) => {
@@ -774,9 +781,20 @@ const server = Bun.serve({
 					},
 				});
 				appendAgentChatMessage("assistant", result.content);
-				return corsJson(req, { message: result.content, tools: result.tools, messages: listAgentChatMessages() }, 0);
+				return corsJson(
+					req,
+					{
+						message: result.content,
+						tools: result.tools,
+						messages: listAgentChatMessages(),
+					},
+					0,
+				);
 			} catch (error) {
-				console.error("local agent request failed", error instanceof Error ? error.message : error);
+				console.error(
+					"local agent request failed",
+					error instanceof Error ? error.message : error,
+				);
 				return errorResponse(req, "local agent request failed", 502);
 			}
 		}

@@ -495,15 +495,20 @@ export function listAgentChatMessages(limit = 80): AgentChatMessage[] {
 			content: string;
 			created_at: number;
 		}>
-	).reverse().map((row) => ({
-		id: row.id,
-		role: row.role,
-		content: row.content,
-		createdAt: row.created_at,
-	}));
+	)
+		.reverse()
+		.map((row) => ({
+			id: row.id,
+			role: row.role,
+			content: row.content,
+			createdAt: row.created_at,
+		}));
 }
 
-export function appendAgentChatMessage(role: "user" | "assistant", content: string) {
+export function appendAgentChatMessage(
+	role: "user" | "assistant",
+	content: string,
+) {
 	statement(
 		"INSERT INTO agent_chat_messages(profile_id, role, content, created_at) VALUES ('home', ?, ?, ?)",
 	).run(role, content, Date.now());

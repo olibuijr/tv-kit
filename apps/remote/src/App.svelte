@@ -202,6 +202,7 @@
   <header><div class="brand"><Home size={21}/><div><strong>TV Kit</strong><span>{formatDate(now)}</span></div></div><time>{formatClock(now)}</time><div class:offline={!connected} class="connection"><Wifi size={16}/>{connected ? contentError || "Tengt" : "Tengi"}</div><button class:off={!state.power} aria-label={state.power ? "Slökkva" : "Kveikja"} on:click={() => command("power", undefined, state.power ? "Slökkt" : "Kveikt")}><Power size={21}/></button></header>
 
   <main>
+    {#if activeTab !== "Spjall"}
     <section class="now-playing panel">
       <div class="poster">{#if state.media.artwork}<img src={state.media.artwork} alt=""/>{:else}<Play size={28}/>{/if}</div>
       <div class="track"><span>{state.media.live ? "Í BEINNI" : state.media.source}</span><h1>{state.media.title}</h1><p>{state.media.subtitle}</p><div class="timeline"><i style={`width:${state.media.live ? 100 : Math.min(100,displayTime/Math.max(1,state.media.duration)*100)}%`}></i></div><div class="times"><span>{state.media.live ? "Í beinni" : formatMediaTime(displayTime)}</span><span>{state.media.live ? "" : formatMediaTime(state.media.duration)}</span></div></div>
@@ -220,6 +221,7 @@
     {#if state.media.panel === "subtitles"}<section class="option-sheet panel"><strong>Skjátextar</strong>{#each state.media.subtitles as track}<button class:selected={track === state.media.subtitleTrack} on:click={() => command("subtitle", track, track)}>{track}</button>{/each}</section>{/if}
     {#if state.media.panel === "audio"}<section class="option-sheet panel"><strong>Hljóðrás</strong>{#each state.media.audioTracks as track}<button class:selected={track === state.media.audioTrack} on:click={() => command("audio-track", track, track)}>{track}</button>{/each}</section>{/if}
     {#if state.media.panel === "epg"}<section class="epg-sheet panel"><strong>Dagskrá</strong>{#if state.media.epg.length}{#each state.media.epg as item}<article class:current={item.current}><time>{item.start}</time><div><strong>{item.title}</strong><span>{item.detail}</span></div></article>{/each}{:else}<p>Engin dagskrá tiltæk.</p>{/if}</section>{/if}
+    {/if}
 
     {#if activeTab === "Heim"}
       {#if state.cast}<section class="cast-active panel"><div><Tv size={22}/><span><strong>{state.cast.source === "airplay" ? "AirPlay" : state.cast.source === "miracast" ? "Miracast" : "Android Cast"}</strong><small>{state.cast.deviceName}</small></span></div><button on:click={() => command("cast-stop", undefined, "Cast stöðvað")}>Stöðva</button></section>{/if}

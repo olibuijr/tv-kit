@@ -946,7 +946,14 @@ test("news reader commands validate article ids and scroll progress", () => {
 		expect(
 			parseCommandMessage({ type: "command", action: "news-scroll", value }),
 		).toEqual({ type: "command", action: "news-scroll", value });
-	for (const value of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY, "0.5", undefined])
+	for (const value of [
+		-0.01,
+		1.01,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		"0.5",
+		undefined,
+	])
 		expect(
 			parseCommandMessage({ type: "command", action: "news-scroll", value }),
 		).toBeNull();
