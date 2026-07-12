@@ -5,20 +5,26 @@ import type { HomeState, MediaItem, Station } from "../../../packages/protocol";
 import { config } from "./config";
 
 function parseJson<T>(payload: string): T | undefined {
-  try { return JSON.parse(payload) as T; }
-  catch { return undefined; }
+	try {
+		return JSON.parse(payload) as T;
+	} catch {
+		return undefined;
+	}
 }
 
 export const databasePath = config.databasePath;
 mkdirSync(dirname(databasePath), { recursive: true });
 
 export const db = new Database(databasePath, { create: true, strict: true });
+// Bun query() is the cached prepared-statement factory used by the SQLite layer.
+export const statement = db.query.bind(db);
 db.exec("PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
 db.exec("PRAGMA journal_mode=WAL;");
 
-const migrations = [{
-  version: 1,
-  sql: `
+const migrations = [
+	{
+		version: 1,
+		sql: `
     CREATE TABLE app_state (
       key TEXT PRIMARY KEY,
       payload TEXT NOT NULL,
@@ -119,13 +125,15 @@ const migrations = [{
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX playback_recent ON playback_history(profile_id, updated_at DESC);
-  `
-}, {
-  version: 2,
-  sql: `ALTER TABLE radio_stations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;`
-}, {
-  version: 3,
-  sql: `
+  `,
+	},
+	{
+		version: 2,
+		sql: `ALTER TABLE radio_stations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;`,
+	},
+	{
+		version: 3,
+		sql: `
     CREATE TABLE ruv_channels (
       slug TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -221,10 +229,11 @@ const migrations = [{
       error TEXT
     );
     CREATE INDEX ruv_scrape_runs_kind ON ruv_scrape_runs(kind, started_at DESC);
-  `
-}, {
-  version: 4,
-  sql: `
+  `,
+	},
+	{
+		version: 4,
+		sql: `
     ALTER TABLE ruv_programs ADD COLUMN featured INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE ruv_programs ADD COLUMN available INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE ruv_programs ADD COLUMN last_seen_at INTEGER;
@@ -233,10 +242,11 @@ const migrations = [{
     ALTER TABLE ruv_epg_events ADD COLUMN subevent INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX ruv_programs_featured ON ruv_programs(featured, available, updated_at DESC);
     CREATE INDEX ruv_episodes_available ON ruv_episodes(program_id, available, firstrun DESC);
-  `
-}, {
-  version: 5,
-  sql: `
+  `,
+	},
+	{
+		version: 5,
+		sql: `
     UPDATE ruv_episodes
     SET available=CASE
       WHEN file_url!='' AND (file_expires IS NULL OR file_expires>=date('now')) THEN 1
@@ -247,137 +257,234 @@ const migrations = [{
       SELECT 1 FROM ruv_episodes e
       WHERE e.program_id=ruv_programs.id AND e.available=1 AND e.file_url!=''
     ) THEN 1 ELSE 0 END;
-  `
-}];
+  `,
+	},
+	{
+		version: 6,
+		sql: `
+    CREATE TABLE watch_progress (
+      profile_id TEXT NOT NULL DEFAULT 'home',
+      episode_id TEXT NOT NULL,
+      program_id INTEGER NOT NULL,
+      position REAL NOT NULL DEFAULT 0,
+      duration REAL NOT NULL DEFAULT 0,
+      finished INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (profile_id, episode_id)
+    );
+    CREATE INDEX watch_progress_recent ON watch_progress(profile_id, finished, updated_at DESC);
+  `,
+	},
+];
 
-db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
-const applied = db.query("SELECT version FROM schema_migrations").all() as { version: number }[];
-const versions = new Set(applied.map(row => row.version));
+db.exec(
+	"CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)",
+);
+const applied = statement("SELECT version FROM schema_migrations").all() as {
+	version: number;
+}[];
+const versions = new Set(applied.map((row) => row.version));
 for (const migration of migrations) {
-  if (versions.has(migration.version)) continue;
-  db.transaction(() => {
-    db.exec(migration.sql);
-    db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(migration.version, Date.now());
-  })();
+	if (versions.has(migration.version)) continue;
+	db.transaction(() => {
+		db.exec(migration.sql);
+		statement("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(migration.version, Date.now());
+	})();
 }
 
 export function schemaVersions() {
-  return (db.query("SELECT version FROM schema_migrations ORDER BY version").all() as { version: number }[]).map(row => row.version);
+	return (
+		statement("SELECT version FROM schema_migrations ORDER BY version")
+			.all() as { version: number }[]
+	).map((row) => row.version);
 }
 
 export function databaseIntegrity() {
-  return (db.query("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check;
+	return (
+		statement("PRAGMA integrity_check").get() as { integrity_check: string }
+	).integrity_check;
 }
 
 export function loadState() {
-  const row = db.query("SELECT payload FROM app_state WHERE key = 'shared'").get() as { payload: string } | null;
-  if (!row) return undefined;
-  return parseJson<HomeState>(row.payload);
+	const row = statement("SELECT payload FROM app_state WHERE key = 'shared'")
+		.get() as { payload: string } | null;
+	if (!row) return undefined;
+	return parseJson<HomeState>(row.payload);
 }
 
 export function saveState(state: HomeState) {
-  db.query(`
+	statement(`
     INSERT INTO app_state(key, payload, updated_at) VALUES ('shared', ?, ?)
     ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
   `).run(JSON.stringify(state), Date.now());
 }
 
 export function seedStateIfMissing(state: HomeState) {
-  db.query("INSERT OR IGNORE INTO app_state(key, payload, updated_at) VALUES ('shared', ?, ?)")
-    .run(JSON.stringify(state), Date.now());
-  return loadState()!;
+	statement("INSERT OR IGNORE INTO app_state(key, payload, updated_at) VALUES ('shared', ?, ?)").run(JSON.stringify(state), Date.now());
+	return loadState()!;
 }
 
 export function getCache<T>(key: string) {
-  const row = db.query("SELECT payload, fetched_at FROM api_cache WHERE key = ?").get(key) as { payload: string; fetched_at: number } | null;
-  if (!row) return undefined;
-  const value = parseJson<T>(row.payload);
-  return value === undefined ? undefined : { value, fetchedAt: row.fetched_at };
+	const row = statement("SELECT payload, fetched_at FROM api_cache WHERE key = ?")
+		.get(key) as { payload: string; fetched_at: number } | null;
+	if (!row) return undefined;
+	const value = parseJson<T>(row.payload);
+	return value === undefined ? undefined : { value, fetchedAt: row.fetched_at };
 }
 
 export function setCache(key: string, value: unknown, fetchedAt = Date.now()) {
-  db.query(`
+	statement(`
     INSERT INTO api_cache(key, payload, fetched_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, fetched_at=excluded.fetched_at
   `).run(key, JSON.stringify(value), fetchedAt);
 }
 
 export function listRadioStations() {
-  return (db.query("SELECT id, name, frequency, terrestrial, stream_url, logo_url FROM radio_stations ORDER BY sort_order, id").all() as any[]).map(row => ({
-    id: row.id,
-    name: row.name,
-    frequency: row.frequency,
-    terrestrial: Boolean(row.terrestrial),
-    streamUrl: row.stream_url,
-    logoUrl: row.logo_url
-  } satisfies Station));
+	return (
+		statement("SELECT id, name, frequency, terrestrial, stream_url, logo_url FROM radio_stations ORDER BY sort_order, id")
+			.all() as any[]
+	).map(
+		(row) =>
+			({
+				id: row.id,
+				name: row.name,
+				frequency: row.frequency,
+				terrestrial: Boolean(row.terrestrial),
+				streamUrl: row.stream_url,
+				logoUrl: row.logo_url,
+			}) satisfies Station,
+	);
 }
 
 export function radioCatalogCheckedAt() {
-  const row = db.query("SELECT MAX(checked_at) AS checked_at FROM radio_stations").get() as { checked_at: number | null };
-  return row.checked_at ?? 0;
+	const row = statement("SELECT MAX(checked_at) AS checked_at FROM radio_stations")
+		.get() as { checked_at: number | null };
+	return row.checked_at ?? 0;
 }
 
-export function replaceRadioStations(stations: Station[], checkedAt: number, sourceName: string) {
-  const insert = db.query(`
+export function replaceRadioStations(
+	stations: Station[],
+	checkedAt: number,
+	sourceName: string,
+) {
+	const insert = statement(`
     INSERT INTO radio_stations(id, name, frequency, terrestrial, stream_url, logo_url, source, status_code, checked_at, sort_order)
     VALUES (?, ?, ?, ?, ?, ?, ?, 200, ?, ?)
   `);
-  db.transaction(() => {
-    db.exec("DELETE FROM radio_stations");
-    stations.forEach((station, index) => insert.run(station.id, station.name, station.frequency, Number(station.terrestrial), station.streamUrl, station.logoUrl, sourceName, checkedAt, index));
-  })();
+	db.transaction(() => {
+		db.exec("DELETE FROM radio_stations");
+		stations.forEach((station, index) =>
+			insert.run(
+				station.id,
+				station.name,
+				station.frequency,
+				Number(station.terrestrial),
+				station.streamUrl,
+				station.logoUrl,
+				sourceName,
+				checkedAt,
+				index,
+			),
+		);
+	})();
 }
 
 export function startRadioSync() {
-  const row = db.query("INSERT INTO radio_sync_runs(started_at, status) VALUES (?, 'running') RETURNING id").get(Date.now()) as { id: number };
-  return row.id;
+	const row = statement("INSERT INTO radio_sync_runs(started_at, status) VALUES (?, 'running') RETURNING id")
+		.get(Date.now()) as { id: number };
+	return row.id;
 }
 
-export function finishRadioSync(id: number, result: { source: number; healthy: number; added: number; removed: number; error?: string }) {
-  db.query(`
+export function finishRadioSync(
+	id: number,
+	result: {
+		source: number;
+		healthy: number;
+		added: number;
+		removed: number;
+		error?: string;
+	},
+) {
+	statement(`
     UPDATE radio_sync_runs SET finished_at=?, source_count=?, healthy_count=?, added_count=?, removed_count=?, status=?, error=? WHERE id=?
-  `).run(Date.now(), result.source, result.healthy, result.added, result.removed, result.error ? "failed" : "complete", result.error ?? null, id);
+  `).run(
+		Date.now(),
+		result.source,
+		result.healthy,
+		result.added,
+		result.removed,
+		result.error ? "failed" : "complete",
+		result.error ?? null,
+		id,
+	);
 }
 
 export function listRadioFavorites() {
-  return (db.query("SELECT media_id FROM favourites WHERE profile_id = 'home' AND kind = 'radio'").all() as { media_id: string }[])
-    .map(row => Number(row.media_id.replace("radio-", "")))
-    .filter(Number.isFinite);
+	return (
+		statement("SELECT media_id FROM favourites WHERE profile_id = 'home' AND kind = 'radio'")
+			.all() as { media_id: string }[]
+	)
+		.map((row) => Number(row.media_id.replace("radio-", "")))
+		.filter(Number.isFinite);
 }
 
 export function toggleRadioFavorite(id: number) {
-  const mediaId = `radio-${id}`;
-  const existing = db.query("SELECT 1 AS present FROM favourites WHERE profile_id = 'home' AND media_id = ?").get(mediaId);
-  if (existing) db.query("DELETE FROM favourites WHERE profile_id = 'home' AND media_id = ?").run(mediaId);
-  else db.query("INSERT INTO favourites(profile_id, media_id, kind, created_at) VALUES ('home', ?, 'radio', ?)").run(mediaId, Date.now());
-  return !existing;
+	const mediaId = `radio-${id}`;
+	const existing = statement("SELECT 1 AS present FROM favourites WHERE profile_id = 'home' AND media_id = ?")
+		.get(mediaId);
+	if (existing)
+		statement("DELETE FROM favourites WHERE profile_id = 'home' AND media_id = ?").run(mediaId);
+	else
+		statement("INSERT INTO favourites(profile_id, media_id, kind, created_at) VALUES ('home', ?, 'radio', ?)").run(mediaId, Date.now());
+	return !existing;
 }
 
 export function recordPlayback(media: MediaItem) {
-  const now = Date.now();
-  db.query(`
+	const now = Date.now();
+	statement(`
     INSERT INTO playback_history(media_id, kind, title, source, position, duration, started_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(media.id, media.kind, media.title, media.source, media.currentTime, media.duration, now, now);
+  `).run(
+		media.id,
+		media.kind,
+		media.title,
+		media.source,
+		media.currentTime,
+		media.duration,
+		now,
+		now,
+	);
 }
 
 export function upsertMedia(media: MediaItem) {
-  db.query(`
+	statement(`
     INSERT INTO media_items(id, kind, title, subtitle, source, src, artwork, live, metadata, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, title=excluded.title, subtitle=excluded.subtitle,
       source=excluded.source, src=excluded.src, artwork=excluded.artwork, live=excluded.live,
       metadata=excluded.metadata, updated_at=excluded.updated_at
-  `).run(media.id, media.kind, media.title, media.subtitle, media.source, media.src, media.artwork, Number(media.live), JSON.stringify(media), Date.now());
+  `).run(
+		media.id,
+		media.kind,
+		media.title,
+		media.subtitle,
+		media.source,
+		media.src,
+		media.artwork,
+		Number(media.live),
+		JSON.stringify(media),
+		Date.now(),
+	);
 }
 
 export function getMedia(id: string) {
-  const row = db.query("SELECT metadata FROM media_items WHERE id = ?").get(id) as { metadata: string } | null;
-  return row ? parseJson<MediaItem>(row.metadata) : undefined;
+	const row = statement("SELECT metadata FROM media_items WHERE id = ?")
+		.get(id) as { metadata: string } | null;
+	return row ? parseJson<MediaItem>(row.metadata) : undefined;
 }
 
 export function getMediaByKind(kind: string) {
-  const row = db.query("SELECT metadata FROM media_items WHERE kind = ? ORDER BY updated_at DESC LIMIT 1").get(kind) as { metadata: string } | null;
-  return row ? parseJson<MediaItem>(row.metadata) : undefined;
+	const row = statement("SELECT metadata FROM media_items WHERE kind = ? ORDER BY updated_at DESC LIMIT 1")
+		.get(kind) as { metadata: string } | null;
+	return row ? parseJson<MediaItem>(row.metadata) : undefined;
 }
