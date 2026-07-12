@@ -7,10 +7,7 @@ import {
 	type DeilduScrapeState,
 } from "../../../packages/protocol";
 import { config } from "./config";
-import {
-	cleanImportedDeildu,
-	deilduCleanupState,
-} from "./deilduCleanupJob";
+import { cleanImportedDeildu, deilduCleanupState } from "./deilduCleanupJob";
 import { db, statement } from "./db";
 
 type CategoryRow = {

@@ -152,6 +152,7 @@ export async function cleanImportedDeildu(
 		for (let offset = 0; offset < rows.length; offset++) {
 			const batch = rows.slice(offset, offset + 1);
 			deilduCleanupState.message = `${offset + 1}/${rows.length} · ${batch[0].original_title}`;
+			console.info(`Deildu cleanup ${deilduCleanupState.message}`);
 			onProgress?.();
 			const candidates = await cleanBatch(batch);
 			for (const row of batch) {
@@ -205,6 +206,11 @@ export async function cleanImportedDeildu(
 					: "Titlar hreinsaðir · TMDB bíður eftir stillingum",
 		});
 	} catch (error) {
+		console.error(
+			"Deildu cleanup failed",
+			deilduCleanupState.message,
+			error instanceof Error ? error.message : error,
+		);
 		Object.assign(deilduCleanupState, {
 			running: false,
 			phase: "error",
