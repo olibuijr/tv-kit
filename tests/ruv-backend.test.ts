@@ -204,9 +204,23 @@ afterAll(() => {
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
 	expect(database.schemaVersions()).toEqual([
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 	]);
-	expect((database.statement("PRAGMA table_info(deildu_items)").all() as { name: string }[]).map(row => row.name)).toEqual(expect.arrayContaining(["original_title", "metadata", "tmdb_id", "cleanup_error", "cleaned_at"]));
+	expect(
+		(
+			database.statement("PRAGMA table_info(deildu_items)").all() as {
+				name: string;
+			}[]
+		).map((row) => row.name),
+	).toEqual(
+		expect.arrayContaining([
+			"original_title",
+			"metadata",
+			"tmdb_id",
+			"cleanup_error",
+			"cleaned_at",
+		]),
+	);
 	expect(database.databaseIntegrity()).toBe("ok");
 	database.seedStateIfMissing(state("fyrsta"));
 	database.seedStateIfMissing(state("annað"));

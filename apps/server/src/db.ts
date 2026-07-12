@@ -462,6 +462,16 @@ const migrations = [
     UPDATE deildu_items SET original_title=title WHERE original_title='';
   `,
 	},
+	{
+		version: 14,
+		sql: `
+    DELETE FROM app_state WHERE key='tmdb_api_key';
+    UPDATE deildu_items SET ai_cleaned=0
+    WHERE ai_cleaned=1 AND tmdb_id IS NULL AND category_id IN (
+      SELECT id FROM deildu_categories WHERE media_kind IN ('movie','tv')
+    );
+  `,
+	},
 ];
 
 db.exec(

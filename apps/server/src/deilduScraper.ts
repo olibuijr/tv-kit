@@ -165,14 +165,12 @@ export function listDeilduItems(
 ): { items: DeilduItem[]; pagination: DeilduPagination } {
 	const categories = listDeilduCategories();
 	const totalItems = categoryId
-		? (categories.find((category) => category.id === categoryId)?.itemCount ?? 0)
+		? (categories.find((category) => category.id === categoryId)?.itemCount ??
+			0)
 		: categories.reduce((sum, category) => sum + category.itemCount, 0);
 	const boundedPageSize = Math.max(1, Math.min(100, Math.trunc(pageSize)));
 	const totalPages = Math.ceil(totalItems / boundedPageSize);
-	const boundedPage = Math.max(
-		1,
-		Math.min(totalPages || 1, Math.trunc(page)),
-	);
+	const boundedPage = Math.max(1, Math.min(totalPages || 1, Math.trunc(page)));
 	const offset = (boundedPage - 1) * boundedPageSize;
 	const ranked = categoryId
 		? `
@@ -196,9 +194,11 @@ export function listDeilduItems(
 		${itemSelect.replace("FROM deildu_items i", "FROM ranked i")}
 		WHERE i.page_rank > ? AND i.page_rank <= ?
 		ORDER BY COALESCE(i.added_at, 0) DESC, i.id DESC`;
-	const rows = (categoryId
-		? statement(query).all(categoryId, offset, offset + boundedPageSize)
-		: statement(query).all(offset, offset + boundedPageSize)) as ItemRow[];
+	const rows = (
+		categoryId
+			? statement(query).all(categoryId, offset, offset + boundedPageSize)
+			: statement(query).all(offset, offset + boundedPageSize)
+	) as ItemRow[];
 	return {
 		items: rows.map(itemDto),
 		pagination: {
