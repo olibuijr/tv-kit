@@ -1,0 +1,21 @@
+{
+  "nextId": 2,
+  "loops": [
+    {
+      "id": "1",
+      "prompt": "Check the real Deildu import/cleanup task at http://192.168.1.12:3110/agent/tasks/deildu-import using the native browser. If it is still running, report concise progress only. When it finishes, verify SQLite counts via the tv-control skill/tvctl: total, ai_cleaned, review errors, tmdb_id count, and poster_path count. Determine whether any older movie/TV items still require backfill. Report results and delete this loop.",
+      "trigger": {
+        "type": "cron",
+        "schedule": "*/1 * * * *"
+      },
+      "status": "active",
+      "recurring": true,
+      "createdAt": 1783875896991,
+      "updatedAt": 1783875905928,
+      "expiresAt": 1784480696991,
+      "readOnly": true,
+      "maxFires": 40,
+      "fireCount": 1
+    }
+  ]
+}

@@ -149,8 +149,10 @@ export async function cleanImportedDeildu(
 	});
 	onProgress?.();
 	try {
-		for (let offset = 0; offset < rows.length; offset += 32) {
-			const batch = rows.slice(offset, offset + 32);
+		for (let offset = 0; offset < rows.length; offset++) {
+			const batch = rows.slice(offset, offset + 1);
+			deilduCleanupState.message = `${offset + 1}/${rows.length} · ${batch[0].original_title}`;
+			onProgress?.();
 			const candidates = await cleanBatch(batch);
 			for (const row of batch) {
 				const candidate = candidates.find((item) => item.id === row.id);
@@ -189,8 +191,8 @@ export async function cleanImportedDeildu(
 				);
 				deilduCleanupState.cleaned++;
 			}
-			deilduCleanupState.current = Math.min(rows.length, offset + batch.length);
-			deilduCleanupState.message = `${deilduCleanupState.current}/${rows.length} titlar unnir`;
+			deilduCleanupState.current = offset + 1;
+			deilduCleanupState.message = `${deilduCleanupState.current}/${rows.length} · ${batch[0].original_title}`;
 			onProgress?.();
 		}
 		Object.assign(deilduCleanupState, {

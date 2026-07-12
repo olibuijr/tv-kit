@@ -137,9 +137,14 @@ function categoryDto(row: CategoryRow): DeilduCategory {
 function itemDto(row: ItemRow): DeilduItem {
 	let posterPath = "";
 	try {
-		const metadata = JSON.parse(row.metadata) as { tmdb?: { poster_path?: unknown } };
-		if (typeof metadata.tmdb?.poster_path === "string") posterPath = metadata.tmdb.poster_path;
-	} catch { /* legacy metadata remains without artwork */ }
+		const metadata = JSON.parse(row.metadata) as {
+			tmdb?: { poster_path?: unknown };
+		};
+		if (typeof metadata.tmdb?.poster_path === "string")
+			posterPath = metadata.tmdb.poster_path;
+	} catch {
+		/* legacy metadata remains without artwork */
+	}
 	return {
 		id: row.id,
 		categoryId: row.category_id,
@@ -147,7 +152,10 @@ function itemDto(row: ItemRow): DeilduItem {
 		mediaKind: row.media_kind,
 		playable: Boolean(row.playable),
 		title: row.title,
-		artwork: posterPath && config.tmdbImageBase ? `${config.tmdbImageBase}${posterPath}` : "",
+		artwork:
+			posterPath && config.tmdbImageBase
+				? `${config.tmdbImageBase}${posterPath}`
+				: "",
 		sizeBytes: row.size_bytes,
 		seeders: row.seeders,
 		leechers: row.leechers,
