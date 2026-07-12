@@ -102,7 +102,12 @@ const broadcast = () => {
 const agentChatMessages = () =>
 	listAgentChatMessages().map((message) =>
 		message.role === "assistant"
-			? { id: message.id, role: message.role, createdAt: message.createdAt, reply: parseAgentReply(message.content) }
+			? {
+					id: message.id,
+					role: message.role,
+					createdAt: message.createdAt,
+					reply: parseAgentReply(message.content),
+				}
 			: message,
 	);
 

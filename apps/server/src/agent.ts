@@ -14,7 +14,13 @@ export type AgentReply = {
 	data?: Record<string, unknown>;
 };
 
-const replyTypes = new Set<AgentReplyType>(["text", "status", "action", "list", "error"]);
+const replyTypes = new Set<AgentReplyType>([
+	"text",
+	"status",
+	"action",
+	"list",
+	"error",
+]);
 
 function firstJsonObject(value: string) {
 	for (let start = 0; start < value.length; start += 1) {
@@ -33,33 +39,68 @@ function firstJsonObject(value: string) {
 			if (char === '"') quoted = true;
 			else if (char === "{") depth += 1;
 			else if (char === "}" && --depth === 0) {
-				try { return JSON.parse(value.slice(start, index + 1)); } catch { break; }
+				try {
+					return JSON.parse(value.slice(start, index + 1));
+				} catch {
+					break;
+				}
 			}
 		}
 	}
 	return undefined;
 }
 
-export function parseAgentReply(content: string | null | undefined): AgentReply {
+export function parseAgentReply(
+	content: string | null | undefined,
+): AgentReply {
 	const fallback = content?.trim() || "Ég fékk ekkert svar frá líkaninu.";
-	const cleaned = fallback.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<\/think>/gi, "").trim();
+	const cleaned = fallback
+		.replace(/<think>[\s\S]*?<\/think>/gi, "")
+		.replace(/<\/think>/gi, "")
+		.trim();
 	try {
-		const candidate = (cleaned.split(/\n\s*\n/).find((part) => part.trim().startsWith("{")) || cleaned).replace(/^```(?:json)?\s*|\s*```$/g, "");
+		const candidate = (
+			cleaned.split(/\n\s*\n/).find((part) => part.trim().startsWith("{")) ||
+			cleaned
+		).replace(/^```(?:json)?\s*|\s*```$/g, "");
 		let parsed: unknown;
-		try { parsed = JSON.parse(candidate); } catch { parsed = firstJsonObject(cleaned); }
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+		try {
+			parsed = JSON.parse(candidate);
+		} catch {
+			parsed = firstJsonObject(cleaned);
+		}
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+			throw new Error();
 		const value = parsed as Record<string, unknown>;
-		const type = replyTypes.has(value.type as AgentReplyType) ? value.type as AgentReplyType : "text";
-		const title = typeof value.title === "string" && value.title.trim() ? value.title.trim().slice(0, 80) : "TV Kit";
-		const text = (typeof value.text === "string" && value.text.trim() ? value.text.trim() : cleaned || fallback).replace(/\*+/g, "").slice(0, 320);
+		const type = replyTypes.has(value.type as AgentReplyType)
+			? (value.type as AgentReplyType)
+			: "text";
+		const title =
+			typeof value.title === "string" && value.title.trim()
+				? value.title.trim().slice(0, 80)
+				: "TV Kit";
+		const text = (
+			typeof value.text === "string" && value.text.trim()
+				? value.text.trim()
+				: cleaned || fallback
+		)
+			.replace(/\*+/g, "")
+			.slice(0, 320);
 		if (typeof value.text === "string" && value.text.trim().startsWith("{")) {
 			const nested = parseAgentReply(value.text);
 			if (nested.type !== "text" || nested.title !== "TV Kit") return nested;
 		}
-		const data = value.data && typeof value.data === "object" && !Array.isArray(value.data) ? value.data as Record<string, unknown> : undefined;
+		const data =
+			value.data && typeof value.data === "object" && !Array.isArray(value.data)
+				? (value.data as Record<string, unknown>)
+				: undefined;
 		return data ? { type, title, text, data } : { type, title, text };
 	} catch {
-		return { type: "text", title: "TV Kit", text: (cleaned || fallback).replace(/\*+/g, "").slice(0, 320) };
+		return {
+			type: "text",
+			title: "TV Kit",
+			text: (cleaned || fallback).replace(/\*+/g, "").slice(0, 320),
+		};
 	}
 }
 
@@ -141,10 +182,16 @@ const tools = [
 		type: "function",
 		function: {
 			name: "set_tv_view",
-			description: "Opnar síðu í TV Kit: heim, sjónvarp, útvarp, Sarpur, Deildu eða fréttir.",
+			description:
+				"Opnar síðu í TV Kit: heim, sjónvarp, útvarp, Sarpur, Deildu eða fréttir.",
 			parameters: {
 				type: "object",
-				properties: { view: { type: "string", enum: ["home", "tv", "radio", "media", "deildu", "news"] } },
+				properties: {
+					view: {
+						type: "string",
+						enum: ["home", "tv", "radio", "media", "deildu", "news"],
+					},
+				},
 				required: ["view"],
 				additionalProperties: false,
 			},
@@ -239,8 +286,12 @@ function executeTool(name: string, rawArguments: string, context: ToolContext) {
 		return { ok: true, state: stateSummary(context.getState()) };
 	}
 	if (name === "set_tv_view") {
-		const view = typeof args.view === "string" ? args.view as View : undefined;
-		if (!view || !["home", "tv", "radio", "media", "deildu", "news"].includes(view))
+		const view =
+			typeof args.view === "string" ? (args.view as View) : undefined;
+		if (
+			!view ||
+			!["home", "tv", "radio", "media", "deildu", "news"].includes(view)
+		)
 			return { ok: false, error: "Óþekkt síða" };
 		context.setView(view);
 		return { ok: true, state: stateSummary(context.getState()) };
@@ -260,40 +311,96 @@ function executeTool(name: string, rawArguments: string, context: ToolContext) {
 }
 
 function actionReply(name: string, result: unknown): AgentReply | undefined {
-	if (!result || typeof result !== "object" || !(result as Record<string, unknown>).ok) return undefined;
-	const state = (result as Record<string, unknown>).state as ReturnType<typeof stateSummary> | undefined;
+	if (
+		!result ||
+		typeof result !== "object" ||
+		!(result as Record<string, unknown>).ok
+	)
+		return undefined;
+	const state = (result as Record<string, unknown>).state as
+		| ReturnType<typeof stateSummary>
+		| undefined;
 	if (!state) return undefined;
-	if (name === "tune_tv_channel") return { type: "action", title: state.media.source, text: `Stilla á ${state.media.source}. ${state.media.title} er í beinni.`, data: { state } };
-	if (name === "set_tv_view") return { type: "action", title: "Síða", text: `Opnaði ${state.view}.`, data: { view: state.view } };
-	if (name === "set_volume") return { type: "action", title: "Hljóðstyrkur", text: `Hljóðstyrkur er nú ${state.volume}%.`, data: { volume: state.volume } };
-	if (name === "toggle_playback") return { type: "action", title: state.playing ? "Spilun" : "Pása", text: state.playing ? "Spilun hafin." : "Spilun í pásu.", data: { playing: state.playing } };
+	if (name === "tune_tv_channel")
+		return {
+			type: "action",
+			title: state.media.source,
+			text: `Stilla á ${state.media.source}. ${state.media.title} er í beinni.`,
+			data: { state },
+		};
+	if (name === "set_tv_view")
+		return {
+			type: "action",
+			title: "Síða",
+			text: `Opnaði ${state.view}.`,
+			data: { view: state.view },
+		};
+	if (name === "set_volume")
+		return {
+			type: "action",
+			title: "Hljóðstyrkur",
+			text: `Hljóðstyrkur er nú ${state.volume}%.`,
+			data: { volume: state.volume },
+		};
+	if (name === "toggle_playback")
+		return {
+			type: "action",
+			title: state.playing ? "Spilun" : "Pása",
+			text: state.playing ? "Spilun hafin." : "Spilun í pásu.",
+			data: { playing: state.playing },
+		};
 	return undefined;
 }
 
 function directActionRequest(message: string, context: ToolContext) {
 	const normalized = message.toLocaleLowerCase("is-IS");
 	if (/\b(opna\w*|farðu|sýndu\w*)/iu.test(normalized)) {
-		const view = ([
-			["deildu", "deildu"], ["sarp", "media"], ["útvarp", "radio"],
-			["frétt", "news"], ["sjónvarp", "tv"], ["heim", "home"],
-		] as const).find(([label]) => normalized.includes(label))?.[1];
+		const view = (
+			[
+				["deildu", "deildu"],
+				["sarp", "media"],
+				["útvarp", "radio"],
+				["frétt", "news"],
+				["sjónvarp", "tv"],
+				["heim", "home"],
+			] as const
+		).find(([label]) => normalized.includes(label))?.[1];
 		if (view) {
 			context.setView(view);
 			const result = { ok: true, state: stateSummary(context.getState()) };
-			return { reply: actionReply("set_tv_view", result) ?? { type: "action", title: "Síða", text: `Opnaði ${view}.` }, tools: ["set_tv_view"] };
+			return {
+				reply: actionReply("set_tv_view", result) ?? {
+					type: "action",
+					title: "Síða",
+					text: `Opnaði ${view}.`,
+				},
+				tools: ["set_tv_view"],
+			};
 		}
 	}
 	if (/\b(still\w*|set\w*|skip\w*)/iu.test(normalized)) {
-		const normalize = (value: string) => value.toLocaleLowerCase("is-IS").replace(/\s+/g, " ").trim();
-		const channel = context.listChannels().slice().sort((a, b) => b.name.length - a.name.length).find((item) => {
-			const name = normalize(item.name);
-			const slug = normalize(item.slug);
-			return normalized.includes(name) || normalized.includes(slug);
-		});
+		const normalize = (value: string) =>
+			value.toLocaleLowerCase("is-IS").replace(/\s+/g, " ").trim();
+		const channel = context
+			.listChannels()
+			.slice()
+			.sort((a, b) => b.name.length - a.name.length)
+			.find((item) => {
+				const name = normalize(item.name);
+				const slug = normalize(item.slug);
+				return normalized.includes(name) || normalized.includes(slug);
+			});
 		if (channel) {
 			const ok = context.tuneChannel(channel.slug);
 			const result = { ok, state: stateSummary(context.getState()) };
-			return { reply: actionReply("tune_tv_channel", result) ?? { type: "error", title: "Rás", text: "Ekki tókst að stilla rás." }, tools: ["tune_tv_channel"] };
+			return {
+				reply: actionReply("tune_tv_channel", result) ?? {
+					type: "error",
+					title: "Rás",
+					text: "Ekki tókst að stilla rás.",
+				},
+				tools: ["tune_tv_channel"],
+			};
 		}
 	}
 	const volume = normalized.match(/(?:hljóð|volume)[^\d]{0,20}(\d{1,3})/u);
@@ -302,7 +409,14 @@ function directActionRequest(message: string, context: ToolContext) {
 		if (value >= 0 && value <= 100) {
 			context.setVolume(value);
 			const result = { ok: true, state: stateSummary(context.getState()) };
-			return { reply: actionReply("set_volume", result) ?? { type: "action", title: "Hljóðstyrkur", text: `Hljóðstyrkur er nú ${value}%.` }, tools: ["set_volume"] };
+			return {
+				reply: actionReply("set_volume", result) ?? {
+					type: "action",
+					title: "Hljóðstyrkur",
+					text: `Hljóðstyrkur er nú ${value}%.`,
+				},
+				tools: ["set_volume"],
+			};
 		}
 	}
 	return undefined;
@@ -323,7 +437,10 @@ export async function chatWithLocalAgent(input: {
 		...input.history.slice(-40),
 	];
 	const latestUserMessage = input.history.at(-1)?.content ?? "";
-	const requiresTool = /\b(opna\w*|farðu|sýndu\w*|still\w*|set\w*|skip\w*|spil\w*|pás\w*|hæk\w*|læk\w*|hljóð\w*|þagga\w*|mute\w*)/iu.test(latestUserMessage);
+	const requiresTool =
+		/\b(opna\w*|farðu|sýndu\w*|still\w*|set\w*|skip\w*|spil\w*|pás\w*|hæk\w*|læk\w*|hljóð\w*|þagga\w*|mute\w*)/iu.test(
+			latestUserMessage,
+		);
 	const directAction = directActionRequest(latestUserMessage, input.context);
 	if (directAction) return directAction;
 	const usedTools: string[] = [];
@@ -347,7 +464,9 @@ export async function chatWithLocalAgent(input: {
 							messages,
 							tools,
 							tool_choice: "auto",
-							...(round === 0 && requiresTool ? {} : { response_format: { type: "json_object" } }),
+							...(round === 0 && requiresTool
+								? {}
+								: { response_format: { type: "json_object" } }),
 							temperature: 0.2,
 							max_tokens: 512,
 						}),
@@ -377,9 +496,14 @@ export async function chatWithLocalAgent(input: {
 		if (!toolCalls.length) {
 			const reply = parseAgentReply(message.content);
 			return {
-				reply: reply.type === "action" && !usedTools.length
-					? { type: "error", title: "Ekki framkvæmt", text: "Ég þarf að nota TV Kit verkfæri áður en aðgerð er staðfest." }
-					: reply,
+				reply:
+					reply.type === "action" && !usedTools.length
+						? {
+								type: "error",
+								title: "Ekki framkvæmt",
+								text: "Ég þarf að nota TV Kit verkfæri áður en aðgerð er staðfest.",
+							}
+						: reply,
 				tools: usedTools,
 			};
 		}
@@ -397,7 +521,8 @@ export async function chatWithLocalAgent(input: {
 				call.function.arguments,
 				input.context,
 			);
-			completedAction = actionReply(call.function.name, result) || completedAction;
+			completedAction =
+				actionReply(call.function.name, result) || completedAction;
 			messages.push({
 				role: "tool",
 				tool_call_id: call.id,
