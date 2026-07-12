@@ -25,15 +25,15 @@ Add a Chat entry point to the application, backed by Titan's local Qwythos OpenA
 
 ## Subtasks
 
-- [ ] SUB-001 Trace remote/server navigation and local model configuration.
-- [ ] SUB-002 Implement chat API, instructions, and bounded tools.
-- [ ] SUB-003 Implement the chat page and navigation entry point.
-- [ ] SUB-004 Run checks, deploy, and verify the chat flow.
+- [x] SUB-001 Trace remote/server navigation and local model configuration.
+- [x] SUB-002 Implement chat API, instructions, and bounded tools.
+- [x] SUB-003 Implement the chat page and navigation entry point.
+- [x] SUB-004 Run checks, deploy, and verify the chat flow.
 
 ## Notes
 
 - No dedicated ui-ux-pro skill is installed in this Pi environment; followed the existing TV Kit visual language and kept the first slice minimal.
 - Added `apps/remote/src/AgentChatPage.svelte`, a `POST/GET /agent/chat` route, migration 12 for chat history, and bounded tools: state, channel listing/tuning, playback toggle, and volume.
 - Configured the protected TV env to use Titan's local Qwythos endpoint without exposing the key in source or logs.
-- Verified `tvctl kit check` (18 tests, 0 failures; no new Svelte warnings), `tvctl kit verify`, browser chat, `get_tv_state`, `list_tv_channels`, `tune_tv_channel`, and `set_volume`.
+- Verified `tvctl kit check` (20 tests, 0 failures; 0 Svelte warnings), `tvctl kit verify`, browser chat, `get_tv_state`, `list_tv_channels`, `tune_tv_channel`, and `set_volume`.
 - Follow-up UI fix: Chat view now hides the global media player/tools so the chat composer is not rendered underneath it; browser DOM confirms only the chat heading, input, and send control are present.
