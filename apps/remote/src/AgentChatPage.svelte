@@ -117,7 +117,7 @@
 
 {#if modal}
   <div class="modal-backdrop" role="presentation" on:click|self={() => modal = false}>
-    <form class="schedule-modal" role="dialog" aria-modal="true" aria-labelledby="schedule-title" on:submit|preventDefault={saveSchedule}>
+    <form class="schedule-modal" aria-labelledby="schedule-title" on:submit|preventDefault={saveSchedule}>
       <header><div><h2 id="schedule-title">Ný áætlun</h2><p>Segðu TV Kit hvað á að gera og hvenær.</p></div><button type="button" class="icon-button" on:click={() => modal = false} aria-label="Loka"><X size={19}/></button></header>
       <label>Heiti<input bind:value={scheduleName} placeholder="Til dæmis morgunfréttir" required/></label>
       <fieldset><legend>Tegund</legend><div class="choice-grid"><button type="button" class:active={scheduleKind === "prompt"} on:click={() => scheduleKind = "prompt"}><Sparkles size={18}/><span><strong>Náttúrulegt mál</strong><small>Lýstu verkinu einfaldlega</small></span></button><button type="button" class:active={scheduleKind === "script"} on:click={() => scheduleKind = "script"}><Code2 size={18}/><span><strong>Skrifta</strong><small>Keyrðu skipun eða skriftu</small></span></button></div></fieldset>
