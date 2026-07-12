@@ -176,19 +176,19 @@ export function getDeilduItem(id: number): DeilduItem | null {
 	return row ? itemDto(row) : null;
 }
 
+const htmlEntities: Record<string, string> = {
+	amp: "&", apos: "'", quot: '"', lt: "<", gt: ">", nbsp: " ",
+	aacute: "á", Aacute: "Á", eth: "ð", ETH: "Ð", eacute: "é", Eacute: "É",
+	iacute: "í", Iacute: "Í", oacute: "ó", Oacute: "Ó", ouml: "ö", Ouml: "Ö",
+	thorn: "þ", THORN: "Þ", uacute: "ú", Uacute: "Ú", yacute: "ý", Yacute: "Ý",
+	aelig: "æ", AElig: "Æ", ndash: "–", mdash: "—", rsquo: "’", lsquo: "‘",
+};
+
 function decodeHtml(value: string) {
 	return value
-		.replace(/&#(\d+);/g, (_, code: string) =>
-			String.fromCodePoint(Number(code)),
-		)
-		.replace(/&#x([\da-f]+);/gi, (_, code: string) =>
-			String.fromCodePoint(Number.parseInt(code, 16)),
-		)
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;|&apos;/g, "'")
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">");
+		.replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+		.replace(/&#x([\da-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+		.replace(/&([a-z][\w]+);/gi, (entity, name: string) => htmlEntities[name] ?? entity);
 }
 
 function text(value: string) {
@@ -307,7 +307,10 @@ async function fetchPage(categoryId: number, page: number) {
 		},
 	);
 	if (!response.ok) throw new Error(`Deildu svaraði HTTP ${response.status}`);
-	return response.text();
+	const bytes = await response.arrayBuffer();
+	const utf8 = new TextDecoder().decode(bytes);
+	// Deildu occasionally serves legacy Icelandic bytes without declaring charset.
+	return utf8.includes("�") ? new TextDecoder("windows-1252").decode(bytes) : utf8;
 }
 
 function progress(

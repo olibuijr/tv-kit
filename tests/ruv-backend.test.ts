@@ -10,6 +10,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { HomeState } from "../packages/protocol";
+import { formatScheduleTime, relativeTime } from "../packages/protocol/content";
 import { parseCommandMessage } from "../apps/server/src/commands";
 import {
 	parseAllowedOrigins,
@@ -716,6 +717,14 @@ test("movie catalog is derived from persisted RÚV categories", () => {
 	]);
 });
 
+test("content time labels are Icelandic and show the weekday outside today", () => {
+	const now = Date.parse("2026-07-12T13:00:00Z");
+	expect(relativeTime(now - 2 * 3_600_000, now)).toBe("fyrir 2 klst.");
+	expect(relativeTime(now + 5 * 60_000, now)).toBe("eftir 5 mín.");
+	expect(formatScheduleTime(Date.parse("2026-07-13T19:00:00Z"), now)).toContain("19:00");
+	expect(formatScheduleTime(Date.parse("2026-07-13T19:00:00Z"), now)).not.toBe("19:00");
+});
+
 test("torrent movie is DB-backed and serves HTTP byte ranges", async () => {
 	const item = torrent.listTorrentMedia()[0];
 	expect(item).toMatchObject({
@@ -752,7 +761,7 @@ test("Deildu catalog schema, browse parser, and commands are typed", () => {
 	expect(deildu.parseSizeBytes("2.02 GB")).toBe(2_168_958_484);
 	const html = `<table class="torrentlist"><tr>${[
 		"",
-		'<a title="Full Movie (2026) 1080p">Full Movie (...)</a>',
+		'<a title="B&oacute;k &amp; s&ouml;gur">Full Movie (...)</a>',
 		'<a href="download.php/1224612/x.torrent">Sækja</a>',
 		"0",
 		"0",
@@ -766,7 +775,7 @@ test("Deildu catalog schema, browse parser, and commands are typed", () => {
 		{
 			id: 1_224_612,
 			categoryId: 6,
-			title: "Full Movie (2026) 1080p",
+			title: "Bók & sögur", 
 			sizeBytes: 2_168_958_484,
 			seeders: 3,
 			leechers: 1,
@@ -830,7 +839,7 @@ test("Deildu torrent metadata selects safe file offsets", () => {
 
 test("completed Deildu download serves HTTP byte ranges", async () => {
 	const now = Date.now();
-	db.query(
+	db.prepare(
 		`INSERT INTO deildu_items
 		 (id,category_id,title,size_bytes,seeders,leechers,last_seen_at,updated_at)
 		 VALUES (42,6,'Test movie',1024,1,0,?,?)`,
@@ -838,7 +847,7 @@ test("completed Deildu download serves HTTP byte ranges", async () => {
 	const directory = join(root, "torrents/deildu/42");
 	mkdirSync(directory, { recursive: true });
 	writeFileSync(join(directory, "movie.mp4"), Buffer.alloc(1024, 7));
-	db.query(
+	db.prepare(
 		`INSERT INTO deildu_downloads
 		 (item_id,file_index,file_path,file_size,status,downloaded_bytes,error,updated_at)
 		 VALUES (42,1,'42/movie.mp4',1024,'ready',1024,'',?)`,

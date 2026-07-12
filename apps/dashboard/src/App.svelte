@@ -10,7 +10,7 @@
   import Wifi from "lucide-svelte/icons/wifi";
   import { startSolarTheme, type SolarTheme } from "../../../packages/protocol/solar";
   import { tvServerUrl, tvServerWebSocketUrl, type DashboardContent, type HomeState, type Station } from "../../../packages/protocol";
-  import { contentIsStale, deriveRuvNow, EMPTY_DASHBOARD_CONTENT, eventProgress, fetchDashboardContent, formatClock, formatDate, formatDuration, formatTime, relativeTime } from "../../../packages/protocol/content";
+  import { contentIsStale, deriveRuvNow, EMPTY_DASHBOARD_CONTENT, eventProgress, fetchDashboardContent, formatClock, formatDate, formatDuration, formatScheduleTime, relativeTime } from "../../../packages/protocol/content";
   import DeilduPage from "./DeilduPage.svelte";
   import GlobalPlayer from "./GlobalPlayer.svelte";
   import RadioPage from "./RadioPage.svelte";
@@ -125,7 +125,7 @@
               <div><b>Í BEINNI</b><h2>{item.current?.title ?? item.channel.name}</h2><p>{item.current?.category || item.current?.description || "Bein útsending"}</p></div>
             </div>
             {#if item.current}<div class="event-progress"><i style={`width:${eventProgress(item.current, now)}%`}></i></div>{/if}
-            <div class="upcoming"><h3>Næst</h3>{#if item.upcoming.length}{#each item.upcoming.slice(0,4) as event}<div><time>{formatTime(event.startTime)}</time><span><strong>{event.title}</strong><small>{event.category || (event.endTime ? formatDuration((event.endTime-event.startTime)/1000) : "")}</small></span></div>{/each}{:else}<p>Engin næstu atriði skráð.</p>{/if}</div>
+            <div class="upcoming"><h3>Næst</h3>{#if item.upcoming.length}{#each item.upcoming.slice(0,4) as event}<div><time>{formatScheduleTime(event.startTime, now)}</time><span><strong>{event.title}</strong><small>{event.category || (event.endTime ? formatDuration((event.endTime-event.startTime)/1000) : "")}</small></span></div>{/each}{:else}<p>Engin næstu atriði skráð.</p>{/if}</div>
           </article>
         {/each}
       </section>

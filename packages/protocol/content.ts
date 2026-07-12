@@ -99,13 +99,21 @@ export function interpolateMediaTime(
 export function relativeTime(timestamp: number | null, now: number) {
 	if (!timestamp) return "";
 	const seconds = Math.round((timestamp - now) / 1_000);
-	const formatter = new Intl.RelativeTimeFormat("is", { numeric: "auto" });
-	if (Math.abs(seconds) < 60) return formatter.format(seconds, "second");
-	const minutes = Math.round(seconds / 60);
-	if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
-	const hours = Math.round(minutes / 60);
-	if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
-	return formatter.format(Math.round(hours / 24), "day");
+	if (Math.abs(seconds) < 60) return seconds > 0 ? "eftir stutta stund" : "núna";
+	let value: number;
+	let unit: string;
+	if (Math.abs(seconds) < 3_600) {
+		value = Math.round(seconds / 60);
+		unit = "mín.";
+	} else if (Math.abs(seconds) < 86_400) {
+		value = Math.round(seconds / 3_600);
+		unit = "klst.";
+	} else {
+		value = Math.round(seconds / 86_400);
+		unit = "dögum";
+	}
+	if (value > 0) return `eftir ${value} ${unit}`;
+	return `fyrir ${Math.abs(value)} ${unit}`;
 }
 
 export function formatClock(now: number) {
@@ -134,6 +142,13 @@ export function formatTime(timestamp: number) {
 		hour12: false,
 		timeZone: "Atlantic/Reykjavik",
 	}).format(timestamp);
+}
+
+export function formatScheduleTime(timestamp: number, now: number) {
+	const date = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Atlantic/Reykjavik" });
+	if (date.format(timestamp) === date.format(now)) return formatTime(timestamp);
+	const weekday = new Intl.DateTimeFormat("is-IS", { weekday: "short", timeZone: "Atlantic/Reykjavik" });
+	return `${weekday.format(timestamp)} ${formatTime(timestamp)}`;
 }
 
 export function formatDuration(seconds: number) {
