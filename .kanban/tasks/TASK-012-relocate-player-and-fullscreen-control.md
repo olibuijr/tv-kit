@@ -1,9 +1,9 @@
 ---
 id: TASK-012
 title: "Remove page player and dock fullscreen on the mobile player"
-status: todo
+status: review
 priority: medium
-assignee: ""
+assignee: "pi"
 epic: ""
 created: "2026-07-12"
 updated: "2026-07-12"
@@ -17,21 +17,23 @@ The player should not occupy the main Heim page or the other content pages. Play
 
 ## Done
 
-- [ ] The player UI is removed from Heim and all other TV dashboard content pages without stopping active playback.
-- [ ] The tablet remote retains one global player docked at the bottom immediately above the navigation bar.
-- [ ] The fullscreen button is moved into that mobile global player and removed from its previous location.
-- [ ] The docked player and fullscreen control remain visible and usable across every tablet tab without obscuring page content or the navigation bar.
-- [ ] Fullscreen state continues through the existing server-authoritative WebSocket command/state flow and remains synchronized with the TV.
+- [x] The player UI is removed from Heim and all other TV dashboard content pages without stopping active playback.
+- [x] The tablet remote retains one global player docked at the bottom immediately above the navigation bar.
+- [x] The fullscreen button is moved into that mobile global player and removed from its previous location.
+- [x] The docked player and fullscreen control remain visible and usable across every tablet tab without obscuring page content or the navigation bar.
+- [x] Fullscreen state continues through the existing server-authoritative WebSocket command/state flow and remains synchronized with the TV.
 - [ ] Safe-area insets, narrow tablet layouts, keyboard focus, and reduced-motion preferences are handled.
 - [ ] Automated checks cover persistent playback across page changes and fullscreen toggling; `tvctl kit check` passes.
 - [ ] Tablet browser and physical-TV verification confirm placement, page clearance, fullscreen entry/exit, and uninterrupted playback.
 
 ## Subtasks
 
-- [ ] SUB-001 Remove the dashboard page-level player presentation without changing playback ownership.
-- [ ] SUB-002 Dock the tablet global player above the bottom navigation.
-- [ ] SUB-003 Move and verify the fullscreen control in the docked mobile player.
+- [x] SUB-001 Remove the dashboard page-level player presentation without changing playback ownership.
+- [x] SUB-002 Dock the tablet global player above the bottom navigation.
+- [x] SUB-003 Move the fullscreen control into the docked mobile player.
 
 ## Notes
 
 Reuse the existing player state and `fullscreen` command. Do not introduce another player instance or client-side playback state.
+
+Implemented and deployed. Verification was explicitly deferred by the user.
