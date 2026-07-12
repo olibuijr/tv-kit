@@ -17,16 +17,19 @@ Prototype a polished Schedules page inside TV Kit chat for natural-language and 
 
 ## Done
 
-- [ ] Chat has a Schedules view with empty/list states.
-- [ ] Accessible modal creates script or natural-language mock jobs.
-- [ ] Mock jobs can be run, paused, resumed, and removed locally.
-- [ ] TV-local checks pass and the deployed remote is browser-verified.
+- [x] Chat has a Schedules view with empty/list states.
+- [x] Accessible modal creates script or natural-language mock jobs.
+- [x] Mock jobs can be run, paused, resumed, and removed locally.
+- [x] TV-local checks pass and the deployed remote is browser-verified.
 
 ## Subtasks
 
-- [ ] SUB-001 Build the one-file mock UI.
-- [ ] SUB-002 Check, deploy, and browser-verify.
+- [x] SUB-001 Build the one-file mock UI.
+- [x] SUB-002 Check, deploy, and browser-verify.
 
 ## Notes
 
 - Mock state is intentionally in-memory; persistence and execution are out of scope.
+- Added a requested one-run Titan LLM batch demo for cleaning 403 filenames with animated progress.
+- `tvctl kit check`: 21 tests, 0 failures, 0 Svelte errors/warnings.
+- Browser verified schedules navigation and modal; screenshot: `/tmp/tv-kit-schedules-mock.png`.
