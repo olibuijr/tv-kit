@@ -271,6 +271,7 @@ export type Command =
 	| { type: "command"; action: "fullscreen" | "lights"; value: boolean }
 	| { type: "command"; action: "view"; value: View }
 	| { type: "command"; action: "scene"; value: string }
+	| { type: "command"; action: "deildu-scrape"; value?: { pages?: number } }
 	| { type: "command"; action: "player-tracks"; value: PlayerTrackReport };
 
 export type RuvChannelsResponse = { channels: RuvChannel[] };

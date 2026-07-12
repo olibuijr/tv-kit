@@ -221,6 +221,23 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			...(label === undefined ? {} : { label }),
 		};
 	}
+	if (action === "deildu-scrape") {
+		if (candidate.value !== undefined && candidate.value !== null &&
+			(typeof candidate.value !== "object" || Array.isArray(candidate.value)))
+			return null;
+		const val = candidate.value as { pages?: unknown } | undefined;
+		let pages: number | undefined;
+		if (val?.pages !== undefined) {
+			if (!finiteNumber(val.pages, 1, 50, true)) return null;
+			pages = val.pages as number;
+		}
+		return {
+			type: "command",
+			action,
+			value: pages !== undefined ? { pages } : undefined,
+			...(label === undefined ? {} : { label }),
+		} as ParsedCommand;
+	}
 	if (
 		action === "player-tracks" &&
 		candidate.value &&

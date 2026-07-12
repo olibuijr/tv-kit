@@ -58,6 +58,7 @@ import {
 	serveTorrentMedia,
 	torrentVideoUrl,
 } from "./torrentMedia";
+import { scrapeDeildu, scrapeState } from "./deilduScraper";
 
 process.title = "tvserverd";
 
@@ -674,7 +675,11 @@ const server = Bun.serve({
 		if (url.pathname === "/dashboard/content")
 			return corsJson(
 				req,
-				{ ...dashboardContent(), torrentMovies: listTorrentMedia() },
+				{
+					...dashboardContent(),
+					torrentMovies: listTorrentMedia(),
+					deilduScrape: scrapeState,
+				},
 				60,
 			);
 		if (url.pathname === "/ruv/continue") {
@@ -791,6 +796,11 @@ const server = Bun.serve({
 			}
 			if (message.action === "torrent-media") {
 				playTorrentMedia(message.value);
+				return;
+			}
+			if (message.action === "deildu-scrape") {
+				scrapeDeildu(message.value?.pages);
+				broadcast();
 				return;
 			}
 			if (message.action === "ruv-program") {

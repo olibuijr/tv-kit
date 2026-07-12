@@ -1,5 +1,11 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	truncateSync,
+	writeFileSync,
+} from "node:fs";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -59,7 +65,9 @@ Object.assign(Bun.env, {
 
 const torrentDir = join(root, "torrents/big-buck-bunny/Big Buck Bunny");
 mkdirSync(torrentDir, { recursive: true });
-truncateSync(join(torrentDir, "Big Buck Bunny.mp4"), 276_134_947);
+const torrentVideo = join(torrentDir, "Big Buck Bunny.mp4");
+writeFileSync(torrentVideo, "");
+truncateSync(torrentVideo, 276_134_947);
 writeFileSync(join(torrentDir, "poster.jpg"), "poster");
 
 const database = await import("../apps/server/src/db");
@@ -710,9 +718,7 @@ test("torrent movie is DB-backed and serves HTTP byte ranges", async () => {
 		"big-buck-bunny",
 	);
 	expect(response.status).toBe(206);
-	expect(response.headers.get("Content-Range")).toBe(
-		"bytes 10-19/276134947",
-	);
+	expect(response.headers.get("Content-Range")).toBe("bytes 10-19/276134947");
 	expect((await response.arrayBuffer()).byteLength).toBe(10);
 	expect(
 		torrent.serveTorrentMedia(

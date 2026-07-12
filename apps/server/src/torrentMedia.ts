@@ -81,7 +81,9 @@ function row(id: string) {
 
 export function listTorrentMedia() {
 	return (
-		statement("SELECT * FROM torrent_media ORDER BY title").all() as TorrentMediaRow[]
+		statement(
+			"SELECT * FROM torrent_media ORDER BY title",
+		).all() as TorrentMediaRow[]
 	).map((item) => dto(refresh(item)));
 }
 
@@ -102,15 +104,23 @@ export function serveTorrentMedia(
 	const value = row(id);
 	if (!value || (asset === "video" && value.status !== "ready"))
 		return new Response("not found", { status: 404 });
-	const relativePath = asset === "poster" ? value.artwork_path : value.file_path;
+	const relativePath =
+		asset === "poster" ? value.artwork_path : value.file_path;
 	if (!relativePath) return new Response("not found", { status: 404 });
 	const path = mediaPath(relativePath);
 	if (!existsSync(path)) return new Response("not found", { status: 404 });
 
 	const file = Bun.file(path);
-	const headers = corsHeaders(request, config.allowedOrigins, asset === "poster" ? 3600 : 0);
+	const headers = corsHeaders(
+		request,
+		config.allowedOrigins,
+		asset === "poster" ? 3600 : 0,
+	);
 	headers.set("Accept-Ranges", "bytes");
-	headers.set("Content-Type", file.type || (asset === "video" ? "video/mp4" : "image/jpeg"));
+	headers.set(
+		"Content-Type",
+		file.type || (asset === "video" ? "video/mp4" : "image/jpeg"),
+	);
 	const range = request.headers.get("Range");
 	if (!range) {
 		headers.set("Content-Length", String(file.size));
