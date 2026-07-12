@@ -54,6 +54,8 @@ async function cleanBatch(rows: Row[]): Promise<Candidate[]> {
 		body: JSON.stringify({
 			model: config.localLlmModel,
 			temperature: 0,
+			max_tokens: 512,
+			chat_template_kwargs: { enable_thinking: false },
 			messages: [
 				{
 					role: "system",
@@ -133,7 +135,7 @@ export async function cleanImportedDeildu(
 	}
 	const rows = ids.length
 		? (statement(
-				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
+				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND i.cleanup_error='' AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
 			).all(...ids) as Row[])
 		: [];
 	Object.assign(deilduCleanupState, {
@@ -149,12 +151,35 @@ export async function cleanImportedDeildu(
 	});
 	onProgress?.();
 	try {
-		for (let offset = 0; offset < rows.length; offset++) {
-			const batch = rows.slice(offset, offset + 1);
-			deilduCleanupState.message = `${offset + 1}/${rows.length} · ${batch[0].original_title}`;
+		for (let offset = 0; offset < rows.length; offset += 8) {
+			const batch = rows.slice(offset, offset + 8);
+			deilduCleanupState.message = `${offset + 1}–${offset + batch.length}/${rows.length} · ${batch[0].original_title}`;
 			console.info(`Deildu cleanup ${deilduCleanupState.message}`);
 			onProgress?.();
-			const candidates = await cleanBatch(batch);
+			let candidates: Candidate[];
+			try {
+				candidates = await cleanBatch(batch);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error("Deildu cleanup batch failed", deilduCleanupState.message, message);
+				for (const row of batch)
+					statement("UPDATE deildu_items SET cleanup_error=? WHERE id=?").run(message, row.id);
+				deilduCleanupState.reviewed += batch.length;
+				deilduCleanupState.current = offset + batch.length;
+				onProgress?.();
+				continue;
+			}
+			const matches = new Map(
+				await Promise.all(
+					batch.map(async (row) => {
+						const candidate = candidates.find((item) => item.id === row.id);
+						const validation = candidate
+							? validateDeilduTitleCleanup(row.original_title, candidate)
+							: null;
+						return [row.id, candidate && validation?.status === "accept" ? await tmdb(candidate, row.media_kind) : null] as const;
+					}),
+				),
+			);
 			for (const row of batch) {
 				const candidate = candidates.find((item) => item.id === row.id);
 				const validation = candidate
@@ -175,7 +200,7 @@ export async function cleanImportedDeildu(
 					resolution: candidate.resolution,
 				};
 				deilduCleanupState.phase = "tmdb";
-				const match = await tmdb(candidate, row.media_kind);
+				const match = matches.get(row.id);
 				if (match) {
 					metadata.tmdb = match;
 					deilduCleanupState.enriched++;
@@ -192,8 +217,8 @@ export async function cleanImportedDeildu(
 				);
 				deilduCleanupState.cleaned++;
 			}
-			deilduCleanupState.current = offset + 1;
-			deilduCleanupState.message = `${deilduCleanupState.current}/${rows.length} · ${batch[0].original_title}`;
+			deilduCleanupState.current = offset + batch.length;
+			deilduCleanupState.message = `${deilduCleanupState.current}/${rows.length} · ${batch.at(-1)?.original_title}`;
 			onProgress?.();
 		}
 		Object.assign(deilduCleanupState, {
