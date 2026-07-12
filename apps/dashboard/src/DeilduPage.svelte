@@ -17,7 +17,7 @@
   const icon = (kind: DeilduCategory["mediaKind"]) => kind === "movie" ? Film : kind === "tv" ? Tv : kind === "audio" ? Headphones : Package;
   const formatBytes = (bytes: number) => bytes >= 1_073_741_824 ? `${(bytes / 1_073_741_824).toFixed(1)} GB` : bytes >= 1_048_576 ? `${Math.round(bytes / 1_048_576)} MB` : "Stærð óþekkt";
   const status = (item: DeilduItem) => item.status === "ready" ? "Tilbúið" : item.status === "downloading" || item.status === "starting" ? "Sækist" : item.status === "paused" ? "Ólokið" : item.status === "error" ? "Villa" : item.playable ? "Tilbúið til straums" : "Skráasafn";
-  const categoryItems = (categoryId: number) => items.filter(item => item.categoryId === categoryId).slice(0, 24);
+  const categoryItems = (categoryId: number) => items.filter(item => item.categoryId === categoryId);
 </script>
 
 <main class="deildu-page">

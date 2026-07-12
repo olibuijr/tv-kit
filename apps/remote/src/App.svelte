@@ -59,6 +59,10 @@
   let newsArticleError = "";
   let newsParagraphs: string[] = [];
   let contentController: AbortController | undefined;
+  let contentGeneration = 0;
+  let deilduPage = 1;
+  let deilduCategoryId = 0;
+  let deilduLoading = false;
   let scrollFrame = 0;
   const refreshMs = Math.max(15_000, Number(import.meta.env.VITE_CONTENT_REFRESH_MS || 30_000));
   const [send, receive] = crossfade({ duration: 320, easing: quintOut });
@@ -145,10 +149,35 @@
     } catch { feedback = "Ekki náðist í þættina"; }
     finally { detailLoading = false; }
   }
-  async function refreshContent() {
+  async function refreshContent(page?: number, append = false) {
+    const request = ++contentGeneration;
+    const categoryId = state?.deilduCategoryId ?? 0;
+    const sameCategory = categoryId === deilduCategoryId;
+    const requestedPage = page ?? 1;
+    const preserveLoadedPages = sameCategory && !append && deilduPage > 1;
+    deilduLoading = append;
     contentController?.abort(); contentController = new AbortController();
-    try { content = await fetchDashboardContent(contentController.signal); contentError = ""; }
-    catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) contentError = "Gögn uppfærast ekki"; }
+    try {
+      const next = await fetchDashboardContent(contentController.signal, categoryId, requestedPage);
+      if (request !== contentGeneration) return;
+      const items = append || preserveLoadedPages
+        ? [...new Map([...next.deilduItems, ...content.deilduItems].map(item => [item.id, item])).values()]
+        : next.deilduItems;
+      const currentPage = append || preserveLoadedPages ? Math.max(deilduPage, next.deilduPagination.page) : next.deilduPagination.page;
+      content = {
+        ...next,
+        deilduItems: items,
+        deilduPagination: { ...next.deilduPagination, page: currentPage },
+      };
+      deilduPage = currentPage;
+      deilduCategoryId = categoryId;
+      contentError = "";
+    } catch (error) {
+      if (request !== contentGeneration || (error instanceof DOMException && error.name === "AbortError")) return;
+      contentError = "Gögn uppfærast ekki";
+    } finally {
+      if (request === contentGeneration) deilduLoading = false;
+    }
   }
   async function refreshStations() {
     try { const response = await fetch(`${tvServerUrl()}/radio/stations`); if (response.ok) stations = (await response.json()).stations; } catch { /* preserve cache */ }
@@ -171,9 +200,10 @@
         lastMessage = Date.now();
         const message = JSON.parse(data);
         if (message.type === "state") {
+          const previousCategoryId = state?.deilduCategoryId;
           const changedAction = message.state.lastAction !== state?.lastAction;
           state = message.state;
-          if (activeTab === "Deildu" && changedAction) void refreshContent();
+          if (activeTab === "Deildu" && (changedAction || state.deilduCategoryId !== previousCategoryId)) void refreshContent();
           if (activeTab === "Fréttir" && state.newsArticleId !== selectedNewsArticleId) void loadNewsArticle(state.newsArticleId);
         }
       };
@@ -236,7 +266,7 @@
     {:else if activeTab === "Útvarp"}
       <section class="radio-browser panel"><div class="panel-heading"><div><RadioTower size={20}/><h2>Íslenskt útvarp</h2></div><span>{stations.length} stöðvar</span></div>{#if favouriteStations.length}<h3><Heart size={15} fill="currentColor"/> Uppáhaldsstöðvar</h3><div class="radio-grid">{#each favouriteStations as station (station.id)}<article in:receive={{key:station.id}} out:send={{key:station.id}} animate:flip={{duration:320}}><button class="tune" on:click={() => selectStation(station)}>{#if station.logoUrl}<img src={station.logoUrl} alt=""/>{/if}<span><strong>{station.name}</strong><small>{station.terrestrial?`${station.frequency.toFixed(1)} FM`:"Á netinu"}</small></span></button><button class="heart" aria-label={`Fjarlægja ${station.name} úr uppáhaldi`} on:click={() => toggleStation(station)}><Heart size={17} fill="currentColor"/></button></article>{/each}</div>{/if}<h3><RadioTower size={15}/> Allar stöðvar</h3><div class="radio-grid">{#each otherStations as station (station.id)}<article in:receive={{key:station.id}} out:send={{key:station.id}} animate:flip={{duration:320}}><button class="tune" on:click={() => selectStation(station)}>{#if station.logoUrl}<img src={station.logoUrl} alt=""/>{/if}<span><strong>{station.name}</strong><small>{station.terrestrial?`${station.frequency.toFixed(1)} FM`:"Á netinu"}</small></span></button><button class="heart" aria-label={`Setja ${station.name} í uppáhald`} on:click={() => toggleStation(station)}><Heart size={17}/></button></article>{/each}</div></section>
     {:else if activeTab === "Deildu"}
-      <DeilduPage categories={content.deilduCategories} items={content.deilduItems} scrape={content.deilduScrape} selectedCategoryId={state.deilduCategoryId} {command}/>
+      <DeilduPage categories={content.deilduCategories} items={content.deilduItems} pagination={content.deilduPagination} scrape={content.deilduScrape} selectedCategoryId={state.deilduCategoryId} loading={deilduLoading} loadPage={(page) => void refreshContent(page, true)} {command}/>
     {:else if activeTab === "Spjall"}
       <AgentChatPage />
     {:else if activeTab === "Sarpur"}

@@ -1,13 +1,14 @@
 import type { ServerWebSocket } from "bun";
 import { resolve } from "node:path";
-import type {
-	CastMode,
-	CastSource,
-	HomeState,
-	MediaItem,
-	PlayerPanel,
-	Programme,
-	Station,
+import {
+	DEILDU_PAGE_SIZE,
+	type CastMode,
+	type CastSource,
+	type HomeState,
+	type MediaItem,
+	type PlayerPanel,
+	type Programme,
+	type Station,
 } from "../../../packages/protocol";
 import { parseCommandMessage } from "./commands";
 import { chatWithLocalAgent, parseAgentReply } from "./agent";
@@ -843,18 +844,55 @@ const server = Bun.serve({
 				source: config.radioSourceName,
 				stations: radioStations(),
 			});
-		if (url.pathname === "/dashboard/content")
+		if (url.pathname === "/dashboard/content") {
+			const deilduPage = boundedInt(
+				url.searchParams.get("deilduPage"),
+				1,
+				1,
+				10_000,
+			);
+			const deilduCategory = boundedInt(
+				url.searchParams.get("deilduCategory"),
+				0,
+				0,
+				Number.MAX_SAFE_INTEGER,
+			);
+			const deilduPageSize = boundedInt(
+				url.searchParams.get("deilduPageSize"),
+				DEILDU_PAGE_SIZE,
+				1,
+				100,
+			);
+			if (
+				deilduPage === null ||
+				deilduCategory === null ||
+				deilduPageSize === null
+			)
+				return badRequest(req, "invalid Deildu pagination");
+			const deilduCategories = listDeilduCategories();
+			if (
+				deilduCategory > 0 &&
+				!deilduCategories.some((category) => category.id === deilduCategory)
+			)
+				return badRequest(req, "unknown Deildu category");
+			const deildu = listDeilduItems(
+				deilduPage,
+				deilduPageSize,
+				deilduCategory,
+			);
 			return corsJson(
 				req,
 				{
 					...dashboardContent(),
 					torrentMovies: listTorrentMedia(),
-					deilduCategories: listDeilduCategories(),
-					deilduItems: listDeilduItems(),
+					deilduCategories,
+					deilduItems: deildu.items,
+					deilduPagination: deildu.pagination,
 					deilduScrape: { ...scrapeState },
 				},
 				60,
 			);
+		}
 		if (url.pathname === "/ruv/continue") {
 			const limit = boundedInt(url.searchParams.get("limit"), 12, 1, 50);
 			if (limit === null)

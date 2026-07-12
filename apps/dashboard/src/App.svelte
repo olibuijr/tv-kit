@@ -61,7 +61,7 @@
     contentController?.abort();
     contentController = new AbortController();
     try {
-      const next = await fetchDashboardContent(contentController.signal);
+      const next = await fetchDashboardContent(contentController.signal, state?.deilduCategoryId ?? 0);
       if (request !== generation) return;
       content = next;
       contentError = "";
@@ -115,7 +115,9 @@
         lastMessage = Date.now();
         const message = JSON.parse(data);
         if (message.type === "state") {
+          const previousCategoryId = state?.deilduCategoryId;
           state = message.state;
+          if (state.deilduCategoryId !== previousCategoryId) void refreshContent();
           if (state.newsArticleId !== selectedNewsArticleId) void loadNewsArticle(state.newsArticleId);
         } else if (message.type === "news-scroll" && typeof message.value === "number" && newsPage) newsPage.scrollTop = message.value * Math.max(0, newsPage.scrollHeight - newsPage.clientHeight);
       };

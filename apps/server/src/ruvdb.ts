@@ -786,7 +786,11 @@ export function totalRuvEpisodeCount() {
 
 export function dashboardContent(): Omit<
 	DashboardContent,
-	"torrentMovies" | "deilduCategories" | "deilduItems" | "deilduScrape"
+	| "torrentMovies"
+	| "deilduCategories"
+	| "deilduItems"
+	| "deilduPagination"
+	| "deilduScrape"
 > {
 	return {
 		generatedAt: Date.now(),

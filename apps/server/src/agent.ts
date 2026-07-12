@@ -209,6 +209,43 @@ function executeTool(name: string, rawArguments: string, context: ToolContext) {
 	return { ok: false, error: "Óþekkt verkfæri" };
 }
 
+function actionReply(name: string, result: unknown): AgentReply | undefined {
+	if (!result || typeof result !== "object" || !(result as Record<string, unknown>).ok) return undefined;
+	const state = (result as Record<string, unknown>).state as ReturnType<typeof stateSummary> | undefined;
+	if (!state) return undefined;
+	if (name === "tune_tv_channel") return { type: "action", title: state.media.source, text: `Stilla á ${state.media.source}. ${state.media.title} er í beinni.`, data: { state } };
+	if (name === "set_volume") return { type: "action", title: "Hljóðstyrkur", text: `Hljóðstyrkur er nú ${state.volume}%.`, data: { volume: state.volume } };
+	if (name === "toggle_playback") return { type: "action", title: state.playing ? "Spilun" : "Pása", text: state.playing ? "Spilun hafin." : "Spilun í pásu.", data: { playing: state.playing } };
+	return undefined;
+}
+
+function directActionRequest(message: string, context: ToolContext) {
+	const normalized = message.toLocaleLowerCase("is-IS");
+	if (/\b(still\w*|set\w*|skip\w*)/iu.test(normalized)) {
+		const normalize = (value: string) => value.toLocaleLowerCase("is-IS").replace(/\s+/g, " ").trim();
+		const channel = context.listChannels().find((item) => {
+			const name = normalize(item.name);
+			const slug = normalize(item.slug);
+			return normalized.includes(name) || normalized.includes(slug);
+		});
+		if (channel) {
+			const ok = context.tuneChannel(channel.slug);
+			const result = { ok, state: stateSummary(context.getState()) };
+			return { reply: actionReply("tune_tv_channel", result) ?? { type: "error", title: "Rás", text: "Ekki tókst að stilla rás." }, tools: ["tune_tv_channel"] };
+		}
+	}
+	const volume = normalized.match(/(?:hljóð|volume)[^\d]{0,20}(\d{1,3})/u);
+	if (volume) {
+		const value = Number(volume[1]);
+		if (value >= 0 && value <= 100) {
+			context.setVolume(value);
+			const result = { ok: true, state: stateSummary(context.getState()) };
+			return { reply: actionReply("set_volume", result) ?? { type: "action", title: "Hljóðstyrkur", text: `Hljóðstyrkur er nú ${value}%.` }, tools: ["set_volume"] };
+		}
+	}
+	return undefined;
+}
+
 export async function chatWithLocalAgent(input: {
 	baseUrl: string;
 	apiKey: string;
@@ -288,6 +325,7 @@ export async function chatWithLocalAgent(input: {
 			content: message.content ?? null,
 			tool_calls: toolCalls,
 		});
+		let completedAction: AgentReply | undefined;
 		for (const call of toolCalls.slice(0, 5)) {
 			usedTools.push(call.function.name);
 			const result = executeTool(
@@ -295,12 +333,14 @@ export async function chatWithLocalAgent(input: {
 				call.function.arguments,
 				input.context,
 			);
+			completedAction = actionReply(call.function.name, result) || completedAction;
 			messages.push({
 				role: "tool",
 				tool_call_id: call.id,
 				content: JSON.stringify(result),
 			});
 		}
+		if (completedAction) return { reply: completedAction, tools: usedTools };
 	}
 	return {
 		reply: {
