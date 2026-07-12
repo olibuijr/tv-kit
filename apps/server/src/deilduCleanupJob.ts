@@ -135,7 +135,7 @@ export async function cleanImportedDeildu(
 	}
 	const rows = ids.length
 		? (statement(
-				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND i.cleanup_error='' AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
+				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND (i.cleanup_error='' OR i.cleanup_error LIKE 'Unable to connect%' OR i.cleanup_error LIKE 'Titan LLM HTTP %') AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
 			).all(...ids) as Row[])
 		: [];
 	Object.assign(deilduCleanupState, {
