@@ -118,7 +118,7 @@
           <article class:active={state.media.id === `ruv-channel-${item.channel.slug}`} class="channel-focus">
             <div class="channel-art" class:has-image={Boolean(item.current?.watchFromStart?.image)} style={item.current?.watchFromStart?.image || (state.media.id === `ruv-channel-${item.channel.slug}` ? state.media.artwork : "") ? `background-image:url('${item.current?.watchFromStart?.image || state.media.artwork}')` : undefined}>
               <span>{item.channel.name}</span>
-              <div><b>Í BEINNI</b><h2>{item.current?.title ?? "Engar dagskrárupplýsingar"}</h2><p>{item.current?.category || item.current?.description || "Bein útsending"}</p></div>
+              <div><b>Í BEINNI</b><h2>{item.current?.title ?? item.channel.name}</h2><p>{item.current?.category || item.current?.description || "Bein útsending"}</p></div>
             </div>
             {#if item.current}<div class="event-progress"><i style={`width:${eventProgress(item.current, now)}%`}></i></div>{/if}
             <div class="upcoming"><h3>Næst</h3>{#if item.upcoming.length}{#each item.upcoming.slice(0,4) as event}<div><time>{formatTime(event.startTime)}</time><span><strong>{event.title}</strong><small>{event.category || (event.endTime ? formatDuration((event.endTime-event.startTime)/1000) : "")}</small></span></div>{/each}{:else}<p>Engin næstu atriði skráð.</p>{/if}</div>
