@@ -201,7 +201,9 @@ afterAll(() => {
 });
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
-	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+	expect(database.schemaVersions()).toEqual([
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+	]);
 	expect(database.databaseIntegrity()).toBe("ok");
 	database.seedStateIfMissing(state("fyrsta"));
 	database.seedStateIfMissing(state("annað"));

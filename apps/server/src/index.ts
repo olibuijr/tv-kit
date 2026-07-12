@@ -864,11 +864,20 @@ const server = Bun.serve({
 		close(ws) {
 			clients.delete(ws);
 		},
-		message(_ws, raw) {
+		message(ws, raw) {
 			let decoded: unknown;
 			try {
 				decoded = JSON.parse(String(raw));
 			} catch {
+				return;
+			}
+			if (
+				decoded &&
+				typeof decoded === "object" &&
+				"type" in decoded &&
+				decoded.type === "ping"
+			) {
+				ws.send(JSON.stringify({ type: "pong" }));
 				return;
 			}
 			const message = parseCommandMessage(decoded);

@@ -120,11 +120,13 @@
     const stationTimer = window.setInterval(refreshStations, 300_000);
     const stopSolar = startSolarTheme(theme => solar = theme);
     let retry: number;
+    let lastMessage = Date.now();
     const connect = () => {
       socket = new WebSocket(tvServerWebSocketUrl());
-      socket.onopen = () => { connected = true; void refreshContent(); };
+      socket.onopen = () => { connected = true; lastMessage = Date.now(); void refreshContent(); };
       socket.onclose = () => { connected = false; retry = window.setTimeout(connect, 1_200); };
       socket.onmessage = ({ data }) => {
+        lastMessage = Date.now();
         const message = JSON.parse(data);
         if (message.type === "state") {
           const changedAction = message.state.lastAction !== state?.lastAction;
@@ -133,10 +135,19 @@
         }
       };
     };
-    const visibility = () => { if (document.visibilityState === "visible") { now = Date.now(); void refreshContent(); } };
+    const heartbeatTimer = window.setInterval(() => {
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - lastMessage > 30_000) socket.close();
+      else socket.send(JSON.stringify({ type: "ping" }));
+    }, 10_000);
+    const visibility = () => {
+      if (document.visibilityState !== "visible") return;
+      now = Date.now(); void refreshContent();
+      if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > 30_000) socket.close();
+    };
     document.addEventListener("visibilitychange", visibility);
     void refreshContent(); void refreshStations(); connect();
-    return () => { clearInterval(clockTimer); clearInterval(contentTimer); clearInterval(stationTimer); clearTimeout(retry); contentController?.abort(); socket?.close(); stopSolar(); document.removeEventListener("visibilitychange", visibility); };
+    return () => { clearInterval(clockTimer); clearInterval(contentTimer); clearInterval(stationTimer); clearInterval(heartbeatTimer); clearTimeout(retry); contentController?.abort(); socket?.close(); stopSolar(); document.removeEventListener("visibilitychange", visibility); };
   });
 </script>
 

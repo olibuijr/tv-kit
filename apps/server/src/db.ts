@@ -487,9 +487,9 @@ export function saveState(state: HomeState) {
 }
 
 export function getSetting(key: string): string | null {
-	const row = statement(
-		"SELECT payload FROM app_state WHERE key = ?",
-	).get(key) as { payload: string } | null;
+	const row = statement("SELECT payload FROM app_state WHERE key = ?").get(
+		key,
+	) as { payload: string } | null;
 	return row ? row.payload : null;
 }
 
