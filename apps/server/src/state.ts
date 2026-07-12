@@ -7,14 +7,7 @@ import type {
 	View,
 } from "../../../packages/protocol";
 
-const views = new Set<View>([
-	"home",
-	"tv",
-	"radio",
-	"media",
-	"deildu",
-	"news",
-]);
+const views = new Set<View>(["home", "tv", "radio", "media", "deildu", "news"]);
 const kinds = new Set<MediaKind>([
 	"radio",
 	"music",
@@ -92,6 +85,7 @@ export function createDefaultState(): HomeState {
 		muted: false,
 		view: "home",
 		previousView: "home",
+		deilduCategoryId: 0,
 		power: true,
 		lastAction: "Tilbúið",
 		media: createEmptyMedia(),
@@ -286,6 +280,14 @@ export function normalizeHomeState(
 		muted: boolean(source.muted, fallback.muted),
 		view,
 		previousView,
+		deilduCategoryId: Math.round(
+			number(
+				source.deilduCategoryId,
+				fallback.deilduCategoryId,
+				0,
+				Number.MAX_SAFE_INTEGER,
+			),
+		),
 		power: boolean(source.power, fallback.power),
 		lastAction: string(source.lastAction, fallback.lastAction, 256),
 		media,

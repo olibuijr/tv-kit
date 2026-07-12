@@ -2,14 +2,7 @@ import type { Command, View } from "../../../packages/protocol";
 
 export type ParsedCommand = Command & { label?: string };
 
-const views = new Set<View>([
-	"home",
-	"tv",
-	"radio",
-	"media",
-	"deildu",
-	"news",
-]);
+const views = new Set<View>(["home", "tv", "radio", "media", "deildu", "news"]);
 const noValueActions = new Set([
 	"toggle-play",
 	"toggle-mute",
@@ -84,6 +77,16 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			...(label === undefined ? {} : { label }),
 		};
 	if (action === "channel" && finiteNumber(candidate.value, 1, 2, true))
+		return {
+			type: "command",
+			action,
+			value: candidate.value as number,
+			...(label === undefined ? {} : { label }),
+		};
+	if (
+		action === "deildu-category" &&
+		finiteNumber(candidate.value, 0, Number.MAX_SAFE_INTEGER, true)
+	)
 		return {
 			type: "command",
 			action,

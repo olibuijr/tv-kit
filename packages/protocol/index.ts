@@ -221,6 +221,7 @@ export type DeilduItem = {
 	seeders: number;
 	leechers: number;
 	addedAt: number | null;
+	aiCleaned: boolean;
 	status: DeilduDownloadStatus;
 	downloadedBytes: number;
 	totalBytes: number;
@@ -271,6 +272,7 @@ export type HomeState = {
 	muted: boolean;
 	view: View;
 	previousView: View;
+	deilduCategoryId: number;
 	power: boolean;
 	lastAction: string;
 	media: MediaItem;
@@ -306,7 +308,8 @@ export type Command =
 				| "media-duration"
 				| "ruv-program"
 				| "program-favorite"
-				| "deildu-play";
+				| "deildu-play"
+				| "deildu-category";
 			value: number;
 	  }
 	| {

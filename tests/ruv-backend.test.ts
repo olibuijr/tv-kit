@@ -126,6 +126,7 @@ const state = (lastAction: string): HomeState => ({
 	muted: false,
 	view: "home",
 	previousView: "home",
+	deilduCategoryId: 0,
 	power: true,
 	lastAction,
 	media,
@@ -721,8 +722,12 @@ test("content time labels are Icelandic and show the weekday outside today", () 
 	const now = Date.parse("2026-07-12T13:00:00Z");
 	expect(relativeTime(now - 2 * 3_600_000, now)).toBe("fyrir 2 klst.");
 	expect(relativeTime(now + 5 * 60_000, now)).toBe("eftir 5 mín.");
-	expect(formatScheduleTime(Date.parse("2026-07-13T19:00:00Z"), now)).toContain("19:00");
-	expect(formatScheduleTime(Date.parse("2026-07-13T19:00:00Z"), now)).not.toBe("19:00");
+	expect(formatScheduleTime(Date.parse("2026-07-13T19:00:00Z"), now)).toContain(
+		"19:00",
+	);
+	expect(formatScheduleTime(Date.parse("2026-07-13T19:00:00Z"), now)).not.toBe(
+		"19:00",
+	);
 });
 
 test("torrent movie is DB-backed and serves HTTP byte ranges", async () => {
@@ -770,12 +775,14 @@ test("Deildu catalog schema, browse parser, and commands are typed", () => {
 		"2 sinnum",
 		"3",
 		"1",
-	].map((cell) => `<td>${cell}</td>`).join("")}</tr></table>`;
+	]
+		.map((cell) => `<td>${cell}</td>`)
+		.join("")}</tr></table>`;
 	expect(deildu.parseBrowsePage(html, 6)).toEqual([
 		{
 			id: 1_224_612,
 			categoryId: 6,
-			title: "Bók & sögur", 
+			title: "Bók & sögur",
 			sizeBytes: 2_168_958_484,
 			seeders: 3,
 			leechers: 1,
@@ -785,6 +792,13 @@ test("Deildu catalog schema, browse parser, and commands are typed", () => {
 	expect(
 		parseCommandMessage({ type: "command", action: "deildu-play", value: 42 }),
 	).toEqual({ type: "command", action: "deildu-play", value: 42 });
+	expect(
+		parseCommandMessage({
+			type: "command",
+			action: "deildu-category",
+			value: 6,
+		}),
+	).toEqual({ type: "command", action: "deildu-category", value: 6 });
 	expect(
 		parseCommandMessage({
 			type: "command",
@@ -925,6 +939,7 @@ test("program-favorite command parses like other integer commands", () => {
 
 test("shared state normalization carries program favourites", () => {
 	expect(createDefaultState().programFavorites).toEqual([]);
+	expect(createDefaultState().deilduCategoryId).toBe(0);
 	const normalized = normalizeHomeState(
 		{},
 		{ radio: [3], tv: ["ruv"], programs: [5, 2] },
@@ -932,4 +947,5 @@ test("shared state normalization carries program favourites", () => {
 	expect(normalized.programFavorites).toEqual([5, 2]);
 	expect(normalized.radioFavorites).toEqual([3]);
 	expect(normalized.tvFavorites).toEqual(["ruv"]);
+	expect(normalized.deilduCategoryId).toBe(0);
 });

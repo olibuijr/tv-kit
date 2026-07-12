@@ -14,13 +14,12 @@
   export let items: DeilduItem[] = [];
   export let scrape: DeilduScrapeState;
   export let command: (action: string, value?: unknown, label?: string) => void;
-
-  let selectedCategory = 0;
+  export let selectedCategoryId = 0;
   let query = "";
 
   $: normalizedQuery = query.trim().toLocaleLowerCase("is");
   $: visibleItems = items.filter(item =>
-    (!selectedCategory || item.categoryId === selectedCategory) &&
+    (!selectedCategoryId || item.categoryId === selectedCategoryId) &&
     (!normalizedQuery || `${item.title} ${item.categoryName}`.toLocaleLowerCase("is").includes(normalizedQuery))
   );
 
@@ -29,6 +28,7 @@
   const status = (item: DeilduItem) => item.status === "ready" ? "Tilbúið" : item.status === "downloading" || item.status === "starting" ? "Sækist" : item.status === "paused" ? "Ólokið" : item.status === "error" ? item.error || "Villa" : item.playable ? "Straumspilun" : "Ekki spilunarflokkur";
   const busy = (item: DeilduItem) => item.status === "starting" || item.status === "downloading";
   const progress = (item: DeilduItem) => item.totalBytes ? Math.min(100, item.downloadedBytes / item.totalBytes * 100) : 0;
+  const selectCategory = (id: number, name: string) => command("deildu-category", id, id ? `Deildu: ${name}` : "Allar Deildu-færslur");
 </script>
 
 <section class="deildu-browser panel" aria-busy={scrape.running}>
@@ -45,9 +45,9 @@
   <label class="search"><Search size={17}/><input bind:value={query} placeholder="Leita á Deildu" aria-label="Leita í Deildu-færslum"/></label>
 
   <nav class="categories" aria-label="Deildu-flokkar">
-    <button class:active={selectedCategory === 0} aria-pressed={selectedCategory === 0} on:click={() => selectedCategory = 0}><Package size={16}/><span>Allt</span><small>{items.length}</small></button>
+    <button class:active={selectedCategoryId === 0} aria-pressed={selectedCategoryId === 0} on:click={() => selectCategory(0, "Allt")}><Package size={16}/><span>Allt</span><small>{items.length}</small></button>
     {#each categories as category}
-      <button class:active={selectedCategory === category.id} aria-pressed={selectedCategory === category.id} on:click={() => selectedCategory = category.id}>
+      <button class:active={selectedCategoryId === category.id} aria-pressed={selectedCategoryId === category.id} on:click={() => selectCategory(category.id, category.name)}>
         <svelte:component this={icon(category.mediaKind)} size={16}/><span>{category.name}</span><small>{category.itemCount}</small>
       </button>
     {/each}

@@ -27,6 +27,7 @@ type ItemRow = {
 	seeders: number;
 	leechers: number;
 	added_at: number | null;
+	ai_cleaned: number;
 	status: DeilduItem["status"];
 	downloaded_bytes: number;
 	total_bytes: number;
@@ -107,7 +108,7 @@ const categoryQuery = `
 const itemSelect = `
 	SELECT i.id, i.category_id, c.name AS category_name,
 		c.media_kind, c.playable, i.title, i.size_bytes,
-		i.seeders, i.leechers, i.added_at,
+		i.seeders, i.leechers, i.added_at, i.ai_cleaned,
 		COALESCE(d.status, 'missing') AS status,
 		COALESCE(d.downloaded_bytes, 0) AS downloaded_bytes,
 		CASE WHEN d.file_size > 0 THEN d.file_size ELSE i.size_bytes END AS total_bytes,
@@ -141,6 +142,7 @@ function itemDto(row: ItemRow): DeilduItem {
 		seeders: row.seeders,
 		leechers: row.leechers,
 		addedAt: row.added_at,
+		aiCleaned: Boolean(row.ai_cleaned),
 		status: row.status,
 		downloadedBytes: row.downloaded_bytes,
 		totalBytes: row.total_bytes,
@@ -177,18 +179,50 @@ export function getDeilduItem(id: number): DeilduItem | null {
 }
 
 const htmlEntities: Record<string, string> = {
-	amp: "&", apos: "'", quot: '"', lt: "<", gt: ">", nbsp: " ",
-	aacute: "á", Aacute: "Á", eth: "ð", ETH: "Ð", eacute: "é", Eacute: "É",
-	iacute: "í", Iacute: "Í", oacute: "ó", Oacute: "Ó", ouml: "ö", Ouml: "Ö",
-	thorn: "þ", THORN: "Þ", uacute: "ú", Uacute: "Ú", yacute: "ý", Yacute: "Ý",
-	aelig: "æ", AElig: "Æ", ndash: "–", mdash: "—", rsquo: "’", lsquo: "‘",
+	amp: "&",
+	apos: "'",
+	quot: '"',
+	lt: "<",
+	gt: ">",
+	nbsp: " ",
+	aacute: "á",
+	Aacute: "Á",
+	eth: "ð",
+	ETH: "Ð",
+	eacute: "é",
+	Eacute: "É",
+	iacute: "í",
+	Iacute: "Í",
+	oacute: "ó",
+	Oacute: "Ó",
+	ouml: "ö",
+	Ouml: "Ö",
+	thorn: "þ",
+	THORN: "Þ",
+	uacute: "ú",
+	Uacute: "Ú",
+	yacute: "ý",
+	Yacute: "Ý",
+	aelig: "æ",
+	AElig: "Æ",
+	ndash: "–",
+	mdash: "—",
+	rsquo: "’",
+	lsquo: "‘",
 };
 
 function decodeHtml(value: string) {
 	return value
-		.replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-		.replace(/&#x([\da-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
-		.replace(/&([a-z][\w]+);/gi, (entity, name: string) => htmlEntities[name] ?? entity);
+		.replace(/&#(\d+);/g, (_, code: string) =>
+			String.fromCodePoint(Number(code)),
+		)
+		.replace(/&#x([\da-f]+);/gi, (_, code: string) =>
+			String.fromCodePoint(Number.parseInt(code, 16)),
+		)
+		.replace(
+			/&([a-z][\w]+);/gi,
+			(entity, name: string) => htmlEntities[name] ?? entity,
+		);
 }
 
 function text(value: string) {
@@ -245,8 +279,7 @@ export function parseBrowsePage(
 			title: title.slice(0, 512),
 			sizeBytes: parseSizeBytes(text(cells[6])),
 			seeders,
-			leechers:
-				Number.isSafeInteger(leechers) && leechers >= 0 ? leechers : 0,
+			leechers: Number.isSafeInteger(leechers) && leechers >= 0 ? leechers : 0,
 			addedAt: parseAddedAt(text(cells[5])),
 		});
 	}
@@ -310,13 +343,12 @@ async function fetchPage(categoryId: number, page: number) {
 	const bytes = await response.arrayBuffer();
 	const utf8 = new TextDecoder().decode(bytes);
 	// Deildu occasionally serves legacy Icelandic bytes without declaring charset.
-	return utf8.includes("�") ? new TextDecoder("windows-1252").decode(bytes) : utf8;
+	return utf8.includes("�")
+		? new TextDecoder("windows-1252").decode(bytes)
+		: utf8;
 }
 
-function progress(
-	patch: Partial<DeilduScrapeState>,
-	onProgress?: () => void,
-) {
+function progress(patch: Partial<DeilduScrapeState>, onProgress?: () => void) {
 	Object.assign(scrapeState, patch);
 	onProgress?.();
 }
@@ -384,7 +416,8 @@ export async function scrapeDeildu(
 					);
 					if (items.length < 100) break;
 				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
+					const message =
+						error instanceof Error ? error.message : String(error);
 					errors.push(`${category.name}: ${message}`);
 					break;
 				}

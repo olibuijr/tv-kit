@@ -9,6 +9,10 @@
   export let categories: DeilduCategory[] = [];
   export let items: DeilduItem[] = [];
   export let scrape: DeilduScrapeState;
+  export let selectedCategoryId = 0;
+
+  $: selectedCategory = categories.find(category => category.id === selectedCategoryId);
+  $: displayedCategories = selectedCategory ? [selectedCategory] : categories;
 
   const icon = (kind: DeilduCategory["mediaKind"]) => kind === "movie" ? Film : kind === "tv" ? Tv : kind === "audio" ? Headphones : Package;
   const formatBytes = (bytes: number) => bytes >= 1_073_741_824 ? `${(bytes / 1_073_741_824).toFixed(1)} GB` : bytes >= 1_048_576 ? `${Math.round(bytes / 1_048_576)} MB` : "Stærð óþekkt";
@@ -18,8 +22,8 @@
 
 <main class="deildu-page">
   <div class="heading">
-    <div><span>DEILDU</span><h1>Kvikmyndir, þættir og deildir</h1></div>
-    <div><strong>{items.length} nýjustu færslur</strong><small>{scrape.running ? scrape.message : scrape.lastRun ? "Gagnagrunnur uppfærður" : "Bíður eftir fyrstu samstillingu"}</small></div>
+    <div><span>DEILDU</span><h1>{selectedCategory?.name ?? "Kvikmyndir, þættir og deildir"}</h1></div>
+    <div><strong>{selectedCategory ? `${selectedCategory.itemCount} færslur` : `${items.length} nýjustu færslur`}</strong><small>{scrape.running ? scrape.message : scrape.lastRun ? "Gagnagrunnur uppfærður" : "Bíður eftir fyrstu samstillingu"}</small></div>
   </div>
 
   <section class="sync" class:running={scrape.running} aria-live="polite">
@@ -27,19 +31,21 @@
     {#if scrape.running}<progress max={Math.max(1, scrape.totalPages)} value={scrape.completedPages}></progress>{/if}
   </section>
 
-  <section class="category-overview" aria-label="Deildu-flokkar">
-    {#each categories as category}
-      <article>
-        <svelte:component this={icon(category.mediaKind)} size={20}/>
-        <div><strong>{category.name}</strong><span>{category.itemCount} færslur</span></div>
-      </article>
-    {/each}
-  </section>
+  {#if !selectedCategory}
+    <section class="category-overview" aria-label="Deildu-flokkar">
+      {#each categories as category}
+        <article>
+          <svelte:component this={icon(category.mediaKind)} size={20}/>
+          <div><strong>{category.name}</strong><span>{category.itemCount} færslur</span></div>
+        </article>
+      {/each}
+    </section>
+  {/if}
 
   {#if !items.length}
     <section class="empty">Engar Deildu-færslur eru komnar í gagnagrunninn.</section>
   {:else}
-    {#each categories as category}
+    {#each displayedCategories as category}
       {@const entries = categoryItems(category.id)}
       {#if entries.length}
         <section class="category-section">

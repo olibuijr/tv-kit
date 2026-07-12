@@ -99,7 +99,8 @@ export function interpolateMediaTime(
 export function relativeTime(timestamp: number | null, now: number) {
 	if (!timestamp) return "";
 	const seconds = Math.round((timestamp - now) / 1_000);
-	if (Math.abs(seconds) < 60) return seconds > 0 ? "eftir stutta stund" : "núna";
+	if (Math.abs(seconds) < 60)
+		return seconds > 0 ? "eftir stutta stund" : "núna";
 	let value: number;
 	let unit: string;
 	if (Math.abs(seconds) < 3_600) {
@@ -145,9 +146,15 @@ export function formatTime(timestamp: number) {
 }
 
 export function formatScheduleTime(timestamp: number, now: number) {
-	const date = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Atlantic/Reykjavik" });
+	const date = new Intl.DateTimeFormat("en-CA", {
+		dateStyle: "short",
+		timeZone: "Atlantic/Reykjavik",
+	});
 	if (date.format(timestamp) === date.format(now)) return formatTime(timestamp);
-	const weekday = new Intl.DateTimeFormat("is-IS", { weekday: "short", timeZone: "Atlantic/Reykjavik" });
+	const weekday = new Intl.DateTimeFormat("is-IS", {
+		weekday: "short",
+		timeZone: "Atlantic/Reykjavik",
+	});
 	return `${weekday.format(timestamp)} ${formatTime(timestamp)}`;
 }
 

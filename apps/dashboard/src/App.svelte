@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fly } from "svelte/transition";
   import Clock3 from "lucide-svelte/icons/clock-3";
   import Home from "lucide-svelte/icons/home";
   import Newspaper from "lucide-svelte/icons/newspaper";
@@ -131,7 +132,7 @@
       </section>
     </main>
   {:else if state.view === "deildu"}
-    <DeilduPage categories={content.deilduCategories} items={content.deilduItems} scrape={content.deilduScrape}/>
+    <DeilduPage categories={content.deilduCategories} items={content.deilduItems} scrape={content.deilduScrape} selectedCategoryId={state.deilduCategoryId}/>
   {:else if state.view === "media"}
     <main class="page">
       <div class="heading"><div><span>SARPURINN</span><h1>Kvikmyndir og þættir</h1></div><div><strong>{torrentMovies.length + movies.length + shows.length} titlar</strong><small>Efni í boði núna</small></div></div>
@@ -159,7 +160,7 @@
     </main>
   {/if}
 
-  {#if state.power}<GlobalPlayer {state} {now} {command} {liveProgramme}/>{/if}
+  {#if state.power && state.playing}<div transition:fly={{ y: 96, duration: 220 }}><GlobalPlayer {state} {now} {command} {liveProgramme}/></div>{/if}
 </div>
 {:else}<div class="loading"><Home size={36}/><strong>Tengist tvserverd…</strong></div>{/if}
 

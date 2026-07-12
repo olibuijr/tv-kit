@@ -1,5 +1,14 @@
 # TV Kit engineering rules
 
+## Kanban task board
+
+- All tv-fast platform tasks live in `.kanban/`. Read `.kanban/README.md` for the full workflow.
+- Before starting new work, check `.kanban/tasks/` for unassigned tasks (`grep -l 'assignee: ""' .kanban/tasks/*.md`).
+- When you begin a task, set `assignee` to your agent name and `status` to `in-progress`. Update `updated` on every status change.
+- When done, set `status: review`. Another agent reviews and sets `status: done`.
+- Create new tasks by copying `.kanban/templates/task.md`. Group related tasks under an epic (`.kanban/templates/epic.md`).
+- One agent per task at a time. Never delete done tasks — they are the project log.
+
 ## Runtime architecture
 
 - Source may be edited in `~/Projects/tv-kit` on either midget or Titan; Syncthing mirrors the working tree while `.git` remains host-local (Titan only).
@@ -65,6 +74,18 @@
 - The TV dashboard is display-only. Never render pressable controls (buttons, sliders, links) on the dashboard; render passive indicators instead. Every interactive control lives on the tablet remote and mutates state through `tvserverd` WebSocket commands.
 - The dashboard `GlobalPlayer` shows transport/tool state as passive chips; seek, panels, subtitles, audio track, speed, favourite, and fullscreen are all remote commands (`seek`, `player-panel`, `subtitle`, `audio-track`, `playback-rate`, `toggle-favorite`, `radio-favorite`, `fullscreen`).
 - The fullscreen button must never appear on the TV; fullscreen is toggled only from the remote.
+
+## Remote-to-TV cross-verification (mandatory)
+
+- After every remote interaction that changes the TV state (navigation, tuning, playback, fullscreen), verify the TV dashboard reflects the change. Do not assume a remote click succeeded just because the remote UI updated.
+- **Primary verification**: dashboard DOM text. `agent_browser get text body --session tv-dashboard` is authoritative for state, navigation, and content changes. Cross-reference key text (page heading, item counts, titles) against the remote state.
+- **Physical screenshot** (`tvctl screenshot /tmp/tv-verify.png`): reserved for pixel-level verification — video playback, visual regressions, layout issues, or when the user asks what's on the TV screen. DOM text covers everything else.
+- When screenshot analysis is needed and the current model lacks vision support, spawn a one-shot agent:
+
+  ```sh
+  pi -p "Read the screenshot at /tmp/tv-verify.png and describe every section, text, and UI element visible." \
+     --provider openai-codex --model gpt-5.6-luna --no-lsp
+  ```
 
 ## Radio favourites
 

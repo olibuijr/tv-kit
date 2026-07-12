@@ -423,6 +423,13 @@ const migrations = [
     DELETE FROM torrent_media WHERE id GLOB 'deildu-[0-9]*';
   `,
 	},
+	{
+		version: 10,
+		sql: `
+    ALTER TABLE deildu_items ADD COLUMN ai_cleaned INTEGER NOT NULL DEFAULT 0
+      CHECK(ai_cleaned IN (0,1));
+  `,
+	},
 ];
 
 db.exec(
@@ -469,6 +476,20 @@ export function saveState(state: HomeState) {
     INSERT INTO app_state(key, payload, updated_at) VALUES ('shared', ?, ?)
     ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
   `).run(JSON.stringify(state), Date.now());
+}
+
+export function getSetting(key: string): string | null {
+	const row = statement(
+		"SELECT payload FROM app_state WHERE key = ?",
+	).get(key) as { payload: string } | null;
+	return row ? row.payload : null;
+}
+
+export function setSetting(key: string, value: string) {
+	statement(`
+    INSERT INTO app_state(key, payload, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
+  `).run(key, value, Date.now());
 }
 
 export function seedStateIfMissing(state: HomeState) {

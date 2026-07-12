@@ -409,7 +409,8 @@ async function playDeilduItem(id: number) {
 		return true;
 	} catch (error) {
 		await stopDeilduStream();
-		const message = error instanceof Error ? error.message : "Deildu-spilun mistókst";
+		const message =
+			error instanceof Error ? error.message : "Deildu-spilun mistókst";
 		state.playing = false;
 		state.media.status = "error";
 		state.media.subtitle = message;
@@ -898,6 +899,21 @@ const server = Bun.serve({
 			}
 			if (message.action === "deildu-play") {
 				void playDeilduItem(message.value);
+				return;
+			}
+			if (message.action === "deildu-category") {
+				if (
+					message.value &&
+					!listDeilduCategories().some(
+						(category) => category.id === message.value,
+					)
+				)
+					return;
+				state.previousView = state.view;
+				state.view = "deildu";
+				state.deilduCategoryId = message.value;
+				state.lastAction = message.label || "Deildu-flokkur";
+				broadcast();
 				return;
 			}
 			if (message.action === "ruv-program") {
