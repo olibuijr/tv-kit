@@ -1,8 +1,10 @@
-import type {
-	DeilduCategory,
-	DeilduItem,
-	DeilduMediaKind,
-	DeilduScrapeState,
+import {
+	DEILDU_PAGE_SIZE,
+	type DeilduCategory,
+	type DeilduItem,
+	type DeilduMediaKind,
+	type DeilduPagination,
+	type DeilduScrapeState,
 } from "../../../packages/protocol";
 import { config } from "./config";
 import { db, statement } from "./db";
@@ -155,22 +157,57 @@ export function listDeilduCategories(): DeilduCategory[] {
 	return (statement(categoryQuery).all() as CategoryRow[]).map(categoryDto);
 }
 
-export function listDeilduItems(limitPerCategory = 100): DeilduItem[] {
-	const bounded = Math.max(1, Math.min(500, Math.trunc(limitPerCategory)));
-	return (
-		statement(`
+export function listDeilduItems(
+	page = 1,
+	pageSize = DEILDU_PAGE_SIZE,
+	categoryId = 0,
+): { items: DeilduItem[]; pagination: DeilduPagination } {
+	const categories = listDeilduCategories();
+	const totalItems = categoryId
+		? (categories.find((category) => category.id === categoryId)?.itemCount ?? 0)
+		: categories.reduce((sum, category) => sum + category.itemCount, 0);
+	const boundedPageSize = Math.max(1, Math.min(100, Math.trunc(pageSize)));
+	const totalPages = Math.ceil(totalItems / boundedPageSize);
+	const boundedPage = Math.max(
+		1,
+		Math.min(totalPages || 1, Math.trunc(page)),
+	);
+	const offset = (boundedPage - 1) * boundedPageSize;
+	const ranked = categoryId
+		? `
 			WITH ranked AS (
 				SELECT i.*, ROW_NUMBER() OVER (
-					PARTITION BY i.category_id
 					ORDER BY COALESCE(i.added_at, 0) DESC, i.id DESC
-				) AS category_rank
+				) AS page_rank
+				FROM deildu_items i
+				WHERE i.category_id=?
+			)
+		`
+		: `
+			WITH ranked AS (
+				SELECT i.*, ROW_NUMBER() OVER (
+					ORDER BY COALESCE(i.added_at, 0) DESC, i.id DESC
+				) AS page_rank
 				FROM deildu_items i
 			)
-			${itemSelect.replace("FROM deildu_items i", "FROM ranked i")}
-			WHERE i.category_rank <= ?
-			ORDER BY c.sort_order, COALESCE(i.added_at, 0) DESC, i.id DESC
-		`).all(bounded) as ItemRow[]
-	).map(itemDto);
+		`;
+	const query = `${ranked}
+		${itemSelect.replace("FROM deildu_items i", "FROM ranked i")}
+		WHERE i.page_rank > ? AND i.page_rank <= ?
+		ORDER BY COALESCE(i.added_at, 0) DESC, i.id DESC`;
+	const rows = (categoryId
+		? statement(query).all(categoryId, offset, offset + boundedPageSize)
+		: statement(query).all(offset, offset + boundedPageSize)) as ItemRow[];
+	return {
+		items: rows.map(itemDto),
+		pagination: {
+			categoryId,
+			page: boundedPage,
+			pageSize: boundedPageSize,
+			totalItems,
+			totalPages,
+		},
+	};
 }
 
 export function getDeilduItem(id: number): DeilduItem | null {

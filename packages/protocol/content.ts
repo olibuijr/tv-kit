@@ -1,10 +1,11 @@
-import type {
-	DashboardContent,
-	MediaItem,
-	RuvEpgEvent,
-	RuvNewsArticle,
-	RuvNewsArticleResponse,
-	RuvNow,
+import {
+	DEILDU_PAGE_SIZE,
+	type DashboardContent,
+	type MediaItem,
+	type RuvEpgEvent,
+	type RuvNewsArticle,
+	type RuvNewsArticleResponse,
+	type RuvNow,
 } from "./index";
 import { tvServerUrl } from "./index";
 
@@ -16,6 +17,13 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 	torrentMovies: [],
 	deilduCategories: [],
 	deilduItems: [],
+	deilduPagination: {
+		categoryId: 0,
+		page: 1,
+		pageSize: DEILDU_PAGE_SIZE,
+		totalItems: 0,
+		totalPages: 0,
+	},
 	deilduScrape: {
 		running: false,
 		status: "idle",
@@ -36,8 +44,16 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 
 export async function fetchDashboardContent(
 	signal?: AbortSignal,
+	deilduCategoryId = 0,
+	deilduPage = 1,
+	deilduPageSize = DEILDU_PAGE_SIZE,
 ): Promise<DashboardContent> {
-	const response = await fetch(`${tvServerUrl()}/dashboard/content`, {
+	const params = new URLSearchParams({
+		deilduCategory: String(deilduCategoryId),
+		deilduPage: String(deilduPage),
+		deilduPageSize: String(deilduPageSize),
+	});
+	const response = await fetch(`${tvServerUrl()}/dashboard/content?${params}`, {
 		signal,
 	});
 	if (!response.ok) throw new Error(`tvserverd svaraði ${response.status}`);
@@ -49,6 +65,8 @@ export async function fetchDashboardContent(
 		torrentMovies: content.torrentMovies ?? [],
 		deilduCategories: content.deilduCategories ?? [],
 		deilduItems: content.deilduItems ?? [],
+		deilduPagination:
+			content.deilduPagination ?? EMPTY_DASHBOARD_CONTENT.deilduPagination,
 		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,
 	};
 }
