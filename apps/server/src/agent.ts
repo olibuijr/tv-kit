@@ -16,17 +16,46 @@ export type AgentReply = {
 
 const replyTypes = new Set<AgentReplyType>(["text", "status", "action", "list", "error"]);
 
+function firstJsonObject(value: string) {
+	for (let start = 0; start < value.length; start += 1) {
+		if (value[start] !== "{") continue;
+		let depth = 0;
+		let quoted = false;
+		let escaped = false;
+		for (let index = start; index < value.length; index += 1) {
+			const char = value[index];
+			if (quoted) {
+				if (escaped) escaped = false;
+				else if (char === "\\") escaped = true;
+				else if (char === '"') quoted = false;
+				continue;
+			}
+			if (char === '"') quoted = true;
+			else if (char === "{") depth += 1;
+			else if (char === "}" && --depth === 0) {
+				try { return JSON.parse(value.slice(start, index + 1)); } catch { break; }
+			}
+		}
+	}
+	return undefined;
+}
+
 export function parseAgentReply(content: string | null | undefined): AgentReply {
 	const fallback = content?.trim() || "Ég fékk ekkert svar frá líkaninu.";
 	const cleaned = fallback.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<\/think>/gi, "").trim();
 	try {
 		const candidate = (cleaned.split(/\n\s*\n/).find((part) => part.trim().startsWith("{")) || cleaned).replace(/^```(?:json)?\s*|\s*```$/g, "");
-		const parsed = JSON.parse(candidate);
+		let parsed: unknown;
+		try { parsed = JSON.parse(candidate); } catch { parsed = firstJsonObject(cleaned); }
 		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
 		const value = parsed as Record<string, unknown>;
 		const type = replyTypes.has(value.type as AgentReplyType) ? value.type as AgentReplyType : "text";
 		const title = typeof value.title === "string" && value.title.trim() ? value.title.trim().slice(0, 80) : "TV Kit";
 		const text = (typeof value.text === "string" && value.text.trim() ? value.text.trim() : cleaned || fallback).replace(/\*+/g, "").slice(0, 320);
+		if (typeof value.text === "string" && value.text.trim().startsWith("{")) {
+			const nested = parseAgentReply(value.text);
+			if (nested.type !== "text" || nested.title !== "TV Kit") return nested;
+		}
 		const data = value.data && typeof value.data === "object" && !Array.isArray(value.data) ? value.data as Record<string, unknown> : undefined;
 		return data ? { type, title, text, data } : { type, title, text };
 	} catch {
