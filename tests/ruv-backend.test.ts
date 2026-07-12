@@ -192,6 +192,7 @@ beforeEach(() => {
     DELETE FROM ruv_channels;
     DELETE FROM ruv_news_articles;
     DELETE FROM ruv_scrape_runs;
+    DELETE FROM agent_chat_messages;
     DELETE FROM app_state;
   `);
 });
@@ -203,7 +204,7 @@ afterAll(() => {
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
 	expect(database.schemaVersions()).toEqual([
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 	]);
 	expect(database.databaseIntegrity()).toBe("ok");
 	database.seedStateIfMissing(state("fyrsta"));
