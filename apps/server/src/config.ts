@@ -20,6 +20,18 @@ function number(name: string, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
 	return value;
 }
 
+function optionalNumber(name: string, fallback: number, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
+	const raw = optional(name);
+	if (!raw) return fallback;
+	const value = Number(raw);
+	if (!Number.isFinite(value) || value < minimum || value > maximum) {
+		throw new Error(
+			`Environment variable ${name} must be between ${minimum} and ${maximum}`,
+		);
+	}
+	return value;
+}
+
 export const config = Object.freeze({
 	port: number("PORT", 1, 65_535),
 	serverUrl: required("VITE_TVSERVER_URL").replace(/\/$/, ""),
@@ -95,6 +107,10 @@ export const config = Object.freeze({
 	ruvArchiveSearchBatchSize: number("RUV_ARCHIVE_SEARCH_BATCH_SIZE", 1, 8),
 	ruvArchiveSearchPacingMs: number("RUV_ARCHIVE_SEARCH_PACING_MS", 100, 60_000),
 	allowedOrigins: parseAllowedOrigins(required("TV_ALLOWED_ORIGINS")),
+	localLlmBaseUrl: optional("LOCAL_LLM_BASE_URL").replace(/\/$/, ""),
+	localLlmApiKey: optional("LOCAL_LLM_API_KEY"),
+	localLlmModel: optional("LOCAL_LLM_MODEL") || "empero-ai/Qwythos-9B-v2-GGUF",
+	localLlmTimeoutMs: optionalNumber("LOCAL_LLM_TIMEOUT_MS", 120_000, 5_000, 300_000),
 	castIngressToken: optional("CAST_INGRESS_TOKEN"),
 	latitude: required("HOME_LATITUDE"),
 	longitude: required("HOME_LONGITUDE"),

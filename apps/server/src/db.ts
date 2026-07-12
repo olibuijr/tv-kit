@@ -438,6 +438,19 @@ const migrations = [
         CAST(strftime('%s','now') AS INTEGER) * 1000);
   `,
 	},
+	{
+		version: 12,
+		sql: `
+    CREATE TABLE agent_chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id TEXT NOT NULL DEFAULT 'home',
+      role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX agent_chat_recent ON agent_chat_messages(profile_id, created_at DESC, id DESC);
+  `,
+	},
 ];
 
 db.exec(
@@ -463,6 +476,37 @@ export function schemaVersions() {
 			"SELECT version FROM schema_migrations ORDER BY version",
 		).all() as { version: number }[]
 	).map((row) => row.version);
+}
+
+export type AgentChatMessage = {
+	id: number;
+	role: "user" | "assistant";
+	content: string;
+	createdAt: number;
+};
+
+export function listAgentChatMessages(limit = 80): AgentChatMessage[] {
+	return (
+		statement(
+			"SELECT id, role, content, created_at FROM agent_chat_messages WHERE profile_id = 'home' ORDER BY id DESC LIMIT ?",
+		).all(Math.max(1, Math.min(200, limit))) as Array<{
+			id: number;
+			role: "user" | "assistant";
+			content: string;
+			created_at: number;
+		}>
+	).reverse().map((row) => ({
+		id: row.id,
+		role: row.role,
+		content: row.content,
+		createdAt: row.created_at,
+	}));
+}
+
+export function appendAgentChatMessage(role: "user" | "assistant", content: string) {
+	statement(
+		"INSERT INTO agent_chat_messages(profile_id, role, content, created_at) VALUES ('home', ?, ?, ?)",
+	).run(role, content, Date.now());
 }
 
 export function databaseIntegrity() {

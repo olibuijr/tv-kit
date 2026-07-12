@@ -127,6 +127,7 @@ const state = (lastAction: string): HomeState => ({
 	view: "home",
 	previousView: "home",
 	deilduCategoryId: 0,
+	newsArticleId: 0,
 	power: true,
 	lastAction,
 	media,

@@ -10,9 +10,12 @@ import type {
 	Station,
 } from "../../../packages/protocol";
 import { parseCommandMessage } from "./commands";
+import { chatWithLocalAgent } from "./agent";
 import { config } from "./config";
 import {
+	appendAgentChatMessage,
 	getCache,
+	listAgentChatMessages,
 	listRadioFavorites,
 	listRadioStations,
 	loadState,
@@ -724,6 +727,59 @@ const server = Bun.serve({
 			return preflightResponse(req, config.allowedOrigins);
 		if (!requestOriginAllowed(req, config.allowedOrigins))
 			return errorResponse(req, "origin not allowed", 403);
+		if (url.pathname === "/agent/chat") {
+			if (req.method === "GET")
+				return corsJson(req, { messages: listAgentChatMessages() }, 0);
+			if (req.method !== "POST")
+				return errorResponse(req, "method not allowed", 405);
+			if (!config.localLlmBaseUrl || !config.localLlmApiKey)
+				return errorResponse(req, "local agent is not configured", 503);
+			let payload: unknown;
+			try {
+				payload = await req.json();
+			} catch {
+				return badRequest(req, "invalid JSON");
+			}
+			const message =
+				payload && typeof payload === "object" && !Array.isArray(payload) &&
+				typeof (payload as Record<string, unknown>).message === "string"
+					? (payload as Record<string, string>).message.trim()
+					: "";
+			if (!message || message.length > 2_000)
+				return badRequest(req, "message must be 1–2000 characters");
+			const history = listAgentChatMessages(40).map(({ role, content }) => ({ role, content }));
+			appendAgentChatMessage("user", message);
+			try {
+				const result = await chatWithLocalAgent({
+					baseUrl: config.localLlmBaseUrl,
+					apiKey: config.localLlmApiKey,
+					model: config.localLlmModel,
+					timeoutMs: config.localLlmTimeoutMs,
+					history: [...history, { role: "user", content: message }],
+					context: {
+						getState: () => state,
+						listChannels: () => listRuvChannels("tv"),
+						getNow: (slug) => getRuvNow(slug),
+						tuneChannel: (slug) => tuneTvSlug(slug),
+						togglePlayback: () => {
+							state.playing = !state.playing;
+							state.lastAction = state.playing ? "Spilun hafin" : "Spilun í pásu";
+							broadcast();
+						},
+						setVolume: (volume) => {
+							state.volume = volume;
+							state.lastAction = `Hljóðstyrkur ${volume}%`;
+							broadcast();
+						},
+					},
+				});
+				appendAgentChatMessage("assistant", result.content);
+				return corsJson(req, { message: result.content, tools: result.tools, messages: listAgentChatMessages() }, 0);
+			} catch (error) {
+				console.error("local agent request failed", error instanceof Error ? error.message : error);
+				return errorResponse(req, "local agent request failed", 502);
+			}
+		}
 		const torrentMatch = url.pathname.match(
 			/^\/torrent\/media\/([a-z0-9-]{1,64})(?:\/(poster))?$/,
 		);
