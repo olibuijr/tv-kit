@@ -8,6 +8,7 @@
   import Search from "lucide-svelte/icons/search";
   import Tv from "lucide-svelte/icons/tv";
   import Users from "lucide-svelte/icons/users";
+  import { fade } from "svelte/transition";
   import type { DeilduCategory, DeilduItem, DeilduPagination, DeilduScrapeState } from "../../../packages/protocol";
 
   export let categories: DeilduCategory[] = [];
@@ -41,7 +42,7 @@
   </header>
 
   <div class="scrape-state" class:error={scrape.status === "error"} aria-live="polite">
-    <div><strong>{scrape.running ? scrape.message : scrape.lastError || scrape.message || "Deildu-gagnagrunnur tilbúinn"}</strong><span>{categories.length} deildir · {categories.reduce((sum, category) => sum + category.itemCount, 0)} færslur</span></div>
+    <div>{#key scrape.message}<strong in:fade={{ duration: 180 }} out:fade={{ duration: 120 }}>{scrape.running ? scrape.message : scrape.lastError || scrape.message || "Deildu-gagnagrunnur tilbúinn"}</strong>{/key}<span>{categories.length} deildir · {categories.reduce((sum, category) => sum + category.itemCount, 0)} færslur</span></div>
     {#if scrape.running}<progress max={Math.max(1, scrape.totalPages)} value={scrape.completedPages}></progress>{/if}
   </div>
 
