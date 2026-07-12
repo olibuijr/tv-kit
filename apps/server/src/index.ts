@@ -10,7 +10,7 @@ import type {
 	Station,
 } from "../../../packages/protocol";
 import { parseCommandMessage } from "./commands";
-import { chatWithLocalAgent } from "./agent";
+import { chatWithLocalAgent, parseAgentReply } from "./agent";
 import { config } from "./config";
 import {
 	appendAgentChatMessage,
@@ -97,6 +97,13 @@ const broadcast = () => {
 	const payload = JSON.stringify({ type: "state", state });
 	for (const client of clients) client.send(payload);
 };
+
+const agentChatMessages = () =>
+	listAgentChatMessages().map((message) =>
+		message.role === "assistant"
+			? { id: message.id, role: message.role, createdAt: message.createdAt, reply: parseAgentReply(message.content) }
+			: message,
+	);
 
 const radioStations = () => listRadioStations();
 const radioGuide = (station: Station): Programme[] => [
@@ -729,7 +736,7 @@ const server = Bun.serve({
 			return errorResponse(req, "origin not allowed", 403);
 		if (url.pathname === "/agent/chat") {
 			if (req.method === "GET")
-				return corsJson(req, { messages: listAgentChatMessages() }, 0);
+				return corsJson(req, { messages: agentChatMessages() }, 0);
 			if (req.method !== "POST")
 				return errorResponse(req, "method not allowed", 405);
 			if (!config.localLlmBaseUrl || !config.localLlmApiKey)
@@ -780,13 +787,13 @@ const server = Bun.serve({
 						},
 					},
 				});
-				appendAgentChatMessage("assistant", result.content);
+				appendAgentChatMessage("assistant", JSON.stringify(result.reply));
 				return corsJson(
 					req,
 					{
-						message: result.content,
+						message: result.reply,
 						tools: result.tools,
-						messages: listAgentChatMessages(),
+						messages: agentChatMessages(),
 					},
 					0,
 				);

@@ -5,6 +5,33 @@ export type AgentHistoryMessage = {
 	content: string;
 };
 
+export type AgentReplyType = "text" | "status" | "action" | "list" | "error";
+
+export type AgentReply = {
+	type: AgentReplyType;
+	title: string;
+	text: string;
+	data?: Record<string, unknown>;
+};
+
+const replyTypes = new Set<AgentReplyType>(["text", "status", "action", "list", "error"]);
+
+export function parseAgentReply(content: string | null | undefined): AgentReply {
+	const fallback = content?.trim() || "Ég fékk ekkert svar frá líkaninu.";
+	try {
+		const parsed = JSON.parse(fallback.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+		const value = parsed as Record<string, unknown>;
+		const type = replyTypes.has(value.type as AgentReplyType) ? value.type as AgentReplyType : "text";
+		const title = typeof value.title === "string" && value.title.trim() ? value.title.trim().slice(0, 80) : "TV Kit";
+		const text = typeof value.text === "string" && value.text.trim() ? value.text.trim().slice(0, 320) : fallback.slice(0, 320);
+		const data = value.data && typeof value.data === "object" && !Array.isArray(value.data) ? value.data as Record<string, unknown> : undefined;
+		return data ? { type, title, text, data } : { type, title, text };
+	} catch {
+		return { type: "text", title: "TV Kit", text: fallback.slice(0, 320) };
+	}
+}
+
 type ChatMessage =
 	| AgentHistoryMessage
 	| {
@@ -109,7 +136,10 @@ const systemPrompt = `Þú ert staðbundinn TV Kit aðstoðarmaður á íslensku
 Þú hjálpar notandanum að finna efni og stjórna sjónvarpinu með þeim verkfærum sem þú hefur.
 Notaðu verkfæri þegar spurningin krefst núverandi stöðu eða aðgerðar. Segðu skýrt frá ef aðgerð tókst ekki.
 Ekki finna upp dagskrá, stöðu eða efni. Ekki segjast hafa gert aðgerð nema verkfærið staðfesti hana.
-Ekki sýna API-lykla, kerfisupplýsingar eða innri verkfæraskilaboð. Hafðu svör stutt og hagnýt.`;
+Ekki sýna API-lykla, kerfisupplýsingar eða innri verkfæraskilaboð.
+Öll lokasvör verða að vera einn gildur JSON-hlutur og ekkert annað, án markdown eða kóðagirðinga:
+{"type":"text|status|action|list|error","title":"stuttur titill","text":"stutt svar","data":{}}
+Veldu type=action eftir framkvæmd, status fyrir stöðu, list fyrir lista og error ef eitthvað mistókst. Hafðu title stuttan og text mest 240 stafi. Notaðu data.items fyrir lista og bættu aðeins við gögnum sem verkfæri staðfesta.`;
 
 function stateSummary(state: HomeState) {
 	return {
@@ -212,6 +242,7 @@ export async function chatWithLocalAgent(input: {
 							messages,
 							tools,
 							tool_choice: "auto",
+							response_format: { type: "json_object" },
 							temperature: 0.2,
 							max_tokens: 512,
 						}),
@@ -240,7 +271,7 @@ export async function chatWithLocalAgent(input: {
 		const toolCalls = message.tool_calls ?? [];
 		if (!toolCalls.length)
 			return {
-				content: message.content?.trim() || "Ég fékk ekkert svar frá líkaninu.",
+				reply: parseAgentReply(message.content),
 				tools: usedTools,
 			};
 
@@ -264,8 +295,11 @@ export async function chatWithLocalAgent(input: {
 		}
 	}
 	return {
-		content:
-			"Ég gat ekki lokið verkfærakeðjunni. Prófaðu aftur með styttri beiðni.",
+		reply: {
+			type: "error",
+			title: "Verkfæri",
+			text: "Ég gat ekki lokið verkfærakeðjunni. Prófaðu aftur.",
+		},
 		tools: usedTools,
 	};
 }

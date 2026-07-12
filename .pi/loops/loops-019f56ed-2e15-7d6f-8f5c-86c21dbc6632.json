@@ -1,20 +1,4 @@
 {
-  "nextId": 5,
-  "loops": [
-    {
-      "id": "4",
-      "prompt": "Inspect the TV Kit sync result, then run tvctl kit check and browser-verify the deployed Sarpur dashboard.",
-      "trigger": {
-        "type": "event",
-        "source": "monitor:done",
-        "filter": "{\"monitorId\":\"4\"}"
-      },
-      "status": "active",
-      "recurring": false,
-      "createdAt": 1783870672224,
-      "updatedAt": 1783870672224,
-      "expiresAt": 1784475472224,
-      "fireCount": 0
-    }
-  ]
+  "nextId": 6,
+  "loops": []
 }
