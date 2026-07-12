@@ -128,10 +128,7 @@ const seedProgram = (
 	title: string,
 	categories: { title: string; slug: string }[] = [],
 ) =>
-	ruv.upsertRuvProgramRecord(
-		{ id, title, categories, ...programBase },
-		false,
-	);
+	ruv.upsertRuvProgramRecord({ id, title, categories, ...programBase }, false);
 const seedEpisode = (
 	id: string,
 	programId: number,
@@ -169,7 +166,7 @@ afterAll(() => {
 });
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
-	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6]);
+	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6, 7]);
 	expect(database.databaseIntegrity()).toBe("ok");
 	database.seedStateIfMissing(state("fyrsta"));
 	database.seedStateIfMissing(state("annað"));
@@ -262,6 +259,14 @@ test("EPG parsing records overlap flags and reconciliation selects non-header cu
 			geoblock: false,
 			checkedAt: 10,
 		},
+		{
+			slug: "ruv2",
+			name: "RÚV 2",
+			kind: "tv",
+			streamUrl: "https://example.test/live2.m3u8",
+			geoblock: false,
+			checkedAt: 10,
+		},
 	]);
 	const now = Date.now();
 	ruv.reconcileRuvEpg("ruv", now - 60_000, now + 3_600_000, [
@@ -326,6 +331,20 @@ test("EPG parsing records overlap flags and reconciliation selects non-header cu
 			.listRuvEpg("ruv", now - 60_000, now + 3_600_000)
 			.map((event) => event.eventId),
 	).toEqual([11, 12]);
+
+	// RÚV event ids are channel-scoped; the same id must never break a sync.
+	ruv.reconcileRuvEpg("ruv2", now - 60_000, now + 3_600_000, [
+		{
+			...parsed[1],
+			eventId: 11,
+			channelSlug: "ruv2",
+			startTime: now - 30_000,
+			endTime: now + 600_000,
+			title: "RÚV 2 núna",
+		},
+	]);
+	expect(ruv.getRuvNow("ruv", now)?.current?.title).toBe("Núna");
+	expect(ruv.getRuvNow("ruv2", now)?.current?.title).toBe("RÚV 2 núna");
 });
 
 test("daemon scheduler prioritizes due daily work and never overlaps children", async () => {
@@ -659,7 +678,9 @@ test("movie catalog is derived from persisted RÚV categories", () => {
 	expect(ruv.getRuvProgram(1)?.kind).toBe("movie");
 	expect(ruv.getRuvProgram(2)?.kind).toBe("series");
 	expect(ruv.listRuvMovies().map((program) => program.id)).toEqual([1]);
-	expect(ruv.dashboardContent().movies.map((program) => program.id)).toEqual([1]);
+	expect(ruv.dashboardContent().movies.map((program) => program.id)).toEqual([
+		1,
+	]);
 });
 
 test("program-favorite command parses like other integer commands", () => {

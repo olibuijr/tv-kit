@@ -19,7 +19,11 @@ export async function fetchDashboardContent(
 	});
 	if (!response.ok) throw new Error(`tvserverd svaraði ${response.status}`);
 	const content = (await response.json()) as DashboardContent;
-	return { ...EMPTY_DASHBOARD_CONTENT, ...content, movies: content.movies ?? [] };
+	return {
+		...EMPTY_DASHBOARD_CONTENT,
+		...content,
+		movies: content.movies ?? [],
+	};
 }
 
 export function deriveRuvNow(snapshot: RuvNow, now: number): RuvNow {

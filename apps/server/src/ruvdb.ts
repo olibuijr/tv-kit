@@ -99,8 +99,7 @@ function latestEpisode(programId: number) {
     JOIN ruv_programs p ON p.id=e.program_id
     WHERE e.program_id=? AND e.available=1 AND e.file_url!=''
     ORDER BY COALESCE(e.firstrun, '') DESC, e.updated_at DESC LIMIT 1
-  `)
-		.get(programId) as any;
+  `).get(programId) as any;
 	return row ? episodeDto(row) : null;
 }
 
@@ -177,8 +176,9 @@ function newsDto(row: any, includeBody = false): RuvNewsArticle {
 
 export function listRuvChannels(kind?: "tv" | "radio"): RuvChannel[] {
 	const rows = kind
-		? statement("SELECT * FROM ruv_channels WHERE kind=? ORDER BY CASE slug WHEN 'ruv' THEN 1 WHEN 'ruv2' THEN 2 WHEN 'ras1' THEN 3 ELSE 4 END")
-				.all(kind)
+		? statement(
+				"SELECT * FROM ruv_channels WHERE kind=? ORDER BY CASE slug WHEN 'ruv' THEN 1 WHEN 'ruv2' THEN 2 WHEN 'ras1' THEN 3 ELSE 4 END",
+			).all(kind)
 		: statement("SELECT * FROM ruv_channels ORDER BY kind, slug").all();
 	return (rows as any[]).map(channelDto);
 }
@@ -235,8 +235,9 @@ export function upsertRuvProgramRecord(
 	featured: boolean,
 	updatedAt = Date.now(),
 ) {
-	const existing = statement("SELECT title,foreign_title,slug,description,short_description,image,portrait_image,categories,channel,web_available_episodes,web_player_url,featured FROM ruv_programs WHERE id=?")
-		.get(program.id) as any;
+	const existing = statement(
+		"SELECT title,foreign_title,slug,description,short_description,image,portrait_image,categories,channel,web_available_episodes,web_player_url,featured FROM ruv_programs WHERE id=?",
+	).get(program.id) as any;
 	const categories = JSON.stringify(program.categories);
 	const values = [
 		program.title,
@@ -288,8 +289,9 @@ export function upsertRuvEpisodeRecord(
 	episode: RuvEpisodeRecord,
 	updatedAt = Date.now(),
 ) {
-	const existing = statement("SELECT title,description,firstrun,duration,duration_friendly,image,file_url,subtitles,rating,slug,event_id,file_expires,available FROM ruv_episodes WHERE id=?")
-		.get(episode.id) as any;
+	const existing = statement(
+		"SELECT title,description,firstrun,duration,duration_friendly,image,file_url,subtitles,rating,slug,event_id,file_expires,available FROM ruv_episodes WHERE id=?",
+	).get(episode.id) as any;
 	const subtitles = JSON.stringify(episode.subtitles ?? {});
 	const available =
 		Boolean(episode.fileUrl) &&
@@ -349,10 +351,12 @@ export function markMissingRuvEpisodesUnavailable(
 	currentIds: string[],
 ) {
 	const result = currentIds.length
-		? statement(`UPDATE ruv_episodes SET available=0 WHERE program_id=? AND id NOT IN (${currentIds.map(() => "?").join(",")})`)
-				.run(programId, ...currentIds)
-		: statement("UPDATE ruv_episodes SET available=0 WHERE program_id=?")
-				.run(programId);
+		? statement(
+				`UPDATE ruv_episodes SET available=0 WHERE program_id=? AND id NOT IN (${currentIds.map(() => "?").join(",")})`,
+			).run(programId, ...currentIds)
+		: statement("UPDATE ruv_episodes SET available=0 WHERE program_id=?").run(
+				programId,
+			);
 	statement(`UPDATE ruv_programs SET available=CASE WHEN EXISTS (
     SELECT 1 FROM ruv_episodes e WHERE e.program_id=? AND e.available=1 AND e.file_url!=''
   ) THEN 1 ELSE 0 END WHERE id=?`).run(programId, programId);
@@ -360,7 +364,9 @@ export function markMissingRuvEpisodesUnavailable(
 }
 
 export function setFeaturedRuvPrograms(ids: number[], seenAt = Date.now()) {
-	const update = statement("UPDATE ruv_programs SET featured=1,available=1,last_seen_at=? WHERE id=?");
+	const update = statement(
+		"UPDATE ruv_programs SET featured=1,available=1,last_seen_at=? WHERE id=?",
+	);
 	db.transaction(() => {
 		db.exec("UPDATE ruv_programs SET featured=0");
 		for (const id of ids) update.run(seenAt, id);
@@ -370,8 +376,9 @@ export function setFeaturedRuvPrograms(ids: number[], seenAt = Date.now()) {
 export function markExpiredRuvEpisodes(
 	today = new Date().toISOString().slice(0, 10),
 ) {
-	const result = statement("UPDATE ruv_episodes SET available=0 WHERE available=1 AND (file_url='' OR (file_expires IS NOT NULL AND file_expires < ?))")
-		.run(today);
+	const result = statement(
+		"UPDATE ruv_episodes SET available=0 WHERE available=1 AND (file_url='' OR (file_expires IS NOT NULL AND file_expires < ?))",
+	).run(today);
 	db.exec(`UPDATE ruv_programs SET available=CASE WHEN EXISTS (
     SELECT 1 FROM ruv_episodes e WHERE e.program_id=ruv_programs.id AND e.available=1 AND e.file_url!=''
   ) THEN 1 ELSE 0 END`);
@@ -379,8 +386,9 @@ export function markExpiredRuvEpisodes(
 }
 
 export function listRuvPrograms(limit = 40, featuredOnly = true): RuvProgram[] {
-	const rows = statement(`SELECT * FROM ruv_programs WHERE available=1 ${featuredOnly ? "AND featured=1" : ""} ORDER BY featured DESC, updated_at DESC, title LIMIT ?`)
-		.all(limit) as any[];
+	const rows = statement(
+		`SELECT * FROM ruv_programs WHERE available=1 ${featuredOnly ? "AND featured=1" : ""} ORDER BY featured DESC, updated_at DESC, title LIMIT ?`,
+	).all(limit) as any[];
 	return rows.map(programDto);
 }
 
@@ -392,8 +400,7 @@ export function listRuvMovies(limit = 24): RuvProgram[] {
       WHERE json_extract(value, '$.slug')='kvikmyndir'
     )
     ORDER BY p.featured DESC, p.updated_at DESC, p.title LIMIT ?
-  `)
-		.all(limit) as any[];
+  `).all(limit) as any[];
 	return rows.map(programDto);
 }
 
@@ -404,20 +411,23 @@ export function getRuvProgram(id: number): RuvProgram | null {
 
 export function listRuvEpisodes(programId: number): RuvEpisode[] {
 	return (
-		statement(`SELECT e.*,p.title AS program_title,${progressColumns} FROM ruv_episodes e JOIN ruv_programs p ON p.id=e.program_id ${progressJoin} WHERE e.program_id=? ORDER BY COALESCE(e.firstrun,'') DESC`)
-			.all(programId) as any[]
+		statement(
+			`SELECT e.*,p.title AS program_title,${progressColumns} FROM ruv_episodes e JOIN ruv_programs p ON p.id=e.program_id ${progressJoin} WHERE e.program_id=? ORDER BY COALESCE(e.firstrun,'') DESC`,
+		).all(programId) as any[]
 	).map(episodeDto);
 }
 
 export function getRuvEpisode(id: string): RuvEpisode | null {
-	const row = statement(`SELECT e.*,p.title AS program_title,${progressColumns} FROM ruv_episodes e JOIN ruv_programs p ON p.id=e.program_id ${progressJoin} WHERE e.id=?`)
-		.get(id) as any;
+	const row = statement(
+		`SELECT e.*,p.title AS program_title,${progressColumns} FROM ruv_episodes e JOIN ruv_programs p ON p.id=e.program_id ${progressJoin} WHERE e.id=?`,
+	).get(id) as any;
 	return row ? episodeDto(row) : null;
 }
 
 export function getRuvEpisodeByEvent(eventId: number): RuvEpisode | null {
-	const row = statement("SELECT e.*,p.title AS program_title FROM ruv_episodes e JOIN ruv_programs p ON p.id=e.program_id WHERE e.event_id=? AND e.available=1 ORDER BY e.updated_at DESC LIMIT 1")
-		.get(eventId) as any;
+	const row = statement(
+		"SELECT e.*,p.title AS program_title FROM ruv_episodes e JOIN ruv_programs p ON p.id=e.program_id WHERE e.event_id=? AND e.available=1 ORDER BY e.updated_at DESC LIMIT 1",
+	).get(eventId) as any;
 	return row ? episodeDto(row) : null;
 }
 
@@ -430,21 +440,33 @@ export function reconcileRuvEpg(
 	events: RuvEpgRecord[],
 	updatedAt = Date.now(),
 ) {
+	const currentEvents = [
+		...new Map(events.map((event) => [event.eventId, event])).values(),
+	];
 	const before = new Set(
 		(
-			statement("SELECT event_id FROM ruv_epg_events WHERE channel_slug=? AND start_time>=? AND start_time<?")
-				.all(channelSlug, from, to) as any[]
+			statement(
+				"SELECT event_id FROM ruv_epg_events WHERE channel_slug=? AND start_time>=? AND start_time<?",
+			).all(channelSlug, from, to) as any[]
 		).map((row) => row.event_id),
 	);
 	const insert =
 		statement(`INSERT INTO ruv_epg_events(event_id,channel_slug,serie_id,start_time,end_time,title,original_title,description,category,episode_number,episode_total,rerun,live,more_info_url,updated_at,header,subevent)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(channel_slug,event_id) DO UPDATE SET
+      serie_id=excluded.serie_id,start_time=excluded.start_time,end_time=excluded.end_time,
+      title=excluded.title,original_title=excluded.original_title,description=excluded.description,
+      category=excluded.category,episode_number=excluded.episode_number,episode_total=excluded.episode_total,
+      rerun=excluded.rerun,live=excluded.live,more_info_url=excluded.more_info_url,
+      updated_at=excluded.updated_at,header=excluded.header,subevent=excluded.subevent`);
 	db.transaction(() => {
-		statement("DELETE FROM ruv_epg_events WHERE channel_slug=? AND start_time>=? AND start_time<?").run(channelSlug, from, to);
-		for (const event of events)
+		statement(
+			"DELETE FROM ruv_epg_events WHERE channel_slug=? AND start_time>=? AND start_time<?",
+		).run(channelSlug, from, to);
+		for (const event of currentEvents)
 			insert.run(
 				event.eventId,
-				event.channelSlug,
+				channelSlug,
 				event.seriesId,
 				event.startTime,
 				event.endTime,
@@ -462,10 +484,10 @@ export function reconcileRuvEpg(
 				Number(event.subevent),
 			);
 	})();
-	const current = new Set(events.map((event) => event.eventId));
+	const current = new Set(currentEvents.map((event) => event.eventId));
 	return {
-		added: events.filter((event) => !before.has(event.eventId)).length,
-		updated: events.filter((event) => before.has(event.eventId)).length,
+		added: currentEvents.filter((event) => !before.has(event.eventId)).length,
+		updated: currentEvents.filter((event) => before.has(event.eventId)).length,
 		removed: [...before].filter((id) => !current.has(id)).length,
 	};
 }
@@ -477,8 +499,9 @@ export function listRuvEpg(
 	limit = 200,
 ): RuvEpgEvent[] {
 	return (
-		statement("SELECT * FROM ruv_epg_events WHERE channel_slug=? AND header=0 AND start_time<? AND (end_time IS NULL OR end_time>?) ORDER BY start_time LIMIT ?")
-			.all(channelSlug, to, from, limit) as any[]
+		statement(
+			"SELECT * FROM ruv_epg_events WHERE channel_slug=? AND header=0 AND start_time<? AND (end_time IS NULL OR end_time>?) ORDER BY start_time LIMIT ?",
+		).all(channelSlug, to, from, limit) as any[]
 	).map(eventDto);
 }
 
@@ -489,10 +512,12 @@ export function getRuvNow(
 ): RuvNow | null {
 	const channel = listRuvChannels().find((item) => item.slug === channelSlug);
 	if (!channel) return null;
-	const currentRow = statement("SELECT * FROM ruv_epg_events WHERE channel_slug=? AND header=0 AND start_time<=? AND (end_time IS NULL OR end_time>?) ORDER BY start_time DESC LIMIT 1")
-		.get(channelSlug, now, now) as any;
-	const upcomingRows = statement("SELECT * FROM ruv_epg_events WHERE channel_slug=? AND header=0 AND start_time>? ORDER BY start_time LIMIT ?")
-		.all(channelSlug, now, upcomingLimit) as any[];
+	const currentRow = statement(
+		"SELECT * FROM ruv_epg_events WHERE channel_slug=? AND header=0 AND start_time<=? AND (end_time IS NULL OR end_time>?) ORDER BY start_time DESC LIMIT 1",
+	).get(channelSlug, now, now) as any;
+	const upcomingRows = statement(
+		"SELECT * FROM ruv_epg_events WHERE channel_slug=? AND header=0 AND start_time>? ORDER BY start_time LIMIT ?",
+	).all(channelSlug, now, upcomingLimit) as any[];
 	return {
 		channel,
 		current: currentRow ? eventDto(currentRow) : null,
@@ -506,8 +531,9 @@ export type RuvNewsRecord = Omit<RuvNewsArticle, "bodyHtml" | "updatedAt"> & {
 };
 
 export function getRuvNewsArticleMeta(id: number) {
-	return statement("SELECT id,last_published_at FROM ruv_news_articles WHERE id=?")
-		.get(id) as { id: number; last_published_at: number | null } | null;
+	return statement(
+		"SELECT id,last_published_at FROM ruv_news_articles WHERE id=?",
+	).get(id) as { id: number; last_published_at: number | null } | null;
 }
 
 export function upsertRuvNewsRecord(
@@ -551,26 +577,32 @@ export function listRuvNews(
 	categorySlug?: string,
 ): RuvNewsArticle[] {
 	const rows = categorySlug
-		? statement("SELECT * FROM ruv_news_articles WHERE category_slug=? ORDER BY first_published_at DESC LIMIT ?")
-				.all(categorySlug, limit)
-		: statement("SELECT * FROM ruv_news_articles ORDER BY first_published_at DESC LIMIT ?")
-				.all(limit);
+		? statement(
+				"SELECT * FROM ruv_news_articles WHERE category_slug=? ORDER BY first_published_at DESC LIMIT ?",
+			).all(categorySlug, limit)
+		: statement(
+				"SELECT * FROM ruv_news_articles ORDER BY first_published_at DESC LIMIT ?",
+			).all(limit);
 	return (rows as any[]).map((row) => newsDto(row));
 }
 
 export function getRuvNewsArticle(id: number): RuvNewsArticle | null {
-	const row = statement("SELECT * FROM ruv_news_articles WHERE id=?")
-		.get(id) as any;
+	const row = statement("SELECT * FROM ruv_news_articles WHERE id=?").get(
+		id,
+	) as any;
 	return row ? newsDto(row, true) : null;
 }
 
 export function startRuvScrape(kind: string) {
 	const now = Date.now();
-	statement("UPDATE ruv_scrape_runs SET finished_at=?,status='failed',error='superseded by a new run after previous process ended' WHERE kind=? AND status='running'").run(now, kind);
+	statement(
+		"UPDATE ruv_scrape_runs SET finished_at=?,status='failed',error='superseded by a new run after previous process ended' WHERE kind=? AND status='running'",
+	).run(now, kind);
 	return Number(
 		(
-			statement("INSERT INTO ruv_scrape_runs(kind,started_at,status) VALUES (?,?,'running') RETURNING id")
-				.get(kind, now) as any
+			statement(
+				"INSERT INTO ruv_scrape_runs(kind,started_at,status) VALUES (?,?,'running') RETURNING id",
+			).get(kind, now) as any
 		).id,
 	);
 }
@@ -579,7 +611,9 @@ export function finishRuvScrape(
 	id: number,
 	result: { itemCount: number; added: number; updated: number; error?: string },
 ) {
-	statement("UPDATE ruv_scrape_runs SET finished_at=?,item_count=?,added_count=?,updated_count=?,status=?,error=? WHERE id=?").run(
+	statement(
+		"UPDATE ruv_scrape_runs SET finished_at=?,item_count=?,added_count=?,updated_count=?,status=?,error=? WHERE id=?",
+	).run(
 		Date.now(),
 		result.itemCount,
 		result.added,
@@ -591,25 +625,32 @@ export function finishRuvScrape(
 }
 
 export function lastSuccessfulRuvScrape(kind: string) {
-	return statement("SELECT * FROM ruv_scrape_runs WHERE kind=? AND status='complete' ORDER BY finished_at DESC LIMIT 1")
-		.get(kind) as any;
+	return statement(
+		"SELECT * FROM ruv_scrape_runs WHERE kind=? AND status='complete' ORDER BY finished_at DESC LIMIT 1",
+	).get(kind) as any;
 }
 
 export function listTvFavorites() {
 	return (
-		statement("SELECT media_id FROM favourites WHERE profile_id='home' AND kind='tv' ORDER BY created_at")
-			.all() as { media_id: string }[]
+		statement(
+			"SELECT media_id FROM favourites WHERE profile_id='home' AND kind='tv' ORDER BY created_at",
+		).all() as { media_id: string }[]
 	).map((row) => row.media_id.replace(/^ruv-channel-/, ""));
 }
 
 export function toggleTvFavorite(slug: string) {
 	const mediaId = `ruv-channel-${slug}`;
-	const existing = statement("SELECT 1 AS present FROM favourites WHERE profile_id='home' AND media_id=? AND kind='tv'")
-		.get(mediaId);
+	const existing = statement(
+		"SELECT 1 AS present FROM favourites WHERE profile_id='home' AND media_id=? AND kind='tv'",
+	).get(mediaId);
 	if (existing)
-		statement("DELETE FROM favourites WHERE profile_id='home' AND media_id=? AND kind='tv'").run(mediaId);
+		statement(
+			"DELETE FROM favourites WHERE profile_id='home' AND media_id=? AND kind='tv'",
+		).run(mediaId);
 	else
-		statement("INSERT INTO favourites(profile_id,media_id,kind,created_at) VALUES ('home',?,'tv',?)").run(mediaId, Date.now());
+		statement(
+			"INSERT INTO favourites(profile_id,media_id,kind,created_at) VALUES ('home',?,'tv',?)",
+		).run(mediaId, Date.now());
 	return !existing;
 }
 
@@ -620,8 +661,9 @@ export function saveWatchProgress(
 	input: { episodeId: string; position: number; duration: number },
 	updatedAt = Date.now(),
 ): WatchProgress | null {
-	const episode = statement("SELECT id, program_id, duration FROM ruv_episodes WHERE id=?")
-		.get(input.episodeId) as any;
+	const episode = statement(
+		"SELECT id, program_id, duration FROM ruv_episodes WHERE id=?",
+	).get(input.episodeId) as any;
 	if (!episode) return null;
 	const duration = input.duration > 0 ? input.duration : episode.duration;
 	const position = Math.max(
@@ -647,8 +689,9 @@ export function saveWatchProgress(
 }
 
 export function getWatchProgress(episodeId: string): WatchProgress | null {
-	const row = statement("SELECT position, duration, finished, updated_at FROM watch_progress WHERE profile_id='home' AND episode_id=?")
-		.get(episodeId) as any;
+	const row = statement(
+		"SELECT position, duration, finished, updated_at FROM watch_progress WHERE profile_id='home' AND episode_id=?",
+	).get(episodeId) as any;
 	return row
 		? {
 				position: row.position,
@@ -678,8 +721,7 @@ export function listContinueWatching(limit = 12): ContinueWatchingItem[] {
     JOIN ruv_programs p ON p.id=e.program_id
     WHERE w.profile_id='home' AND w.finished=0 AND w.position>=? AND e.available=1 AND e.file_url!=''
     ORDER BY w.updated_at DESC LIMIT ?
-  `)
-		.all(minimumResumeSeconds, limit) as any[];
+  `).all(minimumResumeSeconds, limit) as any[];
 	return rows.map((row) => {
 		const duration = row.wp_duration > 0 ? row.wp_duration : row.duration;
 		return {
@@ -694,8 +736,9 @@ export function listContinueWatching(limit = 12): ContinueWatchingItem[] {
 
 export function listProgramFavorites() {
 	return (
-		statement("SELECT media_id FROM favourites WHERE profile_id='home' AND kind='ruv-program' ORDER BY created_at DESC, rowid DESC")
-			.all() as { media_id: string }[]
+		statement(
+			"SELECT media_id FROM favourites WHERE profile_id='home' AND kind='ruv-program' ORDER BY created_at DESC, rowid DESC",
+		).all() as { media_id: string }[]
 	)
 		.map((row) => Number(row.media_id.replace(/^ruv-program-/, "")))
 		.filter(Number.isSafeInteger);
@@ -703,12 +746,17 @@ export function listProgramFavorites() {
 
 export function toggleProgramFavorite(id: number) {
 	const mediaId = `ruv-program-${id}`;
-	const existing = statement("SELECT 1 AS present FROM favourites WHERE profile_id='home' AND media_id=? AND kind='ruv-program'")
-		.get(mediaId);
+	const existing = statement(
+		"SELECT 1 AS present FROM favourites WHERE profile_id='home' AND media_id=? AND kind='ruv-program'",
+	).get(mediaId);
 	if (existing)
-		statement("DELETE FROM favourites WHERE profile_id='home' AND media_id=? AND kind='ruv-program'").run(mediaId);
+		statement(
+			"DELETE FROM favourites WHERE profile_id='home' AND media_id=? AND kind='ruv-program'",
+		).run(mediaId);
 	else
-		statement("INSERT INTO favourites(profile_id,media_id,kind,created_at) VALUES ('home',?,'ruv-program',?)").run(mediaId, Date.now());
+		statement(
+			"INSERT INTO favourites(profile_id,media_id,kind,created_at) VALUES ('home',?,'ruv-program',?)",
+		).run(mediaId, Date.now());
 	return !existing;
 }
 
@@ -718,14 +766,14 @@ export function listMyListPrograms(limit = 24): RuvProgram[] {
     JOIN ruv_programs p ON ('ruv-program-' || p.id)=f.media_id
     WHERE f.profile_id='home' AND f.kind='ruv-program' AND p.available=1
     ORDER BY f.created_at DESC, f.rowid DESC LIMIT ?
-  `)
-		.all(limit) as any[];
+  `).all(limit) as any[];
 	return rows.map(programDto);
 }
 
 export function ruvProgramAvailability() {
-	return statement("SELECT id,featured,available FROM ruv_programs ORDER BY id")
-		.all() as { id: number; featured: number; available: number }[];
+	return statement(
+		"SELECT id,featured,available FROM ruv_programs ORDER BY id",
+	).all() as { id: number; featured: number; available: number }[];
 }
 
 export function totalRuvEpisodeCount() {

@@ -247,7 +247,8 @@ function playRuvEpisode(id: string) {
 		getWatchProgress(episode.id),
 		episode.duration,
 	);
-	const kind = getRuvProgram(episode.programId)?.kind === "movie" ? "movie" : "video";
+	const kind =
+		getRuvProgram(episode.programId)?.kind === "movie" ? "movie" : "video";
 	state.previousView = state.view;
 	state.view = "media";
 	state.playing = true;
