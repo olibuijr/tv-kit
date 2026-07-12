@@ -1,4 +1,4 @@
-import type { HomeState, RuvChannel } from "../../../packages/protocol";
+import type { HomeState, RuvChannel, View } from "../../../packages/protocol";
 
 export type AgentHistoryMessage = {
 	role: "user" | "assistant";
@@ -87,6 +87,7 @@ type ToolContext = {
 	listChannels: () => RuvChannel[];
 	getNow: (slug: string) => unknown;
 	tuneChannel: (slug: string) => boolean;
+	setView: (view: View) => void;
 	togglePlayback: () => void;
 	setVolume: (volume: number) => void;
 };
@@ -132,6 +133,19 @@ const tools = [
 					},
 				},
 				required: ["slug"],
+				additionalProperties: false,
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "set_tv_view",
+			description: "Opnar síðu í TV Kit: heim, sjónvarp, útvarp, Sarpur, Deildu eða fréttir.",
+			parameters: {
+				type: "object",
+				properties: { view: { type: "string", enum: ["home", "tv", "radio", "media", "deildu", "news"] } },
+				required: ["view"],
 				additionalProperties: false,
 			},
 		},
@@ -224,6 +238,13 @@ function executeTool(name: string, rawArguments: string, context: ToolContext) {
 			return { ok: false, error: "Rás fannst ekki" };
 		return { ok: true, state: stateSummary(context.getState()) };
 	}
+	if (name === "set_tv_view") {
+		const view = typeof args.view === "string" ? args.view as View : undefined;
+		if (!view || !["home", "tv", "radio", "media", "deildu", "news"].includes(view))
+			return { ok: false, error: "Óþekkt síða" };
+		context.setView(view);
+		return { ok: true, state: stateSummary(context.getState()) };
+	}
 	if (name === "toggle_playback") {
 		context.togglePlayback();
 		return { ok: true, state: stateSummary(context.getState()) };
@@ -243,6 +264,7 @@ function actionReply(name: string, result: unknown): AgentReply | undefined {
 	const state = (result as Record<string, unknown>).state as ReturnType<typeof stateSummary> | undefined;
 	if (!state) return undefined;
 	if (name === "tune_tv_channel") return { type: "action", title: state.media.source, text: `Stilla á ${state.media.source}. ${state.media.title} er í beinni.`, data: { state } };
+	if (name === "set_tv_view") return { type: "action", title: "Síða", text: `Opnaði ${state.view}.`, data: { view: state.view } };
 	if (name === "set_volume") return { type: "action", title: "Hljóðstyrkur", text: `Hljóðstyrkur er nú ${state.volume}%.`, data: { volume: state.volume } };
 	if (name === "toggle_playback") return { type: "action", title: state.playing ? "Spilun" : "Pása", text: state.playing ? "Spilun hafin." : "Spilun í pásu.", data: { playing: state.playing } };
 	return undefined;
@@ -250,6 +272,17 @@ function actionReply(name: string, result: unknown): AgentReply | undefined {
 
 function directActionRequest(message: string, context: ToolContext) {
 	const normalized = message.toLocaleLowerCase("is-IS");
+	if (/\b(opna\w*|farðu|sýndu\w*)/iu.test(normalized)) {
+		const view = ([
+			["deildu", "deildu"], ["sarp", "media"], ["útvarp", "radio"],
+			["frétt", "news"], ["sjónvarp", "tv"], ["heim", "home"],
+		] as const).find(([label]) => normalized.includes(label))?.[1];
+		if (view) {
+			context.setView(view);
+			const result = { ok: true, state: stateSummary(context.getState()) };
+			return { reply: actionReply("set_tv_view", result) ?? { type: "action", title: "Síða", text: `Opnaði ${view}.` }, tools: ["set_tv_view"] };
+		}
+	}
 	if (/\b(still\w*|set\w*|skip\w*)/iu.test(normalized)) {
 		const normalize = (value: string) => value.toLocaleLowerCase("is-IS").replace(/\s+/g, " ").trim();
 		const channel = context.listChannels().slice().sort((a, b) => b.name.length - a.name.length).find((item) => {
@@ -290,7 +323,7 @@ export async function chatWithLocalAgent(input: {
 		...input.history.slice(-40),
 	];
 	const latestUserMessage = input.history.at(-1)?.content ?? "";
-	const requiresTool = /\b(still\w*|set\w*|skip\w*|spil\w*|pás\w*|hæk\w*|læk\w*|hljóð\w*|þagga\w*|mute\w*)/iu.test(latestUserMessage);
+	const requiresTool = /\b(opna\w*|farðu|sýndu\w*|still\w*|set\w*|skip\w*|spil\w*|pás\w*|hæk\w*|læk\w*|hljóð\w*|þagga\w*|mute\w*)/iu.test(latestUserMessage);
 	const directAction = directActionRequest(latestUserMessage, input.context);
 	if (directAction) return directAction;
 	const usedTools: string[] = [];

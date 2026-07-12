@@ -43,6 +43,7 @@ test("channel actions use the longest matching channel name", async () => {
         state.media.title = state.media.source;
         return true;
       },
+      setView: (view) => { state.view = view; },
       togglePlayback: () => {},
       setVolume: () => {},
     },
@@ -50,4 +51,26 @@ test("channel actions use the longest matching channel name", async () => {
   expect(tuned).toBe("ruv2");
   expect(result.reply.type).toBe("action");
   expect(result.tools).toEqual(["tune_tv_channel"]);
+});
+
+test("internal agent opens TV Kit views without the model", async () => {
+  const state = createDefaultState();
+  const result = await chatWithLocalAgent({
+    baseUrl: "http://example.test/v1",
+    apiKey: "test-key",
+    model: "test-model",
+    timeoutMs: 5_000,
+    history: [{ role: "user", content: "Opnaðu Deildu." }],
+    context: {
+      getState: () => state,
+      listChannels: () => [],
+      getNow: () => undefined,
+      tuneChannel: () => false,
+      setView: (view) => { state.view = view; },
+      togglePlayback: () => {},
+      setVolume: () => {},
+    },
+  });
+  expect(state.view).toBe("deildu");
+  expect(result.tools).toEqual(["set_tv_view"]);
 });

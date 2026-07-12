@@ -1,5 +1,11 @@
 # TV Kit engineering rules
 
+## Agent operations entrypoint
+
+- For every TV Kit runtime or UI operation, load `.pi/skills/tv-kit-operations/SKILL.md` first.
+- Use `docs/AI_AGENT_TOOLS.md` as the shared command/tool index for coding agents and TV Kit's internal chat agent.
+- Reuse the maintained `tvctl` CLI and native `agent_browser`; do not invent one-off operational scripts.
+
 ## Kanban task board
 
 - All tv-fast platform tasks live in `.kanban/`. Read `.kanban/README.md` for the full workflow.

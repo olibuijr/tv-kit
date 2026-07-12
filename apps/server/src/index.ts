@@ -774,6 +774,13 @@ const server = Bun.serve({
 						listChannels: () => listRuvChannels("tv"),
 						getNow: (slug) => getRuvNow(slug),
 						tuneChannel: (slug) => tuneTvSlug(slug),
+						setView: (view) => {
+							state.previousView = state.view;
+							state.view = view;
+							state.newsArticleId = 0;
+							state.lastAction = `Opnaði ${view}`;
+							broadcast();
+						},
 						togglePlayback: () => {
 							state.playing = !state.playing;
 							state.lastAction = state.playing
