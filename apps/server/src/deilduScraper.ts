@@ -7,6 +7,7 @@ import {
 	type DeilduScrapeState,
 } from "../../../packages/protocol";
 import { config } from "./config";
+import { cleanImportedDeildu } from "./deilduCleanupJob";
 import { db, statement } from "./db";
 
 type CategoryRow = {
@@ -471,12 +472,16 @@ export async function scrapeDeildu(
 			const exists = statement("SELECT 1 FROM deildu_items WHERE id=?");
 			const upsert = statement(`
 				INSERT INTO deildu_items (
-					id,category_id,title,size_bytes,seeders,leechers,
+					id,category_id,title,original_title,size_bytes,seeders,leechers,
 					added_at,last_seen_at,updated_at
-				) VALUES (?,?,?,?,?,?,?,?,?)
+				) VALUES (?,?,?,?,?,?,?,?,?,?)
 				ON CONFLICT(id) DO UPDATE SET
 					category_id=excluded.category_id,
-					title=excluded.title,
+					title=CASE WHEN deildu_items.original_title=excluded.original_title AND deildu_items.ai_cleaned=1 THEN deildu_items.title ELSE excluded.title END,
+					original_title=excluded.original_title,
+					ai_cleaned=CASE WHEN deildu_items.original_title=excluded.original_title THEN deildu_items.ai_cleaned ELSE 0 END,
+					metadata=CASE WHEN deildu_items.original_title=excluded.original_title THEN deildu_items.metadata ELSE '{}' END,
+					cleanup_error=CASE WHEN deildu_items.original_title=excluded.original_title THEN deildu_items.cleanup_error ELSE '' END,
 					size_bytes=excluded.size_bytes,
 					seeders=excluded.seeders,
 					leechers=excluded.leechers,
@@ -491,6 +496,7 @@ export async function scrapeDeildu(
 					item.id,
 					item.categoryId,
 					item.title,
+					item.title,
 					item.sizeBytes,
 					item.seeders,
 					item.leechers,
@@ -500,6 +506,10 @@ export async function scrapeDeildu(
 				);
 			}
 		})();
+
+		await cleanImportedDeildu([...found.keys()], () => {
+			progress({ message: "Hreinsa titla og sækja TMDB gögn…" }, onProgress);
+		});
 
 		const status: DeilduScrapeState["status"] = errors.length
 			? found.size

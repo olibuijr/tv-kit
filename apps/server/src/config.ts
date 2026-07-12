@@ -121,6 +121,8 @@ export const config = Object.freeze({
 		5_000,
 		300_000,
 	),
+	tmdbApiKey: optional("TMDB_API_KEY"),
+	tmdbApiBase: optional("TMDB_API_BASE").replace(/\/$/, ""),
 	castIngressToken: optional("CAST_INGRESS_TOKEN"),
 	latitude: required("HOME_LATITUDE"),
 	longitude: required("HOME_LONGITUDE"),

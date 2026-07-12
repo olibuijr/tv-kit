@@ -13,6 +13,7 @@ import {
 import { parseCommandMessage } from "./commands";
 import { chatWithLocalAgent, parseAgentReply } from "./agent";
 import { config } from "./config";
+import { deilduCleanupState } from "./deilduCleanupJob";
 import {
 	appendAgentChatMessage,
 	getCache,
@@ -740,6 +741,12 @@ const server = Bun.serve({
 			return preflightResponse(req, config.allowedOrigins);
 		if (!requestOriginAllowed(req, config.allowedOrigins))
 			return errorResponse(req, "origin not allowed", 403);
+		if (url.pathname === "/agent/tasks/deildu-import") {
+			if (req.method === "GET") return corsJson(req, { task: deilduCleanupState, scrape: scrapeState }, 0);
+			if (req.method !== "POST") return errorResponse(req, "method not allowed", 405);
+			if (!scrapeState.running && !deilduCleanupState.running) void scrapeDeildu(config.deilduScrapePages, broadcast);
+			return corsJson(req, { accepted: true, task: deilduCleanupState, scrape: scrapeState }, 0, 202);
+		}
 		if (url.pathname === "/agent/chat") {
 			if (req.method === "GET")
 				return corsJson(req, { messages: agentChatMessages() }, 0);

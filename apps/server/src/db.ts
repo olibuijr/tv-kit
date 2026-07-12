@@ -451,6 +451,17 @@ const migrations = [
     CREATE INDEX agent_chat_recent ON agent_chat_messages(profile_id, created_at DESC, id DESC);
   `,
 	},
+	{
+		version: 13,
+		sql: `
+    ALTER TABLE deildu_items ADD COLUMN original_title TEXT NOT NULL DEFAULT '';
+    ALTER TABLE deildu_items ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE deildu_items ADD COLUMN tmdb_id INTEGER;
+    ALTER TABLE deildu_items ADD COLUMN cleanup_error TEXT NOT NULL DEFAULT '';
+    ALTER TABLE deildu_items ADD COLUMN cleaned_at INTEGER;
+    UPDATE deildu_items SET original_title=title WHERE original_title='';
+  `,
+	},
 ];
 
 db.exec(
