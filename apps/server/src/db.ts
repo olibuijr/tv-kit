@@ -430,6 +430,14 @@ const migrations = [
       CHECK(ai_cleaned IN (0,1));
   `,
 	},
+	{
+		version: 11,
+		sql: `
+    INSERT OR IGNORE INTO app_state(key, payload, updated_at)
+      VALUES ('tmdb_api_key', '83cfd9944f3d21bb7c7a3a44ab6b4bca',
+        CAST(strftime('%s','now') AS INTEGER) * 1000);
+  `,
+	},
 ];
 
 db.exec(
