@@ -25,6 +25,7 @@
   const kindLabel: Record<string, string> = { radio: "Útvarp", tv: "Sjónvarp", music: "Tónlist", podcast: "Hlaðvarp", video: "Myndefni", movie: "Kvikmynd" };
   let mediaElement: HTMLMediaElement | undefined;
   let player: HlsPlayer | undefined;
+  let playerElement: HTMLMediaElement | undefined;
   let localError = "";
   let lastProgress = 0;
   let reportedDuration = 0;
@@ -56,7 +57,10 @@
   }
 
   function ensurePlayer() {
-    if (!mediaElement || player) return;
+    // Svelte swaps <video>/<audio> when media.kind changes; rebind the player
+    // to the live element or it keeps streaming into the detached one.
+    if (!mediaElement || playerElement === mediaElement) return;
+    player?.destroy();
     player = new HlsPlayer(mediaElement, {
       ready,
       error: failed,
@@ -68,6 +72,7 @@
         command("player-tracks", report);
       }
     });
+    playerElement = mediaElement;
   }
 
   function syncPlayback() {
