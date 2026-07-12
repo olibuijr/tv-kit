@@ -24,7 +24,7 @@ export function parseAgentReply(content: string | null | undefined): AgentReply 
 		const value = parsed as Record<string, unknown>;
 		const type = replyTypes.has(value.type as AgentReplyType) ? value.type as AgentReplyType : "text";
 		const title = typeof value.title === "string" && value.title.trim() ? value.title.trim().slice(0, 80) : "TV Kit";
-		const text = typeof value.text === "string" && value.text.trim() ? value.text.trim().slice(0, 320) : fallback.slice(0, 320);
+		const text = (typeof value.text === "string" && value.text.trim() ? value.text.trim() : fallback).replace(/\*+/g, "").slice(0, 320);
 		const data = value.data && typeof value.data === "object" && !Array.isArray(value.data) ? value.data as Record<string, unknown> : undefined;
 		return data ? { type, title, text, data } : { type, title, text };
 	} catch {
