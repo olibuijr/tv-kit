@@ -7,7 +7,10 @@ import {
 	type DeilduScrapeState,
 } from "../../../packages/protocol";
 import { config } from "./config";
-import { cleanImportedDeildu } from "./deilduCleanupJob";
+import {
+	cleanImportedDeildu,
+	deilduCleanupState,
+} from "./deilduCleanupJob";
 import { db, statement } from "./db";
 
 type CategoryRow = {
@@ -523,7 +526,14 @@ export async function scrapeDeildu(
 		})();
 
 		await cleanImportedDeildu([...found.keys()], () => {
-			progress({ message: "Hreinsa titla og sækja TMDB gögn…" }, onProgress);
+			progress(
+				{
+					message: deilduCleanupState.message,
+					completedPages: deilduCleanupState.current,
+					totalPages: deilduCleanupState.total,
+				},
+				onProgress,
+			);
 		});
 
 		const status: DeilduScrapeState["status"] = errors.length
