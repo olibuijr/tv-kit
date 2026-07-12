@@ -89,6 +89,12 @@ export function articleParagraphs(bodyHtml = "") {
 		.filter(Boolean);
 }
 
+export function articleImages(bodyHtml = "") {
+	return [...new DOMParser().parseFromString(bodyHtml, "text/html").images]
+		.map((image) => image.currentSrc || image.src)
+		.filter(Boolean);
+}
+
 export function deriveRuvNow(snapshot: RuvNow, now: number): RuvNow {
 	const events = [snapshot.current, ...snapshot.upcoming]
 		.filter((event): event is RuvEpgEvent => Boolean(event))

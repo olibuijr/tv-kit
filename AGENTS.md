@@ -11,9 +11,10 @@
 - All tv-fast platform tasks live in `.kanban/`. Read `.kanban/README.md` for the full workflow.
 - Before starting new work, check `.kanban/tasks/` for unassigned tasks (`grep -l 'assignee: ""' .kanban/tasks/*.md`).
 - When you begin a task, set `assignee` to your agent name and `status` to `in-progress`. Update `updated` on every status change.
-- When done, set `status: review`. Another agent reviews and sets `status: done`.
+- When done, set `status: review`. Another agent reviews, sets `status: done`, and moves the file to `.kanban/done/`.
 - Create new tasks by copying `.kanban/templates/task.md`. Group related tasks under an epic (`.kanban/templates/epic.md`).
-- One agent per task at a time. Never delete done tasks — they are the project log.
+- One agent per task at a time. Never delete done tasks — archive them in `.kanban/done/` as the project log.
+- Do not scan `.kanban/done/` during normal task discovery, search, or status checks. Consult archived filenames only when avoiding ID reuse.
 
 ## Runtime architecture
 

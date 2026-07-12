@@ -33,6 +33,9 @@
   let observedId = "";
   let observedCurrent = 0;
   let observedAt = now;
+  let osdStartedAt = now;
+  let osdMediaId = "";
+  let osdPlaying = false;
   $: media = state.media;
   $: displayTitle = liveProgramme?.title || media.title;
   $: displaySubtitle = liveProgramme?.category || (media.subtitle === displayTitle ? "" : media.subtitle) || (media.live ? "Bein útsending" : "");
@@ -44,6 +47,12 @@
     observedCurrent = media.currentTime;
     observedAt = now;
   }
+  $: if (media.id !== osdMediaId || state.playing !== osdPlaying || media.panel) {
+    osdMediaId = media.id;
+    osdPlaying = state.playing;
+    osdStartedAt = now;
+  }
+  $: osdVisible = !media.fullscreen || !state.playing || Boolean(media.panel) || now - osdStartedAt < 10_000;
   $: displayTime = interpolateMediaTime(media, state.playing, observedAt, now);
   $: progress = media.live || !media.duration ? 100 : Math.min(100, displayTime / media.duration * 100);
   $: if (mediaElement && media.src) syncPlayback();
@@ -135,7 +144,7 @@
   });
 </script>
 
-<section class:fullscreen={media.fullscreen} class:has-video={videoSource} class="global-player" aria-label="Alþjóðlegur spilari">
+<section class:fullscreen={media.fullscreen} class:osd-hidden={!osdVisible} class:has-video={videoSource} class="global-player" aria-label="Alþjóðlegur spilari">
   <div class:audio-art={!videoSource} class="player-visual">
     {#if videoSource}
       <video bind:this={mediaElement} poster={media.artwork || undefined} playsinline crossorigin="anonymous" on:canplay={ready} on:error={failed} on:timeupdate={timeUpdate} on:ended={() => command("media-next")}></video>
@@ -192,7 +201,7 @@
   .player-copy{min-width:0;display:grid;grid-template-columns:1fr auto}.player-copy>span{font-size:10px;color:var(--primary);font-weight:750}.player-copy>strong{grid-column:1/3;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0}.player-copy>small{grid-column:1/3;color:var(--muted);font-size:10px}.player-copy>small b{font-weight:500}.timeline{grid-column:1/3;margin-top:8px;display:grid;grid-template-columns:42px 1fr 42px;align-items:center;gap:8px;font-size:9px;color:var(--muted)}.timeline i{height:3px;background:var(--border);border-radius:99px;overflow:hidden}.timeline i b{display:block;height:100%;background:var(--primary)}
   .transport,.player-tools{display:flex;align-items:center;gap:7px}.transport span,.player-tools>span{height:43px;min-width:43px;padding:0 9px;border:1px solid var(--border);border-radius:9px;background:var(--raised);display:flex;align-items:center;justify-content:center;gap:5px;color:var(--muted);font-size:9px}.transport .play{width:50px;height:50px;border-radius:50%;background:var(--primary);color:white}.player-tools{justify-content:flex-end}.player-tools span.active{border-color:var(--primary);color:var(--primary)}
   .player-panel{position:absolute;right:42px;bottom:calc(100% + 9px);width:410px;max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-card)}.player-panel header{height:48px;padding:0 14px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.player-panel article{min-height:62px;padding:10px 14px;display:grid;grid-template-columns:52px 1fr;align-items:center;gap:10px;border-bottom:1px solid var(--border)}.player-panel article.current,.player-panel .selected{background:var(--raised)}.player-panel article time{font-size:10px;color:var(--primary)}.player-panel article div{display:flex;flex-direction:column}.player-panel article strong{font-size:12px}.player-panel article span,.player-panel p{font-size:10px;color:var(--muted)}.option{height:50px;padding:0 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}.player-error{position:absolute;left:128px;bottom:8px;padding:6px 10px;border-radius:7px;background:var(--occasion);color:white;font-size:10px}
-  .global-player.fullscreen{position:fixed;inset:0;width:auto;height:100dvh;padding:36px 42px;z-index:50;grid-template-columns:minmax(340px,1fr) auto minmax(430px,auto);align-content:end;background:transparent}.global-player.fullscreen::after{content:'';position:absolute;inset:auto 0 0 0;height:160px;background:linear-gradient(to top,rgba(0,0,0,.55),rgba(0,0,0,.18) 55%,transparent);backdrop-filter:blur(28px) saturate(200%);-webkit-backdrop-filter:blur(28px) saturate(200%);pointer-events:none}.fullscreen .player-visual{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;z-index:-1}.fullscreen .player-visual video{object-fit:contain}.fullscreen .player-copy,.fullscreen .transport,.fullscreen .player-tools{position:relative;z-index:1}.fullscreen .player-copy>strong{font-size:31px;text-shadow:0 1px 4px rgba(0,0,0,.5)}.fullscreen .player-panel{bottom:120px}
+  .global-player.fullscreen{position:fixed;inset:0;width:auto;height:100dvh;padding:36px 42px;z-index:50;grid-template-columns:minmax(340px,1fr) auto minmax(430px,auto);align-content:end;background:transparent}.global-player.fullscreen::after{content:'';position:absolute;inset:auto 0 0 0;height:160px;background:linear-gradient(to top,rgba(0,0,0,.55),rgba(0,0,0,.18) 55%,transparent);backdrop-filter:blur(28px) saturate(200%);-webkit-backdrop-filter:blur(28px) saturate(200%);pointer-events:none}.fullscreen .player-visual{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;z-index:-1}.fullscreen .player-visual video{object-fit:contain}.fullscreen .player-copy,.fullscreen .transport,.fullscreen .player-tools{position:relative;z-index:1;transition:transform .35s ease,opacity .35s ease;color:white;text-shadow:0 1px 3px #000,0 0 8px #000}.fullscreen.osd-hidden::after{transform:translateY(100%);opacity:0}.fullscreen.osd-hidden .player-copy,.fullscreen.osd-hidden .transport,.fullscreen.osd-hidden .player-tools{transform:translateY(140px);opacity:0;pointer-events:none}.fullscreen .player-copy>strong{font-size:31px;text-shadow:0 1px 4px rgba(0,0,0,.5)}.fullscreen .player-panel{bottom:120px}
   @keyframes spin{to{transform:rotate(360deg)}}
   @media(max-width:1200px){.global-player{padding-inline:20px;grid-template-columns:64px minmax(180px,1fr) auto}.global-player.has-video{grid-template-columns:101px minmax(180px,1fr) auto}.player-tools{display:none}.player-visual{width:62px;height:62px}.has-video .player-visual{width:99px;aspect-ratio:16/10;height:auto}}
   @media(prefers-reduced-motion:reduce){:global(.loading){animation:none}}

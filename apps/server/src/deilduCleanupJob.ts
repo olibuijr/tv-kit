@@ -161,9 +161,16 @@ export async function cleanImportedDeildu(
 				candidates = await cleanBatch(batch);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				console.error("Deildu cleanup batch failed", deilduCleanupState.message, message);
+				console.error(
+					"Deildu cleanup batch failed",
+					deilduCleanupState.message,
+					message,
+				);
 				for (const row of batch)
-					statement("UPDATE deildu_items SET cleanup_error=? WHERE id=?").run(message, row.id);
+					statement("UPDATE deildu_items SET cleanup_error=? WHERE id=?").run(
+						message,
+						row.id,
+					);
 				deilduCleanupState.reviewed += batch.length;
 				deilduCleanupState.current = offset + batch.length;
 				onProgress?.();
@@ -176,7 +183,12 @@ export async function cleanImportedDeildu(
 						const validation = candidate
 							? validateDeilduTitleCleanup(row.original_title, candidate)
 							: null;
-						return [row.id, candidate && validation?.status === "accept" ? await tmdb(candidate, row.media_kind) : null] as const;
+						return [
+							row.id,
+							candidate && validation?.status === "accept"
+								? await tmdb(candidate, row.media_kind)
+								: null,
+						] as const;
 					}),
 				),
 			);

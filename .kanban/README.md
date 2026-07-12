@@ -12,7 +12,8 @@ tasks here so every agent knows what is in flight and what is done.
     epic.md
     task.md
   epics/             ← one file per epic (EPIC-NNN-slug.md)
-  tasks/             ← one file per task (TASK-NNN-slug.md)
+  tasks/             ← active/backlog tasks only (TASK-NNN-slug.md)
+  done/              ← completed task archive; excluded from routine scans
 ```
 
 ## Workflow
@@ -34,7 +35,10 @@ you complete them.
 
 ### 3. Hand off
 
-When done, set `status: review`. Another agent reviews and sets `status: done`.
+When done, set `status: review`. Another agent reviews, sets `status: done`,
+and moves the file from `.kanban/tasks/` to `.kanban/done/`. The archive is
+project history and must not be included in routine task discovery or content
+scans.
 
 ### 4. Create new work
 
@@ -67,15 +71,17 @@ standalone task files and link them in the parent's `Subtasks` section.
 ## Id numbering
 
 Use sequential numbers: `EPIC-001`, `TASK-001`, `SUB-001`. Pick the next
-available by listing existing files:
+available from task filenames in both locations so archived IDs are not reused
+(do not read archived task contents):
 
 ```sh
-ls .kanban/epics/ .kanban/tasks/
+printf '%s\n' .kanban/tasks/TASK-*.md .kanban/done/TASK-*.md | sort -V | tail -1
 ```
 
 ## Conventions
 
 - One agent per task at a time.
 - Update `updated` on every status change.
-- Never delete done tasks — they are the project log.
+- Move completed tasks to `.kanban/done/`; never delete them.
+- Do not scan `.kanban/done/` during normal work discovery, search, or status checks.
 - Keep `Done` checklists concrete and verifiable.
