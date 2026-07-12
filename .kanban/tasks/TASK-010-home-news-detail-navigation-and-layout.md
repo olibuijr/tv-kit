@@ -1,9 +1,9 @@
 ---
 id: TASK-010
 title: "Link Heim news cards to polished full articles"
-status: todo
+status: review
 priority: medium
-assignee: ""
+assignee: "pi"
 epic: ""
 created: "2026-07-12"
 updated: "2026-07-12"
@@ -17,9 +17,9 @@ News articles shown on the main Heim page should open the matching full article 
 
 ## Done
 
-- [ ] Selecting a news article on Heim navigates to the detailed Fréttir page for that exact article.
+- [x] Selecting a news article on Heim navigates to the detailed Fréttir page for that exact article.
 - [ ] Navigation works through the existing shared TV/tablet command and state flow, including back navigation, without duplicating article state in either client.
-- [ ] The full article view displays every available article image in source order with the correct aspect ratio and no unintended cropping, stretching, or overflow.
+- [x] The full article view displays every available article image in source order with the correct aspect ratio and no unintended cropping, stretching, or overflow.
 - [ ] Missing or failed images leave an intentional layout rather than broken-image chrome or empty excess space.
 - [ ] Article heading, metadata, body, captions, and images use consistent padding, spacing, and readable line lengths on the TV and tablet layouts.
 - [ ] The work coordinates with `TASK-001` so its existing image and typography fixes are reused rather than reimplemented.
@@ -34,4 +34,4 @@ News articles shown on the main Heim page should open the matching full article 
 
 ## Notes
 
-Reuse the existing news records, detail view, and navigation protocol. Do not create a second article page or client-side article store.
+Implemented with the existing news route/state and shared HTML image extraction. Heim news cards open the matching Fréttir article; body images render uncropped in source order. Runtime visual verification remains pending.

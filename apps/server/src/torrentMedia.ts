@@ -1,8 +1,15 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
-import type { TorrentMedia } from "../../../packages/protocol";
+import type { MediaKind, TorrentMedia } from "../../../packages/protocol";
 import { config } from "./config";
 import { statement } from "./db";
+import {
+	beginStream,
+	type DownloadState,
+	playbackKind,
+	serveStream,
+	type StreamContext,
+} from "./deilduStream";
 import { corsHeaders } from "./httpAccess";
 
 type TorrentMediaRow = {
@@ -92,8 +99,106 @@ export function getTorrentMedia(id: string) {
 	return value ? dto(value) : null;
 }
 
-export function torrentVideoUrl(id: string) {
-	return `${config.serverUrl}/torrent/media/${id}`;
+// torrent_media.status uses a narrower CHECK set than the engine's internal
+// DownloadState, so the context maps between them (no migration needed).
+const toDbStatus: Record<DownloadState["status"], TorrentMedia["status"]> = {
+	missing: "missing",
+	starting: "downloading",
+	downloading: "downloading",
+	paused: "incomplete",
+	error: "incomplete",
+	ready: "ready",
+};
+
+async function fetchTorrentFile(uri: string) {
+	if (!/^https?:\/\//.test(uri))
+		throw new Error("Torrent-slóð verður að vera http(s) .torrent skrá");
+	const response = await fetch(uri, {
+		signal: AbortSignal.timeout(config.deilduFetchTimeoutMs),
+	});
+	if (!response.ok)
+		throw new Error(`Torrent-sókn svaraði HTTP ${response.status}`);
+	const buffer = await response.arrayBuffer();
+	if (buffer.byteLength > 5 * 1024 * 1024)
+		throw new Error("Torrent-lýsigögn eru of stór");
+	return new Uint8Array(buffer);
+}
+
+function torrentMediaContext(id: string, torrentUri: string): StreamContext {
+	return {
+		key: `torrent-${id}`,
+		root,
+		itemDir: mediaPath(id),
+		mediaKind: "movie",
+		fetchTorrent: () => fetchTorrentFile(torrentUri),
+		load() {
+			const value = statement(
+				"SELECT file_path,status,downloaded_bytes,total_bytes FROM torrent_media WHERE id=?",
+			).get(id) as {
+				file_path: string;
+				status: TorrentMedia["status"];
+				downloaded_bytes: number;
+				total_bytes: number;
+			} | null;
+			if (!value) return null;
+			return {
+				fileIndex: 0,
+				filePath: value.file_path,
+				fileSize: value.total_bytes,
+				status: value.status === "incomplete" ? "paused" : value.status,
+				downloadedBytes: value.downloaded_bytes,
+			};
+		},
+		save(state) {
+			statement(
+				"UPDATE torrent_media SET file_path=?,status=?,downloaded_bytes=?,total_bytes=?,updated_at=? WHERE id=?",
+			).run(
+				state.filePath,
+				toDbStatus[state.status],
+				state.downloadedBytes,
+				state.fileSize,
+				Date.now(),
+				id,
+			);
+		},
+	};
+}
+
+export type TorrentPlayback = {
+	id: string;
+	title: string;
+	fileName: string;
+	kind: MediaKind;
+	src: string;
+};
+
+export async function startTorrentMediaPlayback(
+	id: string,
+	onProgress?: () => void,
+): Promise<TorrentPlayback> {
+	const value = statement(
+		"SELECT title,torrent_uri FROM torrent_media WHERE id=?",
+	).get(id) as { title: string; torrent_uri: string } | null;
+	if (!value) throw new Error("Torrent-efni fannst ekki");
+	const stream = await beginStream(
+		torrentMediaContext(id, value.torrent_uri),
+		onProgress,
+	);
+	return {
+		id,
+		title: value.title,
+		fileName: stream.fileName,
+		kind: playbackKind("movie", stream.fileName),
+		src: `${config.serverUrl}/torrent/media/stream/${id}`,
+	};
+}
+
+export function serveTorrentMediaStream(request: Request, id: string) {
+	const value = statement(
+		"SELECT torrent_uri FROM torrent_media WHERE id=?",
+	).get(id) as { torrent_uri: string } | null;
+	if (!value) return new Response("not found", { status: 404 });
+	return serveStream(request, torrentMediaContext(id, value.torrent_uri));
 }
 
 export function serveTorrentMedia(

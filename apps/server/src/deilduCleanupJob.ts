@@ -54,7 +54,7 @@ async function cleanBatch(rows: Row[]): Promise<Candidate[]> {
 		body: JSON.stringify({
 			model: config.localLlmModel,
 			temperature: 0,
-			max_tokens: 512,
+			max_tokens: 2048,
 			chat_template_kwargs: { enable_thinking: false },
 			messages: [
 				{
@@ -135,7 +135,7 @@ export async function cleanImportedDeildu(
 	}
 	const rows = ids.length
 		? (statement(
-				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND (i.cleanup_error='' OR i.cleanup_error LIKE 'Unable to connect%' OR i.cleanup_error LIKE 'Titan LLM HTTP %') AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
+				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND (i.cleanup_error='' OR i.cleanup_error='missing_model_output' OR i.cleanup_error LIKE 'Unable to connect%' OR i.cleanup_error LIKE 'Titan LLM HTTP %') AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
 			).all(...ids) as Row[])
 		: [];
 	Object.assign(deilduCleanupState, {

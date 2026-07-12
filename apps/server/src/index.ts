@@ -61,7 +61,8 @@ import {
 	getTorrentMedia,
 	listTorrentMedia,
 	serveTorrentMedia,
-	torrentVideoUrl,
+	serveTorrentMediaStream,
+	startTorrentMediaPlayback,
 } from "./torrentMedia";
 import {
 	getDeilduItem,
@@ -334,19 +335,19 @@ function playRuvProgram(id: number) {
 	return episode ? playRuvEpisode(episode.id) : false;
 }
 
-function playTorrentMedia(id: string) {
+async function playTorrentMedia(id: string) {
 	const item = getTorrentMedia(id);
-	if (!item || item.status !== "ready") return false;
+	if (!item) return false;
 	state.previousView = state.view;
 	state.view = "media";
-	state.playing = true;
+	state.playing = false;
 	state.media = {
 		id: `torrent-${item.id}`,
 		kind: "movie",
 		title: item.title,
-		subtitle: item.license,
+		subtitle: "Undirbý torrent-straum…",
 		source: item.source,
-		src: torrentVideoUrl(item.id),
+		src: "",
 		artwork: item.artwork,
 		live: false,
 		currentTime: 0,
@@ -363,11 +364,34 @@ function playTorrentMedia(id: string) {
 		favorite: false,
 		status: "loading",
 	};
-	upsertMedia(state.media);
-	recordPlayback(state.media);
-	state.lastAction = `Spila torrent: ${item.title}`;
+	state.lastAction = `Undirbý torrent: ${item.title}`;
 	broadcast();
-	return true;
+	try {
+		const playback = await startTorrentMediaPlayback(id, broadcast);
+		state.media = {
+			...state.media,
+			kind: playback.kind,
+			subtitle: item.license,
+			src: playback.src,
+			status: "loading",
+		};
+		state.playing = true;
+		state.lastAction = `Spila torrent: ${playback.title}`;
+		upsertMedia(state.media);
+		recordPlayback(state.media);
+		broadcast();
+		return true;
+	} catch (error) {
+		await stopDeilduStream();
+		const message =
+			error instanceof Error ? error.message : "Torrent-spilun mistókst";
+		state.playing = false;
+		state.media.status = "error";
+		state.media.subtitle = message;
+		state.lastAction = message;
+		broadcast();
+		return false;
+	}
 }
 
 async function playDeilduItem(id: number) {
@@ -849,6 +873,14 @@ const server = Bun.serve({
 				torrentMatch[2] === "poster" ? "poster" : "video",
 			);
 		}
+		const torrentStreamMatch = url.pathname.match(
+			/^\/torrent\/media\/stream\/([a-z0-9-]{1,64})$/,
+		);
+		if (torrentStreamMatch) {
+			if (req.method !== "GET" && req.method !== "HEAD")
+				return errorResponse(req, "method not allowed", 405);
+			return serveTorrentMediaStream(req, torrentStreamMatch[1]);
+		}
 		const deilduStreamMatch = url.pathname.match(
 			/^\/deildu\/stream\/(\d{1,12})$/,
 		);
@@ -1063,7 +1095,7 @@ const server = Bun.serve({
 				return;
 			}
 			if (message.action === "torrent-media") {
-				playTorrentMedia(message.value);
+				void playTorrentMedia(message.value);
 				return;
 			}
 			if (message.action === "deildu-scrape") {

@@ -36,4 +36,4 @@ The player should not occupy the main Heim page or the other content pages. Play
 
 Reuse the existing player state and `fullscreen` command. Do not introduce another player instance or client-side playback state.
 
-Implemented and deployed. Verification was explicitly deferred by the user.
+Implemented and deployed. The former `Fjarstýring` tab was removed; its detailed player controls now open from the compact, blurred global player using the sliders button. The player remains fixed above the navbar and uses a smaller phone layout. Verification was explicitly deferred by the user.
