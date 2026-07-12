@@ -243,6 +243,16 @@ export type DeilduScrapeState = {
 	totalPages: number;
 };
 
+export const DEILDU_PAGE_SIZE = 24;
+
+export type DeilduPagination = {
+	categoryId: number;
+	page: number;
+	pageSize: number;
+	totalItems: number;
+	totalPages: number;
+};
+
 export type DashboardContent = {
 	generatedAt: number;
 	channels: RuvNow[];
@@ -251,6 +261,7 @@ export type DashboardContent = {
 	torrentMovies: TorrentMedia[];
 	deilduCategories: DeilduCategory[];
 	deilduItems: DeilduItem[];
+	deilduPagination: DeilduPagination;
 	deilduScrape: DeilduScrapeState;
 	news: RuvNewsArticle[];
 	continueWatching: ContinueWatchingItem[];
