@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -19,7 +19,9 @@ import {
 const root = mkdtempSync(join(tmpdir(), "tv-kit-test-"));
 Object.assign(Bun.env, {
 	PORT: "31999",
+	VITE_TVSERVER_URL: "http://127.0.0.1:31999",
 	TV_KIT_DB: join(root, "tv-kit.sqlite"),
+	TORRENT_MEDIA_DIR: join(root, "torrents"),
 	RADIO_SOURCE_URL: "https://example.invalid/radio",
 	RADIO_SOURCE_NAME: "test",
 	RADIO_SYNC_INTERVAL_MS: "86400000",
@@ -55,9 +57,15 @@ Object.assign(Bun.env, {
 	HOME_LOCATION: "Akureyri",
 });
 
+const torrentDir = join(root, "torrents/big-buck-bunny/Big Buck Bunny");
+mkdirSync(torrentDir, { recursive: true });
+truncateSync(join(torrentDir, "Big Buck Bunny.mp4"), 276_134_947);
+writeFileSync(join(torrentDir, "poster.jpg"), "poster");
+
 const database = await import("../apps/server/src/db");
 const ruv = await import("../apps/server/src/ruvdb");
 const scraper = await import("../apps/server/src/ruvscraper");
+const torrent = await import("../apps/server/src/torrentMedia");
 const { db } = database;
 
 const media = {
@@ -166,7 +174,7 @@ afterAll(() => {
 });
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
-	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6, 7]);
+	expect(database.schemaVersions()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 	expect(database.databaseIntegrity()).toBe("ok");
 	database.seedStateIfMissing(state("fyrsta"));
 	database.seedStateIfMissing(state("annað"));
@@ -683,6 +691,39 @@ test("movie catalog is derived from persisted RÚV categories", () => {
 	]);
 });
 
+test("torrent movie is DB-backed and serves HTTP byte ranges", async () => {
+	const item = torrent.listTorrentMedia()[0];
+	expect(item).toMatchObject({
+		id: "big-buck-bunny",
+		title: "Big Buck Bunny",
+		license: "CC BY 3.0",
+		status: "ready",
+		downloadedBytes: 276_134_947,
+	});
+	const response = torrent.serveTorrentMedia(
+		new Request("http://127.0.0.1:31999/torrent/media/big-buck-bunny", {
+			headers: {
+				Origin: "http://127.0.0.1:3111",
+				Range: "bytes=10-19",
+			},
+		}),
+		"big-buck-bunny",
+	);
+	expect(response.status).toBe(206);
+	expect(response.headers.get("Content-Range")).toBe(
+		"bytes 10-19/276134947",
+	);
+	expect((await response.arrayBuffer()).byteLength).toBe(10);
+	expect(
+		torrent.serveTorrentMedia(
+			new Request("http://127.0.0.1:31999", {
+				headers: { Range: "bytes=999999999-" },
+			}),
+			"big-buck-bunny",
+		).status,
+	).toBe(416);
+});
+
 test("program-favorite command parses like other integer commands", () => {
 	expect(
 		parseCommandMessage({
@@ -734,6 +775,13 @@ test("program-favorite command parses like other integer commands", () => {
 			value: 12.5,
 		}),
 	).toMatchObject({ action: "media-progress", value: 12.5 });
+	expect(
+		parseCommandMessage({
+			type: "command",
+			action: "torrent-media",
+			value: "big-buck-bunny",
+		}),
+	).toMatchObject({ action: "torrent-media", value: "big-buck-bunny" });
 });
 
 test("shared state normalization carries program favourites", () => {

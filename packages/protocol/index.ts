@@ -179,11 +179,25 @@ export type RuvNewsArticle = {
 	updatedAt: number;
 };
 
+export type TorrentMedia = {
+	id: string;
+	title: string;
+	description: string;
+	source: string;
+	license: string;
+	duration: number;
+	artwork: string;
+	status: "missing" | "incomplete" | "downloading" | "ready";
+	downloadedBytes: number;
+	totalBytes: number;
+};
+
 export type DashboardContent = {
 	generatedAt: number;
 	channels: RuvNow[];
 	programs: RuvProgram[];
 	movies: RuvProgram[];
+	torrentMovies: TorrentMedia[];
 	news: RuvNewsArticle[];
 	continueWatching: ContinueWatchingItem[];
 	myList: RuvProgram[];
@@ -250,6 +264,7 @@ export type Command =
 				| "player-status"
 				| "ruv-channel"
 				| "ruv-episode"
+				| "torrent-media"
 				| "tv-favorite";
 			value: string;
 	  }

@@ -52,6 +52,12 @@ import {
 } from "./httpAccess";
 import { RuvScheduler, type RuvJob } from "./ruvScheduler";
 import { createDefaultState, normalizeHomeState } from "./state";
+import {
+	getTorrentMedia,
+	listTorrentMedia,
+	serveTorrentMedia,
+	torrentVideoUrl,
+} from "./torrentMedia";
 
 process.title = "tvserverd";
 
@@ -297,6 +303,42 @@ function persistEpisodeProgress() {
 function playRuvProgram(id: number) {
 	const episode = getRuvProgram(id)?.latestEpisode;
 	return episode ? playRuvEpisode(episode.id) : false;
+}
+
+function playTorrentMedia(id: string) {
+	const item = getTorrentMedia(id);
+	if (!item || item.status !== "ready") return false;
+	state.previousView = state.view;
+	state.view = "media";
+	state.playing = true;
+	state.media = {
+		id: `torrent-${item.id}`,
+		kind: "movie",
+		title: item.title,
+		subtitle: item.license,
+		source: item.source,
+		src: torrentVideoUrl(item.id),
+		artwork: item.artwork,
+		live: false,
+		currentTime: 0,
+		duration: item.duration,
+		playbackRate: 1,
+		subtitleTrack: "Slökkt",
+		audioTrack: "Aðalhljóð",
+		subtitles: ["Slökkt"],
+		textTracks: [],
+		audioTracks: ["Aðalhljóð"],
+		epg: [],
+		panel: null,
+		fullscreen: true,
+		favorite: false,
+		status: "loading",
+	};
+	upsertMedia(state.media);
+	recordPlayback(state.media);
+	state.lastAction = `Spila torrent: ${item.title}`;
+	broadcast();
+	return true;
 }
 
 function castSourceLabel(source: CastSource) {
@@ -599,6 +641,18 @@ const server = Bun.serve({
 			return preflightResponse(req, config.allowedOrigins);
 		if (!requestOriginAllowed(req, config.allowedOrigins))
 			return errorResponse(req, "origin not allowed", 403);
+		const torrentMatch = url.pathname.match(
+			/^\/torrent\/media\/([a-z0-9-]{1,64})(?:\/(poster))?$/,
+		);
+		if (torrentMatch) {
+			if (req.method !== "GET" && req.method !== "HEAD")
+				return errorResponse(req, "method not allowed", 405);
+			return serveTorrentMedia(
+				req,
+				torrentMatch[1],
+				torrentMatch[2] === "poster" ? "poster" : "video",
+			);
+		}
 		if (req.method !== "GET") {
 			const response = errorResponse(req, "method not allowed", 405);
 			response.headers.set("Allow", "GET, OPTIONS");
@@ -618,7 +672,11 @@ const server = Bun.serve({
 				stations: radioStations(),
 			});
 		if (url.pathname === "/dashboard/content")
-			return corsJson(req, dashboardContent(), 60);
+			return corsJson(
+				req,
+				{ ...dashboardContent(), torrentMovies: listTorrentMedia() },
+				60,
+			);
 		if (url.pathname === "/ruv/continue") {
 			const limit = boundedInt(url.searchParams.get("limit"), 12, 1, 50);
 			if (limit === null)
@@ -729,6 +787,10 @@ const server = Bun.serve({
 			}
 			if (message.action === "ruv-episode") {
 				playRuvEpisode(message.value);
+				return;
+			}
+			if (message.action === "torrent-media") {
+				playTorrentMedia(message.value);
 				return;
 			}
 			if (message.action === "ruv-program") {

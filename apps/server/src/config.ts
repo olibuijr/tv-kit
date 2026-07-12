@@ -20,7 +20,9 @@ function number(name: string, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
 
 export const config = Object.freeze({
   port: number("PORT", 1, 65_535),
+  serverUrl: required("VITE_TVSERVER_URL").replace(/\/$/, ""),
   databasePath: required("TV_KIT_DB"),
+  torrentMediaDir: required("TORRENT_MEDIA_DIR"),
   radioSourceUrl: required("RADIO_SOURCE_URL"),
   radioSourceName: required("RADIO_SOURCE_NAME"),
   radioSyncIntervalMs: number("RADIO_SYNC_INTERVAL_MS"),

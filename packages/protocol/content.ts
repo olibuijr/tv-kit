@@ -6,6 +6,7 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 	channels: [],
 	programs: [],
 	movies: [],
+	torrentMovies: [],
 	news: [],
 	continueWatching: [],
 	myList: [],
@@ -23,6 +24,7 @@ export async function fetchDashboardContent(
 		...EMPTY_DASHBOARD_CONTENT,
 		...content,
 		movies: content.movies ?? [],
+		torrentMovies: content.torrentMovies ?? [],
 	};
 }
 

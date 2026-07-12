@@ -784,7 +784,7 @@ export function totalRuvEpisodeCount() {
 	).count;
 }
 
-export function dashboardContent(): DashboardContent {
+export function dashboardContent(): Omit<DashboardContent, "torrentMovies"> {
 	return {
 		generatedAt: Date.now(),
 		channels: listRuvChannels("tv")

@@ -198,7 +198,7 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 		};
 	}
 	if (
-		action === "ruv-episode" &&
+		(action === "ruv-episode" || action === "torrent-media") &&
 		typeof candidate.value === "string" &&
 		/^[a-zA-Z0-9_-]{1,64}$/.test(candidate.value)
 	) {

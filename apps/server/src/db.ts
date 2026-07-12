@@ -312,6 +312,44 @@ const migrations = [
     CREATE INDEX ruv_epg_channel_start ON ruv_epg_events(channel_slug, start_time);
   `,
 	},
+	{
+		version: 8,
+		sql: `
+    CREATE TABLE torrent_media (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL,
+      license TEXT NOT NULL,
+      torrent_uri TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      artwork_path TEXT NOT NULL DEFAULT '',
+      duration INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'missing' CHECK(status IN ('missing','incomplete','downloading','ready')),
+      downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+      total_bytes INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO torrent_media (
+      id, title, description, source, license, torrent_uri, file_path,
+      artwork_path, duration, status, downloaded_bytes, total_bytes, updated_at
+    ) VALUES (
+      'big-buck-bunny',
+      'Big Buck Bunny',
+      'Opin Blender-kvikmynd sótt með BitTorrent.',
+      'WebTorrent · Blender Foundation',
+      'CC BY 3.0',
+      'https://webtorrent.io/torrents/big-buck-bunny.torrent',
+      'big-buck-bunny/Big Buck Bunny/Big Buck Bunny.mp4',
+      'big-buck-bunny/Big Buck Bunny/poster.jpg',
+      596,
+      'missing',
+      0,
+      276134947,
+      CAST(strftime('%s','now') AS INTEGER) * 1000
+    );
+  `,
+	},
 ];
 
 db.exec(

@@ -32,6 +32,7 @@
   $: channels = content.channels.map(channel => deriveRuvNow(channel, now));
   $: liveProgramme = channels.find(item => state?.media.id === `ruv-channel-${item.channel.slug}`)?.current ?? null;
   $: movies = content.movies ?? [];
+  $: torrentMovies = content.torrentMovies ?? [];
   $: shows = content.programs.filter(program => program.kind !== "movie");
   $: stale = contentIsStale(content, now, refreshMs * 3);
 
@@ -92,6 +93,7 @@
   }
 
   const solarTime = (value?: number) => value ? new Intl.DateTimeFormat("is-IS", { hour: "2-digit", minute: "2-digit", timeZone: "Atlantic/Reykjavik" }).format(new Date(value * 1_000)) : "—";
+  const torrentStatus = (status: string) => status === "ready" ? "Torrent tilbúið" : status === "downloading" ? "Torrent sækist" : status === "incomplete" ? "Torrent ófullgert" : "Torrent ekki sótt";
 </script>
 
 <svelte:head><title>TV Kit · RÚV</title></svelte:head>
@@ -129,11 +131,11 @@
     </main>
   {:else if state.view === "media"}
     <main class="page">
-      <div class="heading"><div><span>SARPURINN</span><h1>Kvikmyndir og þættir</h1></div><div><strong>{movies.length + shows.length} titlar</strong><small>Efni í boði núna</small></div></div>
-      {#if contentLoading && !movies.length && !shows.length}<section class="empty">Sæki efni úr gagnagrunni…</section>
-      {:else if !movies.length && !shows.length}<section class="empty">Ekkert myndefni er tiltækt.</section>
+      <div class="heading"><div><span>SARPURINN</span><h1>Kvikmyndir og þættir</h1></div><div><strong>{torrentMovies.length + movies.length + shows.length} titlar</strong><small>Efni í boði núna</small></div></div>
+      {#if contentLoading && !torrentMovies.length && !movies.length && !shows.length}<section class="empty">Sæki efni úr gagnagrunni…</section>
+      {:else if !torrentMovies.length && !movies.length && !shows.length}<section class="empty">Ekkert myndefni er tiltækt.</section>
       {:else}
-        {#if movies.length}<h2 class="collection-title">Kvikmyndir</h2><section class="program-grid large">{#each movies as program}<article><div class="art">{#if program.image || program.portraitImage}<img src={program.image || program.portraitImage} alt=""/>{:else}<Play size={28}/>{/if}</div><div><strong>{program.title}</strong><span>{program.latestEpisode?.title ?? program.shortDescription}</span><small>{program.latestEpisode ? formatDuration(program.latestEpisode.duration) : "Ekki tiltæk"}</small></div></article>{/each}</section>{/if}
+        {#if torrentMovies.length || movies.length}<h2 class="collection-title">Kvikmyndir</h2><section class="program-grid large">{#each torrentMovies as item}<article><div class="art">{#if item.artwork}<img src={item.artwork} alt=""/>{:else}<Play size={28}/>{/if}</div><div><strong>{item.title}</strong><span>{item.source}</span><small>{torrentStatus(item.status)} · {item.license}</small></div></article>{/each}{#each movies as program}<article><div class="art">{#if program.image || program.portraitImage}<img src={program.image || program.portraitImage} alt=""/>{:else}<Play size={28}/>{/if}</div><div><strong>{program.title}</strong><span>{program.latestEpisode?.title ?? program.shortDescription}</span><small>{program.latestEpisode ? formatDuration(program.latestEpisode.duration) : "Ekki tiltæk"}</small></div></article>{/each}</section>{/if}
         {#if shows.length}<h2 class="collection-title">Þættir</h2><section class="program-grid large">{#each shows as program}<article><div class="art">{#if program.image || program.portraitImage}<img src={program.image || program.portraitImage} alt=""/>{:else}<Play size={28}/>{/if}</div><div><strong>{program.title}</strong><span>{program.latestEpisode?.title ?? program.shortDescription}</span><small>{program.latestEpisode ? formatDuration(program.latestEpisode.duration) : "Enginn þáttur tiltækur"}</small></div></article>{/each}</section>{/if}
       {/if}
     </main>
