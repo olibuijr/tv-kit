@@ -46,6 +46,13 @@
 - A successful scrape atomically upserts new/changed stations and removes failed or missing stations. A failed upstream fetch or an all-stream network failure must preserve the last healthy catalog.
 - Record every scraper run, counts, timestamps, and errors in SQLite. RÚV scraping is an asynchronous child process supervised by `tvserverd`; it must be due-driven, non-overlapping, and terminated cleanly with the daemon.
 
+## Torrent streaming (Deildu + media catalog)
+
+- Both Deildu items and the `torrent_media` catalog stream on demand through one shared aria2 engine in `apps/server/src/deilduStream.ts` (`beginStream`/`serveStream` over a `StreamContext`). It owns a single active stream and a single aria2 process — correct for one TV, one playback. Never add a second torrent client (e.g. the WebTorrent npm package) or a parallel aria2 process; add new torrent sources as a new `StreamContext` adapter instead.
+- Playback is remote-triggered (`deildu-play <id>`, `torrent-media <id>`) and renders into the dashboard `GlobalPlayer` HUD exactly like RÚV/radio. The server picks the media file, buffers head+tail before returning `src`, then serves progressive HTTP range requests at `/deildu/stream/:id` and `/torrent/media/stream/:id`. Start-of-playback choppiness while the middle fills is expected.
+- `torrent_media` rows stream from their public `http(s)` `.torrent` URI on demand — do not require a pre-downloaded file or gate the remote card on `status==='ready'`. The engine's internal statuses map onto the table's narrower CHECK set in `torrentMedia.ts` without a migration. Magnet URIs are unsupported (the bencode parser needs `.torrent` metadata); Deildu fetches need the passkey.
+- Browser codec limit: the dashboard `<video>` only decodes browser-native codecs (H.264/AAC in mp4). x265/HEVC, 10-bit, AC3/EAC3/DTS audio, and MKV releases will not play in Chrome — those need native mpv or a server-side transcode to H.264/AAC, a deliberate separate change. Do not assume every torrent plays in the HUD; probe with `ffprobe` before blaming the player.
+
 ## RÚV EPG
 
 - Treat RÚV event ids as channel-scoped. The schema key is `(channel_slug, event_id)`; reconciliation deduplicates and upserts that key transactionally so one malformed/repeated upstream row cannot abort a channel refresh.

@@ -10,6 +10,7 @@ This is the shared operational index for external coding agents and TV Kit's int
 | Read TV state | Dashboard DOM or TV Kit API | `get_tv_state` |
 | List/tune RÚV channels | Tablet remote; `tvctl kit fullscreen ruv | ruv2` for fullscreen | `list_tv_channels`, `tune_tv_channel` |
 | Play/pause | Tablet remote | `toggle_playback` |
+| Stream a torrent video | Tablet remote → Deildu list or Sarpur → Kvikmyndir card (streams on demand into the GlobalPlayer HUD via the shared aria2 engine; H.264/AAC only) | Not exposed |
 | Set volume | Tablet remote | `set_volume` (0–100) |
 | Deploy source | `tvctl kit sync "message"` | Not permitted |
 | Tests/typechecks | `tvctl kit check [warnings]` | Not permitted |

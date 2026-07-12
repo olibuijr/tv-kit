@@ -1,20 +1,4 @@
 {
   "nextId": 2,
-  "loops": [
-    {
-      "id": "1",
-      "prompt": "The deildu deep scrape+cleanup finished. Re-measure the deildu_items backlog on the TV DB (uncleaned totals, retryable vs review-quarantine breakdown by cleanup_error and media_kind) and report whether any retryable items remain yet to be fixed.",
-      "trigger": {
-        "type": "event",
-        "source": "monitor:done",
-        "filter": "{\"monitorId\":\"1\"}"
-      },
-      "status": "active",
-      "recurring": false,
-      "createdAt": 1783880389972,
-      "updatedAt": 1783880389972,
-      "expiresAt": 1784485189972,
-      "fireCount": 0
-    }
-  ]
+  "loops": []
 }
