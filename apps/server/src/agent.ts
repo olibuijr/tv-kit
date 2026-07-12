@@ -18,17 +18,19 @@ const replyTypes = new Set<AgentReplyType>(["text", "status", "action", "list", 
 
 export function parseAgentReply(content: string | null | undefined): AgentReply {
 	const fallback = content?.trim() || "Ég fékk ekkert svar frá líkaninu.";
+	const cleaned = fallback.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<\/think>/gi, "").trim();
 	try {
-		const parsed = JSON.parse(fallback.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+		const candidate = (cleaned.split(/\n\s*\n/).find((part) => part.trim().startsWith("{")) || cleaned).replace(/^```(?:json)?\s*|\s*```$/g, "");
+		const parsed = JSON.parse(candidate);
 		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
 		const value = parsed as Record<string, unknown>;
 		const type = replyTypes.has(value.type as AgentReplyType) ? value.type as AgentReplyType : "text";
 		const title = typeof value.title === "string" && value.title.trim() ? value.title.trim().slice(0, 80) : "TV Kit";
-		const text = (typeof value.text === "string" && value.text.trim() ? value.text.trim() : fallback).replace(/\*+/g, "").slice(0, 320);
+		const text = (typeof value.text === "string" && value.text.trim() ? value.text.trim() : cleaned || fallback).replace(/\*+/g, "").slice(0, 320);
 		const data = value.data && typeof value.data === "object" && !Array.isArray(value.data) ? value.data as Record<string, unknown> : undefined;
 		return data ? { type, title, text, data } : { type, title, text };
 	} catch {
-		return { type: "text", title: "TV Kit", text: fallback.slice(0, 320) };
+		return { type: "text", title: "TV Kit", text: (cleaned || fallback).replace(/\*+/g, "").slice(0, 320) };
 	}
 }
 
