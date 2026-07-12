@@ -47,6 +47,7 @@
 
 ## Verification
 
+- Run `tvctl kit verify` after service, boot, or WebSocket changes; it requires every persistent unit to be enabled and active, all HTTP endpoints healthy, and a WebSocket ping/pong round trip.
 - Run `tvctl kit check`; it executes the TV-local Bun tests plus TypeScript and Svelte checks without relying on a missing `bunx` symlink.
 - Test schema migration from an empty temporary database and startup from an existing database.
 - Test one forced radio scrape and one due-check skip. Confirm the API count equals the SQLite count.
@@ -72,6 +73,7 @@
 ## Interaction model
 
 - The TV dashboard is display-only. Never render pressable controls (buttons, sliders, links) on the dashboard; render passive indicators instead. Every interactive control lives on the tablet remote and mutates state through `tvserverd` WebSocket commands.
+- Remote and dashboard WebSockets use application-level ping/pong (10-second ping, 30-second stale timeout) because tablet sleep and network roaming can leave browser sockets half-open without firing `close`. Preserve the visibility-triggered stale check and verify the path with `tvctl kit verify`.
 - The dashboard `GlobalPlayer` shows transport/tool state as passive chips; seek, panels, subtitles, audio track, speed, favourite, and fullscreen are all remote commands (`seek`, `player-panel`, `subtitle`, `audio-track`, `playback-rate`, `toggle-favorite`, `radio-favorite`, `fullscreen`).
 - The fullscreen button must never appear on the TV; fullscreen is toggled only from the remote.
 

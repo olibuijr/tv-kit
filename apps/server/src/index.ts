@@ -883,6 +883,14 @@ const server = Bun.serve({
 			const message = parseCommandMessage(decoded);
 			if (!message) return;
 
+			if (message.action === "news-scroll") {
+				const payload = JSON.stringify({
+					type: "news-scroll",
+					value: message.value,
+				});
+				for (const client of clients) if (client !== ws) client.send(payload);
+				return;
+			}
 			if (message.action === "channel") {
 				tuneTvNumber(message.value);
 				return;

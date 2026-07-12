@@ -306,6 +306,7 @@ export type Command =
 				| "playback-rate"
 				| "media-progress"
 				| "media-duration"
+				| "news-scroll"
 				| "ruv-program"
 				| "program-favorite"
 				| "deildu-play"

@@ -121,6 +121,13 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			...(label === undefined ? {} : { label }),
 		};
 	}
+	if (action === "news-scroll" && finiteNumber(candidate.value, 0, 1))
+		return {
+			type: "command",
+			action,
+			value: candidate.value as number,
+			...(label === undefined ? {} : { label }),
+		};
 	if (action === "playback-rate" && finiteNumber(candidate.value, 0.5, 2))
 		return {
 			type: "command",

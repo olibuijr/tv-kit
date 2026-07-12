@@ -939,6 +939,17 @@ test("program-favorite command parses like other integer commands", () => {
 	).toMatchObject({ action: "torrent-media", value: "big-buck-bunny" });
 });
 
+test("news scroll command accepts only normalized progress", () => {
+	for (const value of [0, 0.5, 1])
+		expect(
+			parseCommandMessage({ type: "command", action: "news-scroll", value }),
+		).toEqual({ type: "command", action: "news-scroll", value });
+	for (const value of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY, "0.5", undefined])
+		expect(
+			parseCommandMessage({ type: "command", action: "news-scroll", value }),
+		).toBeNull();
+});
+
 test("shared state normalization carries program favourites", () => {
 	expect(createDefaultState().programFavorites).toEqual([]);
 	expect(createDefaultState().deilduCategoryId).toBe(0);

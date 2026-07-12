@@ -1,0 +1,20 @@
+{
+  "nextId": 2,
+  "loops": [
+    {
+      "id": "1",
+      "prompt": "Check if the GGUF file download completed successfully (size should be ~5903822528 bytes). If done, stop any running unsloth-studio service, place the blob as the final file, restart the service, and wait for it to be ready. If it failed or is stuck, report the state.",
+      "trigger": {
+        "type": "event",
+        "source": "monitor:done",
+        "filter": "{\"monitorId\":\"1\"}"
+      },
+      "status": "active",
+      "recurring": false,
+      "createdAt": 1783868919353,
+      "updatedAt": 1783868919353,
+      "expiresAt": 1784473719353,
+      "fireCount": 0
+    }
+  ]
+}
