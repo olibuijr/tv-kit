@@ -74,6 +74,7 @@
 - The autoplay flag is required: without it Chrome blocks `audio.play()` until a user gesture, so remote-initiated radio playback silently fails with a "needs another press" player error.
 - Never launch the TV browser bare. Relaunch it with the same flag set (transient unit `tv-kiosk`, or the `tv-kiosk.service` user unit once installed on the TV). The Wayland session env on the TV is `DISPLAY=:1`, `WAYLAND_DISPLAY=wayland-0`.
 - Never show native scrollbar chrome on the TV dashboard. Scrollable views remain scrollable, but both standards-based and WebKit scrollbar rendering stay hidden.
+- The kiosk must run Chrome with hardware video decode (`--ignore-gpu-blocklist --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL`). Torrent releases are often 1080p60 H.264; without VA-API Chrome software-decodes and playback stutters. Decode uses the Flatpak runtime's `org.freedesktop.Platform.VAAPI.Intel` extension (Intel iHD) on the TV's HD 530 — do not remove these flags. Verify it engaged with `grep -l iHD_drv_video /proc/$(pgrep -f /app/extra/chrome)/maps` (the GPU process maps the VA driver) rather than trusting the picture alone. The panel runs 1080p60, matching 60 fps content; leave it at 60 Hz.
 
 ## Global player and radio UI
 
