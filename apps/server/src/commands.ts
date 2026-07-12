@@ -84,7 +84,7 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			...(label === undefined ? {} : { label }),
 		};
 	if (
-		action === "deildu-category" &&
+		(action === "deildu-category" || action === "news-article") &&
 		finiteNumber(candidate.value, 0, Number.MAX_SAFE_INTEGER, true)
 	)
 		return {

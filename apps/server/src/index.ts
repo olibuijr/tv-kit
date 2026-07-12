@@ -883,6 +883,15 @@ const server = Bun.serve({
 			const message = parseCommandMessage(decoded);
 			if (!message) return;
 
+			if (message.action === "news-article") {
+				if (message.value && !getRuvNewsArticle(message.value)) return;
+				state.previousView = state.view;
+				state.view = "news";
+				state.newsArticleId = message.value;
+				state.lastAction = message.label || "Frétt";
+				broadcast();
+				return;
+			}
 			if (message.action === "news-scroll") {
 				const payload = JSON.stringify({
 					type: "news-scroll",
@@ -1034,6 +1043,7 @@ const server = Bun.serve({
 			else if (message.action === "view") {
 				state.previousView = state.view;
 				state.view = message.value;
+				state.newsArticleId = 0;
 			} else if (message.action === "back") {
 				const next = state.previousView;
 				state.previousView = state.view;

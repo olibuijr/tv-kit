@@ -939,7 +939,7 @@ test("program-favorite command parses like other integer commands", () => {
 	).toMatchObject({ action: "torrent-media", value: "big-buck-bunny" });
 });
 
-test("news scroll command accepts only normalized progress", () => {
+test("news reader commands validate article ids and scroll progress", () => {
 	for (const value of [0, 0.5, 1])
 		expect(
 			parseCommandMessage({ type: "command", action: "news-scroll", value }),
@@ -948,11 +948,20 @@ test("news scroll command accepts only normalized progress", () => {
 		expect(
 			parseCommandMessage({ type: "command", action: "news-scroll", value }),
 		).toBeNull();
+	for (const value of [0, 42])
+		expect(
+			parseCommandMessage({ type: "command", action: "news-article", value }),
+		).toEqual({ type: "command", action: "news-article", value });
+	for (const value of [-1, 1.5, "42", undefined])
+		expect(
+			parseCommandMessage({ type: "command", action: "news-article", value }),
+		).toBeNull();
 });
 
 test("shared state normalization carries program favourites", () => {
 	expect(createDefaultState().programFavorites).toEqual([]);
 	expect(createDefaultState().deilduCategoryId).toBe(0);
+	expect(createDefaultState().newsArticleId).toBe(0);
 	const normalized = normalizeHomeState(
 		{},
 		{ radio: [3], tv: ["ruv"], programs: [5, 2] },
@@ -961,4 +970,5 @@ test("shared state normalization carries program favourites", () => {
 	expect(normalized.radioFavorites).toEqual([3]);
 	expect(normalized.tvFavorites).toEqual(["ruv"]);
 	expect(normalized.deilduCategoryId).toBe(0);
+	expect(normalized.newsArticleId).toBe(0);
 });

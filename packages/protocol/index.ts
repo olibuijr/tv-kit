@@ -273,6 +273,7 @@ export type HomeState = {
 	view: View;
 	previousView: View;
 	deilduCategoryId: number;
+	newsArticleId: number;
 	power: boolean;
 	lastAction: string;
 	media: MediaItem;
@@ -307,6 +308,7 @@ export type Command =
 				| "media-progress"
 				| "media-duration"
 				| "news-scroll"
+				| "news-article"
 				| "ruv-program"
 				| "program-favorite"
 				| "deildu-play"

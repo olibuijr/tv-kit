@@ -1,4 +1,11 @@
-import type { DashboardContent, MediaItem, RuvEpgEvent, RuvNow } from "./index";
+import type {
+	DashboardContent,
+	MediaItem,
+	RuvEpgEvent,
+	RuvNewsArticle,
+	RuvNewsArticleResponse,
+	RuvNow,
+} from "./index";
 import { tvServerUrl } from "./index";
 
 export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
@@ -44,6 +51,24 @@ export async function fetchDashboardContent(
 		deilduItems: content.deilduItems ?? [],
 		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,
 	};
+}
+
+export async function fetchNewsArticle(id: number): Promise<RuvNewsArticle> {
+	const response = await fetch(`${tvServerUrl()}/ruv/news/${id}`);
+	if (!response.ok) throw new Error(`tvserverd svaraði ${response.status}`);
+	return ((await response.json()) as RuvNewsArticleResponse).article;
+}
+
+export function articleParagraphs(bodyHtml = "") {
+	return bodyHtml
+		.split(/\n+/)
+		.map(
+			(block) =>
+				new DOMParser()
+					.parseFromString(block, "text/html")
+					.body.textContent?.trim() ?? "",
+		)
+		.filter(Boolean);
 }
 
 export function deriveRuvNow(snapshot: RuvNow, now: number): RuvNow {
