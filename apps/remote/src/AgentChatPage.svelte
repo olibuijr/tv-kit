@@ -72,7 +72,7 @@
       const running = payload.task.running || payload.scrape.running;
       const progress = payload.task.total ? payload.task.current : payload.scrape.completedPages;
       const total = payload.task.total || payload.scrape.totalPages;
-      schedules = schedules.map(item => item.id === 1 ? { ...item, running, progress, total, lastRun: running ? "keyrir núna" : payload.task.lastRun || payload.scrape.lastRun ? new Date(payload.task.lastRun ?? payload.scrape.lastRun ?? 0).toLocaleString("is-IS") : undefined, note: payload.task.tmdbEnabled ? `${payload.task.cleaned} hreinsuð · ${payload.task.enriched} TMDB · ${payload.task.reviewed} í yfirferð` : "TMDB óvirkt · bætist við næstu keyrslu" } : item);
+      schedules = schedules.map(item => item.id === 1 ? { ...item, active: payload.task.phase !== "disabled", running, progress, total, lastRun: running ? "keyrir núna" : payload.task.lastRun || payload.scrape.lastRun ? new Date(payload.task.lastRun ?? payload.scrape.lastRun ?? 0).toLocaleString("is-IS") : undefined, note: payload.task.lastError ? `Villa: ${payload.task.lastError}` : payload.task.tmdbEnabled ? `${payload.task.cleaned} hreinsuð · ${payload.task.enriched} TMDB · ${payload.task.reviewed} í yfirferð` : "TMDB óvirkt · bætist við næstu keyrslu" } : item);
     } catch { /* status polling retries */ }
   }
 
