@@ -30,10 +30,18 @@
 - A successful scrape atomically upserts new/changed stations and removes failed or missing stations. A failed upstream fetch or an all-stream network failure must preserve the last healthy catalog.
 - Record every scraper run, counts, timestamps, and errors in SQLite. RÚV scraping is an asynchronous child process supervised by `tvserverd`; it must be due-driven, non-overlapping, and terminated cleanly with the daemon.
 
+## RÚV EPG
+
+- Treat RÚV event ids as channel-scoped. The schema key is `(channel_slug, event_id)`; reconciliation deduplicates and upserts that key transactionally so one malformed/repeated upstream row cannot abort a channel refresh.
+- Diagnose schedule gaps with `tvctl kit epg status`, the latest `ruv_scrape_runs` row, and the configured RÚV XML before changing UI fallbacks. A successful scrape can honestly return no current event when RÚV is off-air or its XML has a gap; never extend the prior programme or invent an event.
+- Use `tvctl kit epg sync` for a bounded forced refresh. It must refuse to overlap a running RÚV scraper, preserve the last healthy rows on upstream failure, and finish by reporting schema integrity, per-channel counts, and the latest run.
+
 ## Verification
 
+- Run `tvctl kit check`; it executes the TV-local Bun tests plus TypeScript and Svelte checks without relying on a missing `bunx` symlink.
 - Test schema migration from an empty temporary database and startup from an existing database.
 - Test one forced radio scrape and one due-check skip. Confirm the API count equals the SQLite count.
+- For EPG changes, run `tvctl kit epg sync`, require a complete latest run and nonzero counts for all configured channels, then compare any remaining gap with the upstream XML.
 - Verify TV and remote commands survive a `tvserverd` restart before considering a data feature complete.
 
 ## TV kiosk browser
@@ -41,10 +49,13 @@
 - The TV (`192.168.1.12`) renders the dashboard in Flatpak Google Chrome launched in kiosk mode with `--kiosk --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen` pointed at the dashboard URL.
 - The autoplay flag is required: without it Chrome blocks `audio.play()` until a user gesture, so remote-initiated radio playback silently fails with a "needs another press" player error.
 - Never launch the TV browser bare. Relaunch it with the same flag set (transient unit `tv-kiosk`, or the `tv-kiosk.service` user unit once installed on the TV). The Wayland session env on the TV is `DISPLAY=:1`, `WAYLAND_DISPLAY=wayland-0`.
+- Never show native scrollbar chrome on the TV dashboard. Scrollable views remain scrollable, but both standards-based and WebKit scrollbar rendering stay hidden.
 
 ## Global player and radio UI
 
 - `apps/dashboard/src/GlobalPlayer.svelte` is mounted globally and docked sticky to the bottom edge (full width, top border only, no floating margins or radius). Keep it that way.
+- Live-TV OSD copy derives the current programme from DB-backed dashboard content so schedule transitions update without retuning. Deduplicate title/subtitle/source values; a gap should read as the channel plus an honest live-broadcast status, never `RÚV · RÚV` or a missing-data warning.
+- When the user wants uninterrupted viewing during edits, use `tvctl kit fullscreen ruv` (or `ruv2`) and leave it enabled. Retuning resets fullscreen, so the CLI deliberately tunes first and reapplies fullscreen.
 - The dashboard is render-only: radio playback state changes come from the tablet remote through `tvserverd` WebSocket commands (`radio`, `toggle-play`, `media-next`/`media-previous`, `volume`, `player-panel`, `fullscreen`).
 - The remote (`apps/remote`) exposes Radio as a first-class bottom-nav tab; radio mode hides the TV remote/favourites/up-next panels and shows the station browser fed by `GET /radio/stations`.
 - The radio EPG must stay honest: Spilarinn supplies streams only, so show the live-broadcast placeholder rather than invented programme data.
