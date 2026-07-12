@@ -223,7 +223,7 @@ function directActionRequest(message: string, context: ToolContext) {
 	const normalized = message.toLocaleLowerCase("is-IS");
 	if (/\b(still\w*|set\w*|skip\w*)/iu.test(normalized)) {
 		const normalize = (value: string) => value.toLocaleLowerCase("is-IS").replace(/\s+/g, " ").trim();
-		const channel = context.listChannels().find((item) => {
+		const channel = context.listChannels().slice().sort((a, b) => b.name.length - a.name.length).find((item) => {
 			const name = normalize(item.name);
 			const slug = normalize(item.slug);
 			return normalized.includes(name) || normalized.includes(slug);
@@ -262,6 +262,8 @@ export async function chatWithLocalAgent(input: {
 	];
 	const latestUserMessage = input.history.at(-1)?.content ?? "";
 	const requiresTool = /\b(still\w*|set\w*|skip\w*|spil\w*|pás\w*|hæk\w*|læk\w*|hljóð\w*|þagga\w*|mute\w*)/iu.test(latestUserMessage);
+	const directAction = directActionRequest(latestUserMessage, input.context);
+	if (directAction) return directAction;
 	const usedTools: string[] = [];
 
 	for (let round = 0; round < 3; round += 1) {
