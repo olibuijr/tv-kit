@@ -30,6 +30,7 @@
   $: clockText = formatClock(now);
   $: dateText = formatDate(now);
   $: channels = content.channels.map(channel => deriveRuvNow(channel, now));
+  $: liveProgramme = channels.find(item => state?.media.id === `ruv-channel-${item.channel.slug}`)?.current ?? null;
   $: movies = content.movies ?? [];
   $: shows = content.programs.filter(program => program.kind !== "movie");
   $: stale = contentIsStale(content, now, refreshMs * 3);
@@ -153,7 +154,7 @@
     </main>
   {/if}
 
-  {#if state.power}<GlobalPlayer {state} {now} {command}/>{/if}
+  {#if state.power}<GlobalPlayer {state} {now} {command} {liveProgramme}/>{/if}
 </div>
 {:else}<div class="loading"><Home size={36}/><strong>Tengist tvserverd…</strong></div>{/if}
 

@@ -12,7 +12,7 @@
   import SkipForward from "lucide-svelte/icons/skip-forward";
   import Volume2 from "lucide-svelte/icons/volume-2";
   import VolumeX from "lucide-svelte/icons/volume-x";
-  import type { HomeState, PlayerTrackReport } from "../../../packages/protocol";
+  import type { HomeState, PlayerTrackReport, RuvEpgEvent } from "../../../packages/protocol";
   import { interpolateMediaTime } from "../../../packages/protocol/content";
   import { attachAnalyser } from "./audioAnalysis";
   import { HlsPlayer } from "./hlsPlayer";
@@ -20,6 +20,7 @@
   export let state: HomeState;
   export let now: number;
   export let command: (action: string, value?: unknown, label?: string) => void;
+  export let liveProgramme: RuvEpgEvent | null = null;
 
   const kindLabel: Record<string, string> = { radio: "Útvarp", tv: "Sjónvarp", music: "Tónlist", podcast: "Hlaðvarp", video: "Myndefni", movie: "Kvikmynd" };
   let mediaElement: HTMLMediaElement | undefined;
@@ -31,6 +32,9 @@
   let observedCurrent = 0;
   let observedAt = now;
   $: media = state.media;
+  $: displayTitle = liveProgramme?.title || media.title;
+  $: displaySubtitle = liveProgramme?.category || (media.subtitle === displayTitle ? "" : media.subtitle) || (media.live ? "Bein útsending" : "");
+  $: displaySource = [displayTitle, displaySubtitle].includes(media.source) ? "" : media.source;
   $: videoSource = ["video", "movie", "tv"].includes(media.kind) && Boolean(media.src);
   $: audioSource = ["radio", "music", "podcast"].includes(media.kind) && Boolean(media.src);
   $: if (media.id !== observedId || media.currentTime !== observedCurrent) {
@@ -82,7 +86,7 @@
 
   function updateMediaSession() {
     if (!("mediaSession" in navigator) || !("MediaMetadata" in window)) return;
-    navigator.mediaSession.metadata = new MediaMetadata({ title: media.title, artist: media.subtitle, album: media.source, artwork: media.artwork ? [{ src: media.artwork }] : [] });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: displayTitle, artist: displaySubtitle, album: displaySource, artwork: media.artwork ? [{ src: media.artwork }] : [] });
     navigator.mediaSession.playbackState = state.playing ? "playing" : "paused";
   }
 
@@ -134,8 +138,8 @@
 
   <div class="player-copy" aria-live="polite">
     <span>{kindLabel[media.kind] ?? media.kind}{media.live ? " · Í BEINNI" : ""}</span>
-    <strong>{media.title}</strong>
-    <small>{media.subtitle}{#if media.source}<b>{media.source}</b>{/if}</small>
+    <strong>{displayTitle}</strong>
+    <small>{displaySubtitle}{#if displaySource}<b>{displaySource}</b>{/if}</small>
     <div class="timeline"><time>{media.live ? "Í beinni" : formatTime(displayTime)}</time><i><b style={`width:${progress}%`}></b></i><time>{media.live ? "Í loftinu" : formatTime(media.duration)}</time></div>
   </div>
 
