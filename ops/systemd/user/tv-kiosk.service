@@ -19,7 +19,10 @@ ExecStartPre=-/usr/bin/bash -c 'rm -rf "$HOME/.var/app/com.google.Chrome/config/
 # boot-time race cannot leave a stuck white screen (bounded by timeout below).
 ExecStartPre=/usr/bin/bash -c 'until curl -fsS --max-time 2 http://127.0.0.1:3111/ >/dev/null 2>&1; do sleep 1; done'
 TimeoutStartSec=120
-ExecStart=/usr/bin/flatpak run com.google.Chrome --kiosk --incognito --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen http://127.0.0.1:3111
+# Hardware video decode via the runtime's org.freedesktop.Platform.VAAPI.Intel
+# extension (Intel iHD). Without VaapiVideoDecoder Chrome software-decodes 1080p
+# and torrent playback stutters. VaapiVideoDecodeLinuxGL is the X11/XWayland path.
+ExecStart=/usr/bin/flatpak run com.google.Chrome --kiosk --incognito --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen --ignore-gpu-blocklist --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL http://127.0.0.1:3111
 ExecStopPost=-/usr/bin/pkill -9 -f com.google.Chrome
 Restart=always
 RestartSec=3
