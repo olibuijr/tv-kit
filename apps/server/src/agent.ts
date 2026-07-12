@@ -221,6 +221,8 @@ export async function chatWithLocalAgent(input: {
 		{ role: "system", content: systemPrompt },
 		...input.history.slice(-40),
 	];
+	const latestUserMessage = input.history.at(-1)?.content ?? "";
+	const requiresTool = /\b(still\w*|set\w*|skip\w*|spil\w*|pás\w*|hæk\w*|læk\w*|hljóð\w*|þagga\w*|mute\w*)/iu.test(latestUserMessage);
 	const usedTools: string[] = [];
 
 	for (let round = 0; round < 3; round += 1) {
@@ -241,7 +243,7 @@ export async function chatWithLocalAgent(input: {
 							model: input.model,
 							messages,
 							tools,
-							tool_choice: "auto",
+							tool_choice: round === 0 && requiresTool ? "required" : "auto",
 							response_format: { type: "json_object" },
 							temperature: 0.2,
 							max_tokens: 512,
@@ -269,11 +271,15 @@ export async function chatWithLocalAgent(input: {
 		const message = payload.choices?.[0]?.message;
 		if (!message) throw new Error("local model returned no message");
 		const toolCalls = message.tool_calls ?? [];
-		if (!toolCalls.length)
+		if (!toolCalls.length) {
+			const reply = parseAgentReply(message.content);
 			return {
-				reply: parseAgentReply(message.content),
+				reply: reply.type === "action" && !usedTools.length
+					? { type: "error", title: "Ekki framkvæmt", text: "Ég þarf að nota TV Kit verkfæri áður en aðgerð er staðfest." }
+					: reply,
 				tools: usedTools,
 			};
+		}
 
 		messages.push({
 			role: "assistant",
