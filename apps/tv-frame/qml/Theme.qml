@@ -53,4 +53,9 @@ QtObject {
     function eventEnded(event, now) {
         return Boolean(event && event.endTime && event.endTime <= now)
     }
+
+    function golfDate(value) {
+        const date = new Date(value + "T12:00:00")
+        return date.toLocaleDateString("is-IS", { weekday: "short", day: "numeric", month: "short" })
+    }
 }

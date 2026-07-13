@@ -12,6 +12,8 @@ Item {
     readonly property var programs: content.programs || []
     readonly property var news: content.news || []
     readonly property var teeTimes: content.golfTeeTimes || null
+    readonly property string golfPerson: content.golfPerson || ""
+    readonly property var golfBookings: content.golfBookings || []
 
     RowLayout {
         anchors.fill: parent
@@ -207,6 +209,31 @@ Item {
                         font.bold: true
                         width: parent.width
                         elide: Text.ElideRight
+                    }
+                    Row {
+                        visible: view.golfPerson.length > 0
+                        width: parent.width
+                        spacing: 10
+                        Text { text: view.golfPerson; color: Theme.accent; font.pixelSize: 16; font.bold: true; anchors.verticalCenter: parent.verticalCenter }
+                        Repeater {
+                            model: view.golfBookings
+                            delegate: Rectangle {
+                                required property var modelData
+                                height: 30
+                                width: bookingLabel.implicitWidth + 20
+                                radius: 15
+                                color: Theme.raised
+                                anchors.verticalCenter: parent.verticalCenter
+                                Text { id: bookingLabel; anchors.centerIn: parent; text: Theme.golfDate(modelData.date) + " " + modelData.time; color: Theme.ink; font.pixelSize: 14 }
+                            }
+                        }
+                        Text {
+                            visible: view.golfBookings.length === 0
+                            text: "Enginn skráður rástími næstu daga"
+                            color: Theme.faint
+                            font.pixelSize: 15
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
                     Flow {
                         width: parent.width
