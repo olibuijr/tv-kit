@@ -20,6 +20,7 @@ import {
   publicTorrentScrapeState,
   scrapePublicTorrents,
 } from "./publicTorrentScraper";
+import { searchAllSources, upsertPublicTorrents } from "./publicTorrentSources";
 import {
   cachedGolfBoxBookings,
   cachedGolfBoxFriends,
@@ -952,6 +953,22 @@ const server = Bun.serve<WebSocketData>({
         0,
         202,
       );
+    }
+    if (url.pathname === "/public-torrents/search") {
+      if (req.method !== "POST")
+        return errorResponse(req, "method not allowed", 405);
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== "object")
+        return errorResponse(req, "invalid json body", 400);
+      const query = typeof (body as Record<string, unknown>).query === "string"
+        ? (body as Record<string, unknown>).query as string
+        : "";
+      const mediaKind = (body as Record<string, unknown>).mediaKind;
+      const kind =
+        mediaKind === "movie" || mediaKind === "tv" ? mediaKind : undefined;
+      const results = await searchAllSources(query.trim(), kind);
+      if (results.length) upsertPublicTorrents(results);
+      return corsJson(req, { results }, 0);
     }
     if (url.pathname === "/agent/tasks/golfbox-sync") {
       if (req.method === "GET")
