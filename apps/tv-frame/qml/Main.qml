@@ -9,7 +9,10 @@ ApplicationWindow {
     height: 1080
     visible: true
     visibility: Window.FullScreen
-    color: Theme.bg
+    // Window-level transparency (see main.cpp) lets fullscreen mpv, kept
+    // below by a KWin "keep above" rule on this window, show through
+    // wherever nothing opaque is drawn.
+    color: "transparent"
     title: "TV Kit"
 
     FrameClient { id: frame; Component.onCompleted: start() }
@@ -19,11 +22,26 @@ ApplicationWindow {
     readonly property var media: state.media || ({})
     readonly property string view: state.view || "home"
     readonly property bool power: state.power !== false
+    // mpv owns a visible window only for video (radio is audio-only, no
+    // window: --force-window=no). While video is active, menus hide and the
+    // background goes transparent so mpv shows through; only the HUD/OSD
+    // panel stay opaque on top of it.
+    readonly property bool videoActive: media.engine === "mpv"
+        && media.kind !== "radio" && media.kind !== "music"
+        && Boolean(media.src)
+        && (state.playing === true || media.status === "loading")
     property real now: Date.now()
 
     Timer {
         interval: 1000; running: true; repeat: true
         onTriggered: root.now = Date.now()
+    }
+
+    // Opaque menu background — hidden while video plays so mpv shows through.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.bg
+        visible: root.power && !root.videoActive
     }
 
     // Standby
@@ -49,7 +67,7 @@ ApplicationWindow {
     }
 
     ColumnLayout {
-        visible: root.power
+        visible: root.power && !root.videoActive
         anchors.fill: parent
         spacing: 0
 
@@ -111,13 +129,27 @@ ApplicationWindow {
             DeilduView { state: root.state; content: root.content }
             NewsView { state: root.state; content: root.content; article: frame.article; now: root.now }
         }
+    }
 
-        PlayerHud {
-            Layout.fillWidth: true
-            visible: root.power && (root.state.playing || root.media.status === "loading" || root.media.status === "error")
-            media: root.media
-            playing: root.state.playing === true
-        }
+    // OSD panel (Dagskrá/EPG, subtitles, audio track) — opaque, drawn above
+    // mpv while video plays. Anchored above the HUD so both stay visible.
+    OsdPanel {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: hud.top
+        visible: root.power && Boolean(root.media.panel) && (root.state.playing || root.videoActive)
+        media: root.media
+        now: root.now
+    }
+
+    PlayerHud {
+        id: hud
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: root.power && (root.state.playing || root.media.status === "loading" || root.media.status === "error")
+        media: root.media
+        playing: root.state.playing === true
     }
 
     LoadingOverlay {

@@ -21,6 +21,7 @@ qt_add_qml_module(tv-frame
         qml/Main.qml
         qml/Theme.qml
         qml/PlayerHud.qml
+        qml/OsdPanel.qml
         qml/LoadingOverlay.qml
         qml/HomeView.qml
         qml/TvView.qml
