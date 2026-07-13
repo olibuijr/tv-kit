@@ -5,10 +5,10 @@ import { config } from "./config";
 
 // Native mpv video backend for the GlobalPlayer. tvserverd starts mpv on demand
 // with VA-API hardware decode and drives it over the JSON IPC socket.
-// The kiosk Chrome sits transparent on top and renders the HUD; the video pixels
-// come from mpv (direct GPU/overlay scanout), which is what browser <video> could
-// not do smoothly for 1080p60 on the TV's iGPU. mpv only engages when available,
-// so without it playback falls back to the browser <video> unchanged.
+// mpv owns the screen fullscreen-on-top while a video is loaded (idle=yes +
+// force-window=no means no window otherwise); the native TV Frame beneath it
+// renders the UI. mpv only engages when available, so without it playback
+// falls back to the browser <video> unchanged.
 
 type MpvUpdate = {
 	timePos?: number;
@@ -163,8 +163,8 @@ async function startMpvOnce() {
 				"--no-config",
 				"--idle=yes",
 				"--force-window=no",
-				"--fullscreen=no",
-				"--ontop=no",
+				"--fullscreen=yes",
+				"--ontop=yes",
 				"--focus-on=never",
 				"--border=no",
 				"--geometry=100%x100%+0+0",
