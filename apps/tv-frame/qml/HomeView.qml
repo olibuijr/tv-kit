@@ -150,7 +150,7 @@ Item {
                             required property var modelData
                             width: parent.width
                             spacing: 6
-                            readonly property var futureUpcoming: (modelData.upcoming || []).filter(event => !Theme.eventEnded(event, view.now))
+                            readonly property var futureUpcoming: Theme.futureProgramme(modelData.upcoming, view.now)
                             Row {
                                 width: parent.width
                                 spacing: 12

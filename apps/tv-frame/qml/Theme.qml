@@ -54,6 +54,20 @@ QtObject {
         return Boolean(event && event.endTime && event.endTime <= now)
     }
 
+    // EPG APIs frequently leave endTime null on near-term entries. Standard
+    // schedule semantics: an entry ends when the next one starts, so fall
+    // back to the following item's startTime before giving up. Filters a
+    // whole ordered list down to entries that are still current or future.
+    function futureProgramme(events, now) {
+        if (!events) return []
+        return events.filter((event, index) => {
+            const end = (event.endTime !== null && event.endTime !== undefined)
+                ? event.endTime
+                : (events[index + 1] ? events[index + 1].startTime : null)
+            return !(end && end <= now)
+        })
+    }
+
     function golfDate(value) {
         const date = new Date(value + "T12:00:00")
         return date.toLocaleDateString("is-IS", { weekday: "short", day: "numeric", month: "short" })

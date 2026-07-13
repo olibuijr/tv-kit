@@ -14,9 +14,14 @@ qt_add_executable(tv-frame
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
+# NO_CACHEGEN: Titan's GCC 16 dev snapshot segfaults (internal compiler error)
+# compiling some QML-AOT-generated C++ at -O2. QML is still bytecode-compiled
+# and runs correctly via the runtime JIT; only the ahead-of-time C++ codegen
+# step is skipped. Revert once a stable GCC is available.
 qt_add_qml_module(tv-frame
     URI Tv.Frame
     VERSION 1.0
+    NO_CACHEGEN
     QML_FILES
         qml/Main.qml
         qml/Theme.qml

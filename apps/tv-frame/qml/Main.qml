@@ -30,6 +30,11 @@ ApplicationWindow {
         && media.engine === "mpv"
         && media.kind !== "radio" && media.kind !== "music"
         && Boolean(media.src)
+        // "idle"/"error" status means no real mpv frames are backing this
+        // flag, however the server's playing/panel bits are currently set
+        // (e.g. mid-reconnect) — never go transparent for that, or the raw
+        // desktop shows through with nothing playing behind it.
+        && (media.status === "loading" || media.status === "ready")
         && (state.playing === true || media.status === "loading")
     property real now: Date.now()
 

@@ -1573,9 +1573,15 @@ const server = Bun.serve<WebSocketData>({
       } else if (message.action === "stop-playback") {
         stopPlayback(message.label || "Spilun stöðvuð");
         return;
-      } else if (message.action === "set-playing")
+      } else if (message.action === "set-playing") {
         state.playing = message.value;
-      else if (message.action === "toggle-play") state.playing = !state.playing;
+        if (state.playing && state.media.engine === "mpv" && !mpvAvailable())
+          engageMpvEngine();
+      } else if (message.action === "toggle-play") {
+        state.playing = !state.playing;
+        if (state.playing && state.media.engine === "mpv" && !mpvAvailable())
+          engageMpvEngine();
+      }
       else if (message.action === "toggle-mute") state.muted = !state.muted;
       else if (message.action === "volume") state.volume = message.value;
       else if (message.action === "scene") state.scene = message.value;

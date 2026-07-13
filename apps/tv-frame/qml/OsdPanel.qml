@@ -38,7 +38,7 @@ Rectangle {
             clip: true
             orientation: ListView.Horizontal
             spacing: 16
-            model: (panel.media.epg || []).filter(event => event.current || !Theme.eventEnded(event, panel.now))
+            model: Theme.futureProgramme(panel.media.epg, panel.now)
             delegate: Rectangle {
                 required property var modelData
                 width: 320
