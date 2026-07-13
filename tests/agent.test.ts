@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { chatWithLocalAgent, parseAgentReply } from "../apps/server/src/agent";
+import {
+	agentHistoryForModel,
+	chatWithLocalAgent,
+	parseAgentReply,
+} from "../apps/server/src/agent";
 import { createDefaultState } from "../apps/server/src/state";
 
 const channel = (slug: string, name: string) => ({
@@ -83,4 +87,63 @@ test("internal agent opens TV Kit views without the model", async () => {
 	});
 	expect(state.view).toBe("deildu");
 	expect(result.tools).toEqual(["set_tv_view"]);
+});
+
+test("follow-up requests send normalized prior turns to the model", async () => {
+	const history = [
+		{ role: "user" as const, content: "Ég heiti Ólafur." },
+		{
+			role: "assistant" as const,
+			content:
+				'{"type":"text","title":"Kynning","text":"Gaman að kynnast, Ólafur."}',
+		},
+		{ role: "user" as const, content: "Hvað heiti ég?" },
+	];
+	expect(agentHistoryForModel(history)).toEqual([
+		history[0],
+		{ role: "assistant", content: "Kynning: Gaman að kynnast, Ólafur." },
+		history[2],
+	]);
+
+	const originalFetch = globalThis.fetch;
+	let sentMessages: unknown;
+	globalThis.fetch = (async (_input, init) => {
+		sentMessages = JSON.parse(String(init?.body)).messages;
+		return Response.json({
+			choices: [
+				{
+					message: {
+						content:
+							'{"type":"text","title":"Minni","text":"Þú heitir Ólafur."}',
+					},
+				},
+			],
+		});
+	}) as typeof fetch;
+	try {
+		const state = createDefaultState();
+		const result = await chatWithLocalAgent({
+			baseUrl: "http://example.test/v1",
+			apiKey: "test-key",
+			model: "test-model",
+			timeoutMs: 5_000,
+			history,
+			context: {
+				getState: () => state,
+				listChannels: () => [],
+				getNow: () => undefined,
+				tuneChannel: () => false,
+				setView: () => {},
+				togglePlayback: () => {},
+				setVolume: () => {},
+			},
+		});
+		expect(result.reply.text).toBe("Þú heitir Ólafur.");
+		expect(sentMessages).toEqual([
+			expect.objectContaining({ role: "system" }),
+			...agentHistoryForModel(history),
+		]);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });

@@ -1,70 +1,33 @@
 <script lang="ts">
   import Film from "lucide-svelte/icons/film";
-  import Headphones from "lucide-svelte/icons/headphones";
-  import Package from "lucide-svelte/icons/package";
-  import Tv from "lucide-svelte/icons/tv";
-  import Users from "lucide-svelte/icons/users";
-  import type { DeilduCategory, DeilduItem, DeilduScrapeState } from "../../../packages/protocol";
-
+  import type { DeilduCategory, DeilduItem, DeilduScrapeState, DeilduShow } from "../../../packages/protocol";
   export let categories: DeilduCategory[] = [];
   export let items: DeilduItem[] = [];
+  export let shows: DeilduShow[] = [];
+  export let show: DeilduShow | null = null;
   export let scrape: DeilduScrapeState;
   export let selectedCategoryId = 0;
-
-  $: selectedCategory = categories.find(category => category.id === selectedCategoryId);
-  $: displayedCategories = selectedCategory ? [selectedCategory] : categories;
-
-  const icon = (kind: DeilduCategory["mediaKind"]) => kind === "movie" ? Film : kind === "tv" ? Tv : kind === "audio" ? Headphones : Package;
-  const formatBytes = (bytes: number) => bytes >= 1_073_741_824 ? `${(bytes / 1_073_741_824).toFixed(1)} GB` : bytes >= 1_048_576 ? `${Math.round(bytes / 1_048_576)} MB` : "Stærð óþekkt";
-  const status = (item: DeilduItem) => item.status === "ready" ? "Tilbúið" : item.status === "downloading" || item.status === "starting" ? "Sækist" : item.status === "paused" ? "Ólokið" : item.status === "error" ? "Villa" : item.playable ? "Tilbúið til straums" : "Skráasafn";
-  const categoryItems = (categoryId: number) => items.filter(item => item.categoryId === categoryId);
+  $: selectedCategory = categories.find((category) => category.id === selectedCategoryId);
+	$: latestSeason = show ? Math.max(...show.seasons) : 0;
+	$: olderSeasons = show ? show.seasons.filter((season) => season !== latestSeason).sort((a, b) => b - a) : [];
 </script>
 
 <main class="deildu-page">
-  <div class="heading">
-    <div><span>DEILDU</span><h1>{selectedCategory?.name ?? "Kvikmyndir, þættir og deildir"}</h1></div>
-    <div><strong>{selectedCategory ? `${selectedCategory.itemCount} færslur` : `${items.length} nýjustu færslur`}</strong><small>{scrape.running ? scrape.message : scrape.lastRun ? "Gagnagrunnur uppfærður" : "Bíður eftir fyrstu samstillingu"}</small></div>
-  </div>
-
-  <section class="sync" class:running={scrape.running} aria-live="polite">
-    <div><strong>{scrape.running ? "Samstilli Deildu" : scrape.status === "error" ? "Samstilling mistókst" : "Deildu-gagnagrunnur"}</strong><span>{scrape.lastError || scrape.message || `${categories.length} deildir · ${categories.reduce((sum, category) => sum + category.itemCount, 0)} færslur`}</span></div>
-    {#if scrape.running}<progress max={Math.max(1, scrape.totalPages)} value={scrape.completedPages}></progress>{/if}
-  </section>
-
-  {#if !selectedCategory}
-    <section class="category-overview" aria-label="Deildu-flokkar">
-      {#each categories as category}
-        <article>
-          <svelte:component this={icon(category.mediaKind)} size={20}/>
-          <div><strong>{category.name}</strong><span>{category.itemCount} færslur</span></div>
-        </article>
-      {/each}
+  <header class="deildu-header" aria-live="polite"><div><span>DEILDU</span><strong>{show?.title ?? selectedCategory?.name ?? "Kvikmyndir, þættir og deildir"}</strong></div><small>{scrape.running ? scrape.message : scrape.lastError || scrape.message || "Tilbúið"}</small></header>
+  {#if show}
+    <section class="show-detail" class:has-art={Boolean(show.backdrop)} style={show.backdrop ? `--art:url(${show.backdrop})` : ""}>
+		<div class="show-copy"><h1>{show.title}</h1><div class="show-facts" aria-label="Upplýsingar um þáttinn">{#if show.year}<span>{show.year}</span>{/if}{#if show.rating !== null}<strong>★ {show.rating.toFixed(1)}</strong>{/if}{#if show.votes}<span>{show.votes.toLocaleString("is-IS")} einkunnir</span>{/if}<span>{show.seasons.length} {show.seasons.length === 1 ? "sería" : "seríur"}</span><span>{show.episodes.length} þættir</span></div>{#if show.description}<p>{show.description}</p>{/if}</div>
+      <div class="seasons"><section class="latest"><h2>Nýjasta serían</h2><h3>Sería {latestSeason}</h3><div class="episode-grid">{#each show.episodes.filter((episode) => episode.season === latestSeason) as episode (episode.season + ":" + (episode.episode ?? "archive"))}<article><div class="episode-art">{#if episode.artwork}<img src={episode.artwork} alt="" loading="lazy"/>{:else}<Film size={22}/>{/if}</div><div><span>{episode.episode === null ? "Öll serían" : `Þáttur ${episode.episode}`}</span><strong>{episode.episode === null ? `Sería ${latestSeason}` : episode.title}</strong></div></article>{/each}</div></section>{#if olderSeasons.length}<h2 class="older-heading">Fyrri seríur</h2>{/if}{#each olderSeasons as season}<section><h3>Sería {season}</h3><div class="episode-grid">{#each show.episodes.filter((episode) => episode.season === season) as episode (episode.season + ":" + (episode.episode ?? "archive"))}<article><div class="episode-art">{#if episode.artwork}<img src={episode.artwork} alt="" loading="lazy"/>{:else}<Film size={22}/>{/if}</div><div><span>{episode.episode === null ? "Öll serían" : `Þáttur ${episode.episode}`}</span><strong>{episode.episode === null ? `Sería ${season}` : episode.title}</strong></div></article>{/each}</div></section>{/each}</div>
+		<aside class="poster-pane">{#if show.artwork}<img src={show.artwork} alt={`Plakat fyrir ${show.title}`}/>{:else}<Film size={48}/>{/if}</aside>
     </section>
-  {/if}
-
-  {#if !items.length}
-    <section class="empty">Engar Deildu-færslur eru komnar í gagnagrunninn.</section>
-  {:else}
-    {#each displayedCategories as category}
-      {@const entries = categoryItems(category.id)}
-      {#if entries.length}
-        <section class="category-section">
-          <header><div><svelte:component this={icon(category.mediaKind)} size={20}/><h2>{category.name}</h2></div><span>{category.itemCount} færslur</span></header>
-          <div class="item-grid">
-            {#each entries as item (item.id)}
-              <article>
-                <div class="art">{#if item.artwork}<img src={item.artwork} alt="" loading="lazy"/>{:else}<svelte:component this={icon(item.mediaKind)} size={30}/>{/if}<b class:ready={item.status === "ready"} class:active={item.status === "downloading" || item.status === "starting"}>{status(item)}</b></div>
-                <div class="copy"><strong>{item.title}</strong><span>{formatBytes(item.totalBytes || item.sizeBytes)}</span><small><Users size={12}/>{item.seeders} deila · {item.leechers} sækja</small></div>
-              </article>
-            {/each}
-          </div>
-        </section>
-      {/if}
-    {/each}
-  {/if}
+  {:else if selectedCategory?.mediaKind === "tv" && shows.length}
+    <section class="show-grid" aria-label="Þættir">{#each shows as entry (entry.id)}<article><div class="poster">{#if entry.artwork}<img src={entry.artwork} alt="" loading="lazy"/>{:else}<Film size={32}/>{/if}{#if entry.progress !== null}<b class="watch-progress" style={`--progress:${entry.progress * 100}%`}></b>{/if}</div><strong>{entry.title}</strong><span>{entry.seasons.length} {entry.seasons.length === 1 ? "sería" : "seríur"}</span></article>{/each}</section>
+  {:else if items.length}
+    <section class="show-grid">{#each items as item (item.id)}<article><div class="poster">{#if item.artwork}<img src={item.artwork} alt="" loading="lazy"/>{:else}<Film size={32}/>{/if}</div><strong>{item.title}</strong></article>{/each}</section>
+  {:else}<section class="empty">Engar Deildu-færslur eru komnar í gagnagrunninn.</section>{/if}
 </main>
 
 <style>
-  .deildu-page{flex:1;min-height:0;padding:20px 42px;overflow:auto}.heading{height:72px;display:flex;align-items:center;justify-content:space-between}.heading>div:first-child>span{font-size:10px;color:var(--primary);font-weight:800}.heading h1{font-size:var(--type-page-title);margin:3px 0}.heading>div:last-child{display:flex;flex-direction:column;text-align:right}.heading small{font-size:10px;color:var(--muted);margin-top:3px}.sync{min-height:64px;padding:12px 16px;display:grid;grid-template-columns:1fr minmax(180px,320px);align-items:center;gap:20px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-soft)}.sync.running{border-color:var(--primary)}.sync div{display:flex;flex-direction:column}.sync strong{font-size:13px}.sync span{font-size:10px;color:var(--muted);margin-top:4px}.sync progress{width:100%;accent-color:var(--primary)}.category-overview{margin:14px 0 24px;display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.category-overview article{min-height:62px;padding:10px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;background:var(--raised);box-shadow:var(--shadow-soft)}.category-overview :global(svg){flex:0 0 auto;color:var(--primary)}.category-overview div{display:flex;min-width:0;flex-direction:column}.category-overview strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.category-overview span{font-size:8px;color:var(--muted);margin-top:3px}.category-section{margin-bottom:24px}.category-section>header{height:42px;display:flex;align-items:center;justify-content:space-between}.category-section>header div{display:flex;align-items:center;gap:8px}.category-section h2{font-size:var(--type-section);margin:0}.category-section>header :global(svg){color:var(--primary)}.category-section>header span{font-size:10px;color:var(--muted)}.item-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}.item-grid article{min-width:0;border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow-soft)}.art{aspect-ratio:2 / 3;position:relative;display:grid;place-items:center;background:linear-gradient(135deg,var(--raised),var(--hero-tone));color:var(--primary)}.art img{width:100%;height:100%;object-fit:cover}.art b{position:absolute;right:8px;bottom:7px;padding:4px 6px;border-radius:5px;background:var(--header);color:var(--muted);font-size:8px}.art b.ready{color:var(--presence-accent,var(--primary))}.art b.active{color:var(--primary)}.copy{padding:10px;display:flex;min-width:0;flex-direction:column}.copy strong{font-size:12px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.copy span{font-size:9px;color:var(--muted);margin-top:5px}.copy small{margin-top:6px;display:flex;align-items:center;gap:4px;font-size:8px;color:var(--primary)}.empty{min-height:220px;display:grid;place-items:center;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--muted)}
-  @media(max-width:1200px){.deildu-page{padding-inline:20px}.category-overview{grid-template-columns:repeat(4,1fr)}.item-grid{grid-template-columns:repeat(4,1fr)}}
+ .deildu-page{flex:1;min-height:0;padding:14px 42px 28px;overflow:auto}.deildu-header{height:52px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}.deildu-header div{display:flex;align-items:baseline;gap:10px}.deildu-header span{font-size:10px;font-weight:800;color:var(--primary)}.deildu-header strong{font-size:var(--type-section)}.deildu-header small{font-size:10px;color:var(--muted)}.show-grid{padding-top:18px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}.show-grid article{min-width:0}.poster{aspect-ratio:2/3;display:grid;place-items:center;overflow:hidden;border-radius:11px;background:var(--raised);color:var(--primary);box-shadow:var(--shadow-soft)}.poster img{width:100%;height:100%;object-fit:cover}.show-grid strong{display:block;margin-top:8px;font-size:12px;line-height:1.25}.show-grid span{display:block;margin-top:4px;font-size:9px;color:var(--muted)}.seasons{padding-top:26px}.seasons section+section{margin-top:26px}.seasons h2{margin:0 0 10px;font-size:18px}.episode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.episode-grid article{min-height:62px;padding:12px;border-radius:10px;background:var(--raised);box-shadow:var(--shadow-soft)}.episode-grid span{display:block;font-size:9px;color:var(--muted)}.episode-grid strong{display:block;margin-top:5px;font-size:12px}.empty{min-height:220px;display:grid;place-items:center;color:var(--muted)}@media(max-width:1200px){.deildu-page{padding-inline:20px}.show-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  .poster{position:relative}.watch-progress{position:absolute;right:0;bottom:0;left:0;height:6px;background:linear-gradient(90deg,var(--primary) var(--progress),rgba(0,0,0,.35) var(--progress))}.show-detail{position:relative;padding:28px;background:linear-gradient(90deg,var(--surface) 0%,color-mix(in srgb,var(--surface) 88%,transparent) 54%,color-mix(in srgb,var(--surface) 46%,transparent)),var(--art);background-size:cover;background-position:center;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px}.show-detail.has-art{min-height:620px}.show-detail::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,var(--surface) 0%,transparent 68%)}.show-copy,.show-detail .seasons,.show-detail .poster-pane{position:relative;z-index:1}.show-copy{grid-column:1;padding:12px 0 2px}.show-copy h1{margin:0;font-size:clamp(42px,4.5vw,64px);line-height:1.08;text-wrap:balance}.show-facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.show-facts span,.show-facts strong{padding:5px 9px;border-radius:6px;background:color-mix(in srgb,var(--surface) 84%,transparent);font-size:14px;line-height:1.25;color:var(--ink)}.show-facts strong{color:var(--primary)}.show-copy p{max-width:62ch;margin:16px 0 0;font-size:18px;line-height:1.6;text-wrap:pretty}.show-detail .seasons{grid-column:1;padding-top:0}.show-detail .poster-pane{grid-column:2;grid-row:1 / span 2;position:sticky;top:16px;aspect-ratio:2/3;overflow:hidden;border-radius:14px;background:var(--raised);box-shadow:var(--shadow-card);display:grid;place-items:center}.show-detail .poster-pane img{width:100%;height:100%;object-fit:cover}.seasons h2{font-size:26px!important;margin-bottom:5px!important}.seasons h3{margin:0 0 14px;font-size:20px}.older-heading{margin-top:42px!important}.episode-grid article{min-height:92px;padding:10px;display:grid;grid-template-columns:116px 1fr;gap:13px;align-items:center}.episode-art{height:70px;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:var(--surface);color:var(--primary)}.episode-art img{width:100%;height:100%;object-fit:cover}.episode-grid span{font-size:12px}.episode-grid strong{font-size:16px;margin-top:6px}
 </style>

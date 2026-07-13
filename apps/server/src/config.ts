@@ -10,6 +10,14 @@ function optional(name: string) {
 	return Bun.env[name]?.trim() || "";
 }
 
+function optionalBoolean(name: string, fallback = false) {
+	const value = optional(name).toLowerCase();
+	if (!value) return fallback;
+	if (value === "true" || value === "1") return true;
+	if (value === "false" || value === "0") return false;
+	throw new Error(`Environment variable ${name} must be true or false`);
+}
+
 function number(name: string, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
 	const value = Number(required(name));
 	if (!Number.isFinite(value) || value < minimum || value > maximum) {
@@ -58,18 +66,21 @@ export const config = Object.freeze({
 	deilduFetchTimeoutMs: number("DEILDU_FETCH_TIMEOUT_MS", 1_000, 120_000),
 	deilduAria2Bin: required("DEILDU_ARIA2_BIN"),
 	deilduStreamRpcPort: number("DEILDU_STREAM_RPC_PORT", 1, 65_535),
-	deilduStreamStartTimeoutMs: number(
+	deilduStreamStartTimeoutMs: optionalNumber(
 		"DEILDU_STREAM_START_TIMEOUT_MS",
+		60_000,
 		5_000,
 		300_000,
 	),
-	deilduStreamRangeWaitMs: number(
+	deilduStreamRangeWaitMs: optionalNumber(
 		"DEILDU_STREAM_RANGE_WAIT_MS",
+		60_000,
 		1_000,
 		300_000,
 	),
-	deilduStreamBufferBytes: number(
+	deilduStreamBufferBytes: optionalNumber(
 		"DEILDU_STREAM_BUFFER_BYTES",
+		16_777_216,
 		1_048_576,
 		268_435_456,
 	),
@@ -80,6 +91,18 @@ export const config = Object.freeze({
 	radioScrapeConcurrency: number("RADIO_SCRAPE_CONCURRENCY", 1, 32),
 	solarApiUrl: required("SOLAR_API_URL"),
 	solarCacheMs: number("SOLAR_CACHE_MS"),
+	golfCoursesUrl: required("GOLF_TEE_TIMES_URL"),
+	golfCacheMs: number("GOLF_TEE_TIMES_CACHE_MS", 60_000),
+	golfFetchTimeoutMs: number("GOLF_TEE_TIMES_FETCH_TIMEOUT_MS", 1_000, 120_000),
+	golfboxCtlBin: required("GOLFBOX_CTL_BIN"),
+	golfboxEnvFile: required("GOLFBOX_ENV_FILE"),
+	golfboxSchedulerEnabled: optionalBoolean("GOLFBOX_SCHEDULER_ENABLED"),
+	golfboxSchedulerStartDelayMs: number(
+		"GOLFBOX_SCHEDULER_START_DELAY_MS",
+		1_000,
+		3_600_000,
+	),
+	golfboxTaskTimeoutMs: number("GOLFBOX_TASK_TIMEOUT_MS", 10_000, 300_000),
 	ruvApiBase: required("RUV_API_BASE"),
 	ruvLiveBase: required("RUV_LIVE_BASE"),
 	ruvEpgBase: required("RUV_EPG_BASE"),
@@ -124,6 +147,32 @@ export const config = Object.freeze({
 	tmdbApiKey: optional("TMDB_API_KEY"),
 	tmdbApiBase: optional("TMDB_API_BASE").replace(/\/$/, ""),
 	tmdbImageBase: optional("TMDB_IMAGE_BASE").replace(/\/$/, ""),
+	ffprobeBin: optional("FFPROBE_BIN") || "ffprobe",
+	mediaProbeTimeoutMs: optionalNumber("MEDIA_PROBE_TIMEOUT_MS", 5_000, 500, 30_000),
+	browserTorrentPlaybackEnabled: optionalBoolean(
+		"BROWSER_TORRENT_PLAYBACK_ENABLED",
+		false,
+	),
+	mpvBin: optional("MPV_BIN") || "mpv",
+	mpvIpcSocket:
+		optional("MPV_IPC_SOCKET") ||
+		`${optional("XDG_RUNTIME_DIR") || "/tmp"}/tv-kit-mpv.sock`,
+	mpvHwdec: optional("MPV_HWDEC") || "vaapi",
+	mpvVideoSync: optional("MPV_VIDEO_SYNC") || "audio",
+	mpvCacheSecs: optionalNumber("MPV_CACHE_SECS", 45, 1, 300),
+	mpvCachePauseWait: optionalNumber("MPV_CACHE_PAUSE_WAIT", 8, 0.1, 30),
+	mpvDemuxerMaxBytes: optionalNumber(
+		"MPV_DEMUXER_MAX_BYTES",
+		67_108_864,
+		1_048_576,
+		536_870_912,
+	),
+	mpvStreamBufferBytes: optionalNumber(
+		"MPV_STREAM_BUFFER_BYTES",
+		1_048_576,
+		131_072,
+		16_777_216,
+	),
 	castIngressToken: optional("CAST_INGRESS_TOKEN"),
 	latitude: required("HOME_LATITUDE"),
 	longitude: required("HOME_LONGITUDE"),

@@ -472,6 +472,26 @@ const migrations = [
     );
   `,
 	},
+	{
+		version: 15,
+		sql: `
+    INSERT OR IGNORE INTO app_state(key, payload, updated_at) VALUES
+      ('golf_tee_times_course_slug', 'jadarsvollur', CAST(strftime('%s','now') AS INTEGER) * 1000),
+      ('golfbox_person', 'Agnes Jónsdóttir', CAST(strftime('%s','now') AS INTEGER) * 1000),
+      ('golfbox_resource', 'Jaðar', CAST(strftime('%s','now') AS INTEGER) * 1000),
+      ('golfbox_sync_days', '14', CAST(strftime('%s','now') AS INTEGER) * 1000),
+      ('golfbox_sync_interval_ms', '21600000', CAST(strftime('%s','now') AS INTEGER) * 1000),
+      ('golfbox_task_title', 'Rástímar Agnesar', CAST(strftime('%s','now') AS INTEGER) * 1000);
+  `,
+	},
+	{
+		version: 16,
+		sql: `
+    ALTER TABLE deildu_items ADD COLUMN playback_position REAL NOT NULL DEFAULT 0;
+    ALTER TABLE deildu_items ADD COLUMN playback_duration REAL NOT NULL DEFAULT 0;
+    ALTER TABLE deildu_items ADD COLUMN playback_updated_at INTEGER;
+  `,
+	},
 ];
 
 db.exec(
@@ -506,11 +526,29 @@ export type AgentChatMessage = {
 	createdAt: number;
 };
 
+export function completedAgentChatMessages(
+	messages: AgentChatMessage[],
+): AgentChatMessage[] {
+	const completed: AgentChatMessage[] = [];
+	let pendingUser: AgentChatMessage | undefined;
+	for (const message of messages) {
+		if (message.role === "user") {
+			pendingUser = message;
+			continue;
+		}
+		if (!pendingUser) continue;
+		completed.push(pendingUser, message);
+		pendingUser = undefined;
+	}
+	return completed;
+}
+
 export function listAgentChatMessages(limit = 80): AgentChatMessage[] {
-	return (
+	const boundedLimit = Math.max(2, Math.min(200, limit - (limit % 2)));
+	const messages = (
 		statement(
-			"SELECT id, role, content, created_at FROM agent_chat_messages WHERE profile_id = 'home' ORDER BY id DESC LIMIT ?",
-		).all(Math.max(1, Math.min(200, limit))) as Array<{
+			"SELECT id, role, content, created_at FROM agent_chat_messages WHERE profile_id = 'home' ORDER BY id DESC LIMIT 200",
+		).all() as Array<{
 			id: number;
 			role: "user" | "assistant";
 			content: string;
@@ -524,15 +562,21 @@ export function listAgentChatMessages(limit = 80): AgentChatMessage[] {
 			content: row.content,
 			createdAt: row.created_at,
 		}));
+	return completedAgentChatMessages(messages).slice(-boundedLimit);
 }
 
-export function appendAgentChatMessage(
-	role: "user" | "assistant",
-	content: string,
+export function appendAgentChatTurn(
+	userContent: string,
+	assistantContent: string,
 ) {
-	statement(
+	const insert = statement(
 		"INSERT INTO agent_chat_messages(profile_id, role, content, created_at) VALUES ('home', ?, ?, ?)",
-	).run(role, content, Date.now());
+	);
+	const createdAt = Date.now();
+	db.transaction(() => {
+		insert.run("user", userContent, createdAt);
+		insert.run("assistant", assistantContent, createdAt + 1);
+	})();
 }
 
 export function databaseIntegrity() {
@@ -700,6 +744,29 @@ export function toggleRadioFavorite(id: number) {
 			"INSERT INTO favourites(profile_id, media_id, kind, created_at) VALUES ('home', ?, 'radio', ?)",
 		).run(mediaId, Date.now());
 	return !existing;
+}
+
+export function saveDeilduPlaybackPosition(
+	itemId: number,
+	position: number,
+	duration: number,
+) {
+	if (
+		!Number.isSafeInteger(itemId) ||
+		itemId <= 0 ||
+		!Number.isFinite(position) ||
+		position < 0 ||
+		!Number.isFinite(duration) ||
+		duration < 0
+	)
+		return false;
+	const savedPosition =
+		duration > 0 && position >= Math.max(0, duration - 30) ? 0 : position;
+	return (
+		statement(
+			"UPDATE deildu_items SET playback_position=?, playback_duration=?, playback_updated_at=? WHERE id=?",
+		).run(savedPosition, duration, Date.now(), itemId).changes > 0
+	);
 }
 
 export function recordPlayback(media: MediaItem) {

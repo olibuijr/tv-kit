@@ -3,7 +3,7 @@ import { basename, extname, relative, resolve, sep } from "node:path";
 import type { MediaKind } from "../../../packages/protocol";
 import { config } from "./config";
 import { statement } from "./db";
-import { getDeilduItem } from "./deilduScraper";
+import { deilduEpisodeTarget, getDeilduItem } from "./deilduScraper";
 import { corsHeaders } from "./httpAccess";
 
 type BValue = number | Uint8Array | BValue[] | { [key: string]: BValue };
@@ -93,7 +93,16 @@ export type DeilduPlayback = {
 	fileName: string;
 	kind: MediaKind;
 	src: string;
+	mpvSrc: string;
+	browserPlayable: boolean;
 };
+
+export function mpvStreamSource(
+	stream: { status: "downloading" | "ready"; path: string },
+	httpSrc: string,
+) {
+	return stream.status === "ready" ? stream.path : httpSrc;
+}
 
 const downloadRoot = resolve(config.torrentMediaDir, "deildu");
 mkdirSync(downloadRoot, { recursive: true, mode: 0o700 });
@@ -273,7 +282,11 @@ const audioExtensions = new Set([
 	".wav",
 ]);
 
-function selectMediaFile(metadata: TorrentMetadata, mediaKind: string) {
+function selectMediaFile(
+	metadata: TorrentMetadata,
+	mediaKind: string,
+	target?: { season: number; episode: number | null } | null,
+) {
 	const preferred = mediaKind === "audio" ? audioExtensions : videoExtensions;
 	const fallback = mediaKind === "audio" ? videoExtensions : audioExtensions;
 	const candidates = metadata.files.filter((file) =>
@@ -284,7 +297,15 @@ function selectMediaFile(metadata: TorrentMetadata, mediaKind: string) {
 		: metadata.files.filter((file) =>
 				fallback.has(extname(file.path).toLowerCase()),
 			);
-	const selected = usable.sort((left, right) => right.length - left.length)[0];
+	const episodePattern = target?.episode === null
+		? null
+		: new RegExp(`(?:s0?${target?.season}[^a-z0-9]*e0?${target?.episode}|${target?.season}x0?${target?.episode})\\b`, "i");
+	const matching = episodePattern ? usable.filter((file) => episodePattern.test(file.path)) : [];
+	const selected = (matching.length ? matching : usable).sort((left, right) =>
+		target?.episode === null
+			? left.path.localeCompare(right.path, undefined, { numeric: true })
+			: right.length - left.length,
+	)[0];
 	if (!selected)
 		throw new Error("Torrent inniheldur ekkert myndefni eða hljóðefni");
 	return selected;
@@ -506,9 +527,11 @@ function deilduContext(itemId: number, mediaKind: string): StreamContext {
 	};
 }
 
-function isComplete(path: string, length: number) {
+function isComplete(path: string, length: number, itemDir: string) {
+	const topLevel = relative(itemDir, path).split(sep)[0];
+	const controlPath = safePath(itemDir, `${topLevel}.aria2`);
 	try {
-		return statSync(path).size >= length && !existsSync(`${path}.aria2`);
+		return statSync(path).size >= length && !existsSync(controlPath);
 	} catch {
 		return false;
 	}
@@ -529,6 +552,36 @@ async function stopActive(markPaused = true) {
 		if (row && row.status !== "ready")
 			previous.ctx.save({ ...row, status: "paused" });
 	}
+}
+
+// Enforce a single active torrent: only one aria2 stream runs at a time (the
+// activeProcess singleton), but rows can be left flagged downloading/starting
+// when a server restart kills the child without running stopActive. Pause every
+// such row so the catalog never shows more than the one live stream.
+function pauseStaleDeilduDownloads() {
+	statement(
+		"UPDATE deildu_downloads SET status='paused',updated_at=? WHERE status IN ('downloading','starting')",
+	).run(Date.now());
+}
+
+// Called on server startup. A tvserverd restart/hot-reload can orphan the aria2
+// child (it keeps running and holds the RPC port, blocking the next stream), so
+// kill any stray aria2 on our RPC port and reconcile rows still marked as live.
+export function reconcileStreams() {
+	try {
+		Bun.spawn({
+			cmd: [
+				"pkill",
+				"-f",
+				`aria2c.*rpc-listen-port=${config.deilduStreamRpcPort}`,
+			],
+			stdout: "ignore",
+			stderr: "ignore",
+		});
+	} catch {
+		/* pkill unavailable; DB reconcile below still runs */
+	}
+	pauseStaleDeilduDownloads();
 }
 
 function bitfieldHas(bitfield: string, index: number) {
@@ -586,31 +639,6 @@ function updateProgress(stream: ActiveStream, current: AriaStatus) {
 	});
 }
 
-async function waitForInitialBuffer(stream: ActiveStream) {
-	const deadline = Date.now() + config.deilduStreamStartTimeoutMs;
-	const buffer = Math.min(config.deilduStreamBufferBytes, stream.fileLength);
-	while (Date.now() < deadline) {
-		const current = await status(stream.gid);
-		if (current.status === "error" || current.status === "removed")
-			throw new Error(current.errorMessage || "Torrent-niðurhal mistókst");
-		updateProgress(stream, current);
-		if (
-			current.status === "complete" ||
-			(current.bitfield &&
-				rangeReady(stream, current.bitfield, 0, buffer - 1) &&
-				rangeReady(
-					stream,
-					current.bitfield,
-					Math.max(0, stream.fileLength - buffer),
-					stream.fileLength - 1,
-				))
-		)
-			return;
-		await sleep(350);
-	}
-	throw new Error("Torrent náði ekki nægum straumgögnum innan tímamarka");
-}
-
 function monitor(
 	stream: ActiveStream,
 	generation: number,
@@ -635,7 +663,7 @@ function monitor(
 				onProgress?.();
 				if (current.status === "complete") break;
 			} catch {
-				if (isComplete(stream.path, stream.fileLength)) {
+				if (isComplete(stream.path, stream.fileLength, stream.ctx.itemDir)) {
 					stream.status = "ready";
 					stream.ctx.save({
 						fileIndex: stream.ctx.load()?.fileIndex ?? 0,
@@ -657,11 +685,58 @@ function playbackKind(mediaKind: string, path: string): MediaKind {
 	return mediaKind === "tv" ? "tv" : "movie";
 }
 
+type MediaProbe = {
+	streams?: Array<{ codec_type?: string; codec_name?: string }>;
+	format?: { format_name?: string };
+};
+
+export function browserNativeProbe(probe: MediaProbe) {
+	const video = probe.streams?.find((stream) => stream.codec_type === "video");
+	const audio = probe.streams?.filter((stream) => stream.codec_type === "audio") ?? [];
+	return (
+		Boolean(probe.format?.format_name?.split(",").includes("mp4")) &&
+		video?.codec_name === "h264" &&
+		audio.every((stream) => stream.codec_name === "aac")
+	);
+}
+
+export async function browserNativeFile(path: string) {
+	const child = Bun.spawn({
+		cmd: [
+			config.ffprobeBin,
+			"-v",
+			"error",
+			"-show_entries",
+			"stream=codec_type,codec_name:format=format_name",
+			"-of",
+			"json",
+			path,
+		],
+		stdout: "pipe",
+		stderr: "ignore",
+	});
+	const output = new Response(child.stdout).text();
+	const exitCode = await Promise.race([
+		child.exited,
+		sleep(config.mediaProbeTimeoutMs).then(() => null),
+	]);
+	if (exitCode === null) {
+		child.kill();
+		return false;
+	}
+	if (exitCode !== 0) return false;
+	try {
+		return browserNativeProbe(JSON.parse(await output) as MediaProbe);
+	} catch {
+		return false;
+	}
+}
+
 function cachedReadyStream(ctx: StreamContext): ActiveStream | null {
 	const cached = ctx.load();
 	if (cached?.status === "ready" && cached.filePath) {
 		const path = localDownloadPath(ctx.root, cached.filePath);
-		if (isComplete(path, cached.fileSize))
+		if (isComplete(path, cached.fileSize, ctx.itemDir))
 			return {
 				ctx,
 				gid: "",
@@ -683,18 +758,21 @@ export async function beginStream(
 	ctx: StreamContext,
 	onProgress?: () => void,
 	onMetadata?: (metadata: TorrentMetadata) => void,
+	selectFile?: (metadata: TorrentMetadata) => TorrentFile,
 ): Promise<ActiveStream> {
+	// Kill the current stream (download + streaming) before starting another, and
+	// pause any stale rows so exactly one torrent is ever active.
+	await stopActive();
+	pauseStaleDeilduDownloads();
 	const ready = cachedReadyStream(ctx);
 	if (ready) {
-		await stopActive();
 		activeStream = ready;
 		return ready;
 	}
 
-	await stopActive();
 	const payload = await ctx.fetchTorrent();
 	const metadata = parseTorrentMetadata(payload);
-	const selected = selectMediaFile(metadata, ctx.mediaKind);
+	const selected = selectFile?.(metadata) ?? selectMediaFile(metadata, ctx.mediaKind);
 	mkdirSync(ctx.itemDir, { recursive: true, mode: 0o700 });
 	const torrentPath = safePath(ctx.itemDir, "source.torrent");
 	await Bun.write(torrentPath, payload);
@@ -722,11 +800,13 @@ export async function beginStream(
 			"--allow-overwrite=true",
 			"--auto-file-renaming=false",
 			"--continue=true",
-			"--file-allocation=none",
 			"--stream-piece-selector=inorder",
 			`--bt-prioritize-piece=head=${config.deilduStreamBufferBytes},tail=${config.deilduStreamBufferBytes}`,
 			`--select-file=${selected.index}`,
 			"--seed-time=0",
+			// Streaming must not synchronously preallocate a multi-gigabyte file:
+			// ext4 journal commits can stall tvserverd and reset the player source.
+			"--file-allocation=none",
 			"--summary-interval=0",
 			"--console-log-level=warn",
 			`--dir=${ctx.itemDir}`,
@@ -739,7 +819,7 @@ export async function beginStream(
 	await waitForRpc(deadline);
 	const task = await findTask(deadline);
 	if (!task) {
-		if (!isComplete(expectedPath, selected.length))
+		if (!isComplete(expectedPath, selected.length, ctx.itemDir))
 			throw new Error("aria2 lauk án þess að búa til spilunarskrá");
 		activeStream = {
 			ctx,
@@ -778,8 +858,6 @@ export async function beginStream(
 				Number(task.completedLength) || 0,
 			),
 		});
-		if (activeStream.status === "downloading")
-			await waitForInitialBuffer(activeStream);
 	}
 
 	const stream = activeStream;
@@ -798,6 +876,7 @@ export async function startDeilduPlayback(
 	if (!item.playable)
 		throw new Error("Þessi Deildu-flokkur er ekki spilunarflokkur");
 	const ctx = deilduContext(itemId, item.mediaKind);
+	const target = deilduEpisodeTarget(itemId);
 	const stream = await beginStream(ctx, onProgress, (metadata) => {
 		statement(
 			"UPDATE deildu_items SET title=?,size_bytes=?,updated_at=? WHERE id=?",
@@ -807,13 +886,17 @@ export async function startDeilduPlayback(
 			Date.now(),
 			itemId,
 		);
-	});
+	}, (metadata) => selectMediaFile(metadata, item.mediaKind, target));
+	const src = `${config.serverUrl}/deildu/stream/${itemId}`;
 	return {
 		id: itemId,
 		title: getDeilduItem(itemId)?.title ?? item.title,
 		fileName: stream.fileName,
 		kind: playbackKind(item.mediaKind, stream.path),
-		src: `${config.serverUrl}/deildu/stream/${itemId}`,
+		src,
+		mpvSrc: mpvStreamSource(stream, src),
+		browserPlayable:
+			stream.status === "ready" && (await browserNativeFile(stream.path)),
 	};
 }
 
@@ -830,7 +913,6 @@ async function waitForRange(
 		const current = await status(stream.gid);
 		if (current.status === "error" || current.status === "removed")
 			throw new Error(current.errorMessage || "Torrent-niðurhal mistókst");
-		updateProgress(stream, current);
 		if (
 			current.status === "complete" ||
 			(current.bitfield && rangeReady(stream, current.bitfield, start, end))
@@ -841,6 +923,22 @@ async function waitForRange(
 	throw new Error("Beðið var of lengi eftir torrent-stykki");
 }
 
+export function progressiveRangeEnd(
+	start: number,
+	requestedEnd: number,
+	fileSize: number,
+	fileOffset: number,
+	pieceLength: number,
+	fallbackBytes: number,
+) {
+	const pieceEnd = pieceLength
+		? (Math.floor((fileOffset + start) / pieceLength) + 1) * pieceLength -
+			1 -
+			fileOffset
+		: start + fallbackBytes - 1;
+	return Math.min(requestedEnd, fileSize - 1, pieceEnd);
+}
+
 export async function serveStream(request: Request, ctx: StreamContext) {
 	const row = ctx.load();
 	if (!row?.filePath || !row.fileSize)
@@ -848,7 +946,8 @@ export async function serveStream(request: Request, ctx: StreamContext) {
 	const path = localDownloadPath(ctx.root, row.filePath);
 	if (!existsSync(path)) return new Response("not found", { status: 404 });
 	const stream = activeStream?.ctx.key === ctx.key ? activeStream : null;
-	const ready = row.status === "ready" && isComplete(path, row.fileSize);
+	const ready =
+		row.status === "ready" && isComplete(path, row.fileSize, ctx.itemDir);
 	if (!ready && !stream) return new Response("not active", { status: 409 });
 
 	const headers = corsHeaders(request, config.allowedOrigins, 0);
@@ -879,7 +978,20 @@ export async function serveStream(request: Request, ctx: StreamContext) {
 		: Math.max(0, row.fileSize - Number(match[2]));
 	const requestedEnd =
 		match[1] && match[2] ? Number(match[2]) : row.fileSize - 1;
-	const end = Math.min(requestedEnd, row.fileSize - 1);
+	// Players such as mpv commonly request `bytes=0-` up front. While aria2 is
+	// still filling the file, waiting for that entire range means a timeout and
+	// makes the player retry from byte zero. A 206 response may legally satisfy
+	// a bounded sub-range, so feed the player one buffer-sized chunk at a time.
+	const end = ready
+		? Math.min(requestedEnd, row.fileSize - 1)
+		: progressiveRangeEnd(
+				start,
+				requestedEnd,
+				row.fileSize,
+				stream?.fileOffset ?? 0,
+				stream?.pieceLength ?? 0,
+				config.deilduStreamBufferBytes,
+			);
 	if (
 		!Number.isSafeInteger(start) ||
 		!Number.isSafeInteger(end) ||
@@ -896,6 +1008,9 @@ export async function serveStream(request: Request, ctx: StreamContext) {
 		} catch (error) {
 			if (error instanceof DOMException && error.name === "AbortError")
 				return new Response(null, { status: 499 });
+			console.warn(
+				`torrent range unavailable key=${ctx.key} bytes=${start}-${end}: ${error instanceof Error ? error.message : String(error)}`,
+			);
 			headers.set("Retry-After", "1");
 			return new Response("buffering", { status: 503, headers });
 		}

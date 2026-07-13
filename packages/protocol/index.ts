@@ -54,6 +54,9 @@ export type MediaItem = {
 	fullscreen: boolean;
 	favorite: boolean;
 	status: "idle" | "loading" | "ready" | "error";
+	// "mpv": video pixels come from the native mpv backend (transparent HUD on
+	// top). Absent/"browser": the dashboard <video> element renders it.
+	engine?: "browser" | "mpv";
 };
 
 export type Station = {
@@ -227,7 +230,33 @@ export type DeilduItem = {
 	downloadedBytes: number;
 	totalBytes: number;
 	error: string;
+	playbackPosition: number;
+	playbackDuration: number;
 	updatedAt: number;
+};
+
+export type DeilduEpisode = {
+	season: number;
+	episode: number | null;
+	title: string;
+	artwork: string;
+	seeders: number;
+	itemId: number;
+	archive: boolean;
+};
+
+export type DeilduShow = {
+	id: string;
+	title: string;
+	artwork: string;
+	backdrop: string;
+	description: string;
+	year: number | null;
+	rating: number | null;
+	votes: number;
+	seasons: number[];
+	episodes: DeilduEpisode[];
+	progress: number | null;
 };
 
 export type DeilduScrapeState = {
@@ -254,14 +283,62 @@ export type DeilduPagination = {
 	totalPages: number;
 };
 
+export type GolfBooking = { date: string; time: string; name: string };
+
+export type GolfRound = {
+	date: string;
+	time: string;
+	course: string;
+	club: string;
+	tee: string;
+	marker: string;
+	type: number | null;
+	par: number | null;
+	rating: number | null;
+	slope: number | null;
+	gross: number | null;
+	differential: number | null;
+	hcpBefore: number | null;
+	hcpAfter: number | null;
+};
+
+export type GolfFriend = {
+	name: string;
+	memberNumber: string;
+	handicap: number | null;
+	club: string;
+};
+
+export type GolfPersonDetail = {
+	name: string;
+	club: string;
+	handicap: number | null;
+	totalRounds: number;
+	byCourse: Record<string, GolfRound[]>;
+};
+
+export type GolfTeeTimes = {
+	date: string;
+	course: string;
+	club: string;
+	updatedAt: number | null;
+	stale: boolean;
+	slots: { time: string; openSeats: number }[];
+};
+
 export type DashboardContent = {
 	generatedAt: number;
+	golfTeeTimes: GolfTeeTimes | null;
+	golfPerson: string;
+	golfBookings: GolfBooking[];
 	channels: RuvNow[];
 	programs: RuvProgram[];
 	movies: RuvProgram[];
 	torrentMovies: TorrentMedia[];
 	deilduCategories: DeilduCategory[];
 	deilduItems: DeilduItem[];
+	deilduShows: DeilduShow[];
+	deilduShow: DeilduShow | null;
 	deilduPagination: DeilduPagination;
 	deilduScrape: DeilduScrapeState;
 	news: RuvNewsArticle[];
@@ -285,6 +362,7 @@ export type HomeState = {
 	view: View;
 	previousView: View;
 	deilduCategoryId: number;
+	deilduShowId: string;
 	newsArticleId: number;
 	power: boolean;
 	lastAction: string;
@@ -298,8 +376,14 @@ export type HomeState = {
 export type Command =
 	| {
 			type: "command";
+			action: "set-playing";
+			value: boolean;
+	  }
+	| {
+			type: "command";
 			action:
 				| "toggle-play"
+				| "stop-playback"
 				| "toggle-mute"
 				| "back"
 				| "power"
@@ -341,6 +425,7 @@ export type Command =
 				| "tv-favorite";
 			value: string;
 	  }
+	| { type: "command"; action: "deildu-show"; value: string }
 	| { type: "command"; action: "fullscreen" | "lights"; value: boolean }
 	| { type: "command"; action: "view"; value: View }
 	| { type: "command"; action: "scene"; value: string }
@@ -366,6 +451,18 @@ export function tvServerUrl() {
 	return value;
 }
 
-export function tvServerWebSocketUrl() {
-	return `${tvServerUrl().replace(/^http/, "ws")}/ws`;
+export function tvServerWebSocketUrl(client = "app") {
+	return `${tvServerUrl().replace(/^http/, "ws")}/ws?client=${encodeURIComponent(client)}`;
+}
+
+export function browserClientId(kind: "dashboard" | "remote") {
+	const key = `tv-kit-${kind}-client`;
+	const existing = sessionStorage.getItem(key);
+	if (existing) return existing;
+	const id = globalThis.crypto?.randomUUID?.()
+		?? globalThis.crypto?.getRandomValues(new Uint32Array(2)).join("")
+		?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	const clientId = `${kind}-${id.slice(0, 16)}`;
+	sessionStorage.setItem(key, clientId);
+	return clientId;
 }

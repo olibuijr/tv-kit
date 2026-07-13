@@ -9,7 +9,7 @@ TV Kit is a **no-build** project. The TV runs the source tree directly:
   lingering Chrome processes
 
 All deployment lives in the `tvctl` CLI (`~/.local/bin/tvctl`, also shipped
-with the tv-control skill). `deploy.sh` is a deprecated shim.
+with the tv-control skill).
 
 ## Everyday flow
 

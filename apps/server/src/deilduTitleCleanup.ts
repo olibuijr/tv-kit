@@ -56,8 +56,5 @@ export function validateDeilduTitleCleanup(
 		!seasonEpisode.some((match) => Number(match[2]) === candidate.episode)
 	)
 		reasons.push("unsupported_episode");
-	if (title.length < Math.min(4, original.trim().length))
-		reasons.push("title_too_short");
-	if (/\(\.\.\.\)$/.test(original.trim())) reasons.push("truncated_source");
 	return { status: reasons.length ? "review" : "accept", reasons };
 }

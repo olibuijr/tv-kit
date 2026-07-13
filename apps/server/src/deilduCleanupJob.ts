@@ -12,6 +12,31 @@ type Row = {
 };
 type Candidate = CleanedDeilduTitle & { id: number };
 
+export function cleanupCandidateFromRelease(row: Row): Candidate | null {
+	const source = row.original_title.trim();
+	const marker = /s\d{1,3}e\d{1,5}\b|\bseason[._\s-]*\d{1,3}\b|[([._\s-](?:19|20)\d{2}(?=$|[)\]_.\s-])|[([._\s-](?:480p|720p|1080p|2160p|web(?:[._ -]?dl)?|webrip|bluray|brrip|hdtv|dvdrip|x264|x265|h\.?(?:264|265)|hevc|av1|isl[._\s-]*(?:tal(?:texti)?|texti)|ens[._\s-]*(?:tal|texti))\b/i;
+	const match = marker.exec(source);
+	if (!match) return null;
+	const title = source
+		.slice(0, match.index)
+		.replace(/[\s._\-([\]{}]+$/g, "")
+		.replace(/[._]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!title || title.length > 200) return null;
+	const seasonEpisode = /s(\d{1,3})e(\d{1,5})\b/i.exec(source);
+	const year = /\b((?:19|20)\d{2})\b/.exec(source);
+	const resolution = /\b(480p|720p|1080p|2160p)\b/i.exec(source);
+	return {
+		id: row.id,
+		title,
+		year: year ? Number(year[1]) : undefined,
+		season: seasonEpisode ? Number(seasonEpisode[1]) : undefined,
+		episode: seasonEpisode ? Number(seasonEpisode[2]) : undefined,
+		resolution: resolution?.[1].toLowerCase() as Candidate["resolution"],
+	};
+}
+
 export const deilduCleanupState = {
 	running: false,
 	phase: "idle" as
@@ -120,24 +145,13 @@ async function tmdb(candidate: Candidate, kind: Row["media_kind"]) {
 }
 
 export async function cleanImportedDeildu(
-	ids: number[],
+	_ids: number[],
 	onProgress?: () => void,
 ) {
 	if (deilduCleanupState.running) return deilduCleanupState;
-	if (!config.localLlmBaseUrl || !config.localLlmApiKey) {
-		Object.assign(deilduCleanupState, {
-			phase: "disabled",
-			message: "Titan LLM er ekki stillt",
-			lastError: "LOCAL_LLM er ekki stillt",
-		});
-		onProgress?.();
-		return deilduCleanupState;
-	}
-	const rows = ids.length
-		? (statement(
-				`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 AND (i.cleanup_error='' OR i.cleanup_error='missing_model_output' OR i.cleanup_error LIKE 'Unable to connect%' OR i.cleanup_error LIKE 'Titan LLM HTTP %') AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.id`,
-			).all(...ids) as Row[])
-		: [];
+	const rows = statement(
+		`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 OR lower(i.title) LIKE '%1080p%' OR lower(i.title) LIKE '%2160p%' OR lower(i.title) LIKE '%720p%' OR lower(i.title) LIKE '%480p%' OR lower(i.title) LIKE '%web-dl%' OR lower(i.title) LIKE '%webrip%' OR lower(i.title) LIKE '%bluray%' OR lower(i.title) LIKE '%x264%' OR lower(i.title) LIKE '%x265%' OR lower(i.title) LIKE '%hevc%' OR i.title LIKE '%(...)' ORDER BY i.id`,
+	).all() as Row[];
 	Object.assign(deilduCleanupState, {
 		running: true,
 		phase: "cleanup",
@@ -146,19 +160,27 @@ export async function cleanImportedDeildu(
 		cleaned: 0,
 		reviewed: 0,
 		enriched: 0,
-		message: "Hreinsa titla með Titan LLM",
+		message: "Hreinsa Deildu-titla",
 		lastError: "",
 	});
 	onProgress?.();
 	try {
+		let llmUnavailable = !config.localLlmBaseUrl || !config.localLlmApiKey;
 		for (let offset = 0; offset < rows.length; offset += 8) {
 			const batch = rows.slice(offset, offset + 8);
 			deilduCleanupState.message = `${offset + 1}–${offset + batch.length}/${rows.length} · ${batch[0].original_title}`;
 			console.info(`Deildu cleanup ${deilduCleanupState.message}`);
 			onProgress?.();
-			let candidates: Candidate[];
-			try {
-				candidates = await cleanBatch(batch);
+			const deterministic = new Map(
+				batch.flatMap((row) => {
+					const candidate = cleanupCandidateFromRelease(row);
+					return candidate ? [[row.id, candidate] as const] : [];
+				}),
+			);
+			const unresolved = batch.filter((row) => !deterministic.has(row.id));
+			let candidates = [...deterministic.values()];
+			if (unresolved.length && !llmUnavailable) try {
+				candidates = [...candidates, ...await cleanBatch(unresolved)];
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.error(
@@ -166,15 +188,9 @@ export async function cleanImportedDeildu(
 					deilduCleanupState.message,
 					message,
 				);
-				for (const row of batch)
-					statement("UPDATE deildu_items SET cleanup_error=? WHERE id=?").run(
-						message,
-						row.id,
-					);
-				deilduCleanupState.reviewed += batch.length;
-				deilduCleanupState.current = offset + batch.length;
-				onProgress?.();
-				continue;
+				llmUnavailable = true;
+				for (const row of unresolved)
+					statement("UPDATE deildu_items SET cleanup_error=? WHERE id=?").run(message, row.id);
 			}
 			const matches = new Map(
 				await Promise.all(

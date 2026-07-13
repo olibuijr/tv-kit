@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import {
+	chmodSync,
 	mkdirSync,
 	mkdtempSync,
 	rmSync,
@@ -21,9 +22,18 @@ import { nextRuvJob, RuvScheduler } from "../apps/server/src/ruvScheduler";
 import {
 	createDefaultState,
 	normalizeHomeState,
+	stopTransientPlaybackOnStartup,
 } from "../apps/server/src/state";
 
 const root = mkdtempSync(join(tmpdir(), "tv-kit-test-"));
+const golfboxCtl = join(root, "golfboxctl");
+writeFileSync(
+	golfboxCtl,
+	`#!/bin/sh
+printf '%s\\n' '{"person":"Agnes Jónsdóttir","bookings":[{"date":"2026-07-13","time":"11:00","name":"Agnes Jónsdóttir"}]}'
+`,
+);
+chmodSync(golfboxCtl, 0o700);
 Object.assign(Bun.env, {
 	PORT: "31999",
 	VITE_TVSERVER_URL: "http://127.0.0.1:31999",
@@ -51,6 +61,13 @@ Object.assign(Bun.env, {
 	RADIO_SCRAPE_CONCURRENCY: "2",
 	SOLAR_API_URL: "https://example.invalid/solar",
 	SOLAR_CACHE_MS: "21600000",
+	GOLF_TEE_TIMES_URL: "https://example.invalid/golf",
+	GOLF_TEE_TIMES_CACHE_MS: "300000",
+	GOLF_TEE_TIMES_FETCH_TIMEOUT_MS: "5000",
+	GOLFBOX_CTL_BIN: golfboxCtl,
+	GOLFBOX_ENV_FILE: join(root, ".env"),
+	GOLFBOX_SCHEDULER_START_DELAY_MS: "10000",
+	GOLFBOX_TASK_TIMEOUT_MS: "10000",
 	RUV_API_BASE: "https://api.ruv.is",
 	RUV_LIVE_BASE: "https://geo.spilari.ruv.is",
 	RUV_EPG_BASE: "https://muninn.ruv.is",
@@ -87,6 +104,8 @@ truncateSync(torrentVideo, 276_134_947);
 writeFileSync(join(torrentDir, "poster.jpg"), "poster");
 
 const database = await import("../apps/server/src/db");
+const golf = await import("../apps/server/src/golfTeeTimes");
+const golfbox = await import("../apps/server/src/golfboxTask");
 const ruv = await import("../apps/server/src/ruvdb");
 const scraper = await import("../apps/server/src/ruvscraper");
 const torrent = await import("../apps/server/src/torrentMedia");
@@ -127,6 +146,7 @@ const state = (lastAction: string): HomeState => ({
 	view: "home",
 	previousView: "home",
 	deilduCategoryId: 0,
+	deilduShowId: "",
 	newsArticleId: 0,
 	power: true,
 	lastAction,
@@ -193,7 +213,8 @@ beforeEach(() => {
     DELETE FROM ruv_news_articles;
     DELETE FROM ruv_scrape_runs;
     DELETE FROM agent_chat_messages;
-    DELETE FROM app_state;
+    DELETE FROM api_cache;
+    DELETE FROM app_state WHERE key NOT LIKE 'golf%';
   `);
 });
 
@@ -202,9 +223,70 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
+test("agent chat persists and returns only complete turns", () => {
+	database.appendAgentChatTurn(
+		"Ég heiti Ólafur.",
+		'{"type":"text","title":"Kynning","text":"Gaman að kynnast."}',
+	);
+	db.prepare(
+		"INSERT INTO agent_chat_messages(profile_id, role, content, created_at) VALUES ('home', 'user', ?, ?)",
+	).run("Þetta svar mistókst.", Date.now() + 2);
+	expect(
+		database
+			.listAgentChatMessages()
+			.map(({ role, content }) => ({ role, content })),
+	).toEqual([
+		{ role: "user", content: "Ég heiti Ólafur." },
+		{
+			role: "assistant",
+			content:
+				'{"type":"text","title":"Kynning","text":"Gaman að kynnast."}',
+		},
+	]);
+});
+
+test("golf tee times validate availability and preserve the last good response", async () => {
+	const source = [
+		{
+			slug: "jadarsvollur",
+			name: "Jaðarsvöllur",
+			slots_updated_at: "2026-07-12T20:30:00Z",
+			club: { name: "Golfklúbbur Akureyrar" },
+			available_slots: [
+				{ date: "2026-07-12", slot: "21:10", count: 2 },
+				{ date: "2026-07-12", slot: "21:00", count: 0 },
+				{ date: "2026-07-12", slot: "21:20", count: 4 },
+				{ date: "wrong-day", slot: "21:30", count: 0 },
+			],
+		},
+	];
+	const fresh = await golf.getGolfTeeTimes("2026-07-12", async () =>
+		Response.json(source),
+	);
+	expect(fresh?.slots).toEqual([
+		{ time: "21:00", openSeats: 4 },
+		{ time: "21:10", openSeats: 2 },
+	]);
+	if (!fresh) throw new Error("expected fresh golf tee times");
+	database.setCache("golf-tee-times:jadarsvollur:2026-07-12", fresh, 0);
+	const stale = await golf.getGolfTeeTimes(
+		"2026-07-12",
+		async () => new Response("upstream down", { status: 503 }),
+	);
+	expect(stale).toEqual({ ...fresh, stale: true });
+});
+
+test("scheduled GolfBox task runs the script and persists validated bookings", async () => {
+	await golfbox.runGolfBoxTask();
+	expect(golfbox.cachedGolfBoxBookings()).toEqual({
+		person: "Agnes Jónsdóttir",
+		bookings: [{ date: "2026-07-13", time: "11:00", name: "Agnes Jónsdóttir" }],
+	});
+});
+
 test("empty database applies ordered migrations and idempotent state seed", () => {
 	expect(database.schemaVersions()).toEqual([
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 	]);
 	expect(
 		(
@@ -785,7 +867,7 @@ test("Deildu catalog schema, browse parser, and commands are typed", () => {
 	expect(deildu.parseSizeBytes("2.02 GB")).toBe(2_168_958_484);
 	const html = `<table class="torrentlist"><tr>${[
 		"",
-		'<a title="B&oacute;k &amp; s&ouml;gur">Full Movie (...)</a>',
+		'<a data-full-title="Full Movie Complete" title="B&oacute;k &amp; s&ouml;gur">Full Movie (...)</a>',
 		'<a href="download.php/1224612/x.torrent">Sækja</a>',
 		"0",
 		"0",
@@ -801,7 +883,7 @@ test("Deildu catalog schema, browse parser, and commands are typed", () => {
 		{
 			id: 1_224_612,
 			categoryId: 6,
-			title: "Bók & sögur",
+			title: "Full Movie Complete",
 			sizeBytes: 2_168_958_484,
 			seeders: 3,
 			leechers: 1,
@@ -870,6 +952,52 @@ test("Deildu torrent metadata selects safe file offsets", () => {
 	});
 });
 
+test("progressive ranges serve at most the current torrent piece", () => {
+	expect(
+		deilduStream.progressiveRangeEnd(0, 9_999, 10_000, 0, 1_024, 8_192),
+	).toBe(1_023);
+	expect(
+		deilduStream.progressiveRangeEnd(1_500, 9_999, 10_000, 200, 1_024, 8_192),
+	).toBe(1_847);
+});
+
+test("mpv reads complete torrents locally and incomplete torrents over HTTP", () => {
+	const httpSrc = "http://127.0.0.1:31999/deildu/stream/42";
+	expect(
+		deilduStream.mpvStreamSource(
+			{ status: "ready", path: "/tmp/movie.mp4" },
+			httpSrc,
+		),
+	).toBe("/tmp/movie.mp4");
+	expect(
+		deilduStream.mpvStreamSource(
+			{ status: "downloading", path: "/tmp/movie.mp4" },
+			httpSrc,
+		),
+	).toBe(httpSrc);
+});
+
+test("browser playback requires an MP4 with H.264 video and AAC audio", () => {
+	expect(
+		deilduStream.browserNativeProbe({
+			format: { format_name: "mov,mp4,m4a,3gp,3g2,mj2" },
+			streams: [
+				{ codec_type: "video", codec_name: "h264" },
+				{ codec_type: "audio", codec_name: "aac" },
+			],
+		}),
+	).toBe(true);
+	expect(
+		deilduStream.browserNativeProbe({
+			format: { format_name: "matroska,webm" },
+			streams: [
+				{ codec_type: "video", codec_name: "hevc" },
+				{ codec_type: "audio", codec_name: "eac3" },
+			],
+		}),
+	).toBe(false);
+});
+
 test("completed Deildu download serves HTTP byte ranges", async () => {
 	const now = Date.now();
 	db.prepare(
@@ -878,13 +1006,27 @@ test("completed Deildu download serves HTTP byte ranges", async () => {
 		 VALUES (42,6,'Test movie',1024,1,0,?,?)`,
 	).run(now, now);
 	const directory = join(root, "torrents/deildu/42");
-	mkdirSync(directory, { recursive: true });
-	writeFileSync(join(directory, "movie.mp4"), Buffer.alloc(1024, 7));
+	const mediaDirectory = join(directory, "Show");
+	mkdirSync(mediaDirectory, { recursive: true });
+	writeFileSync(join(mediaDirectory, "movie.mp4"), Buffer.alloc(1024, 7));
 	db.prepare(
 		`INSERT INTO deildu_downloads
 		 (item_id,file_index,file_path,file_size,status,downloaded_bytes,error,updated_at)
-		 VALUES (42,1,'42/movie.mp4',1024,'ready',1024,'',?)`,
+		 VALUES (42,1,'42/Show/movie.mp4',1024,'ready',1024,'',?)`,
 	).run(now);
+	const controlPath = join(directory, "Show.aria2");
+	writeFileSync(controlPath, "incomplete");
+	expect(
+		(
+			await deilduStream.serveDeilduStream(
+				new Request("http://127.0.0.1:31999/deildu/stream/42", {
+					headers: { Range: "bytes=100-109" },
+				}),
+				42,
+			)
+		).status,
+	).toBe(409);
+	rmSync(controlPath);
 	const response = await deilduStream.serveDeilduStream(
 		new Request("http://127.0.0.1:31999/deildu/stream/42", {
 			headers: { Range: "bytes=100-109" },
@@ -995,4 +1137,24 @@ test("shared state normalization carries program favourites", () => {
 	expect(normalized.tvFavorites).toEqual(["ruv"]);
 	expect(normalized.deilduCategoryId).toBe(0);
 	expect(normalized.newsArticleId).toBe(0);
+});
+
+test("torrent playback cannot autoplay a stale source after startup", () => {
+	const restored = stopTransientPlaybackOnStartup({
+		...state("spilar"),
+		playing: true,
+		media: {
+			...media,
+			id: "deildu-1211994",
+			src: "http://tv/deildu/stream/1211994",
+			status: "ready",
+			fullscreen: true,
+			engine: "browser",
+		},
+	});
+	expect(restored.playing).toBe(false);
+	expect(restored.media.src).toBe("");
+	expect(restored.media.status).toBe("idle");
+	expect(restored.media.fullscreen).toBe(false);
+	expect(restored.media.engine).toBeUndefined();
 });

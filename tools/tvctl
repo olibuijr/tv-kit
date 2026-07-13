@@ -1,0 +1,801 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+host=${TV_HOST:-192.168.1.12}
+user=${TV_USER:-olafurbui}
+identity=${TV_IDENTITY:-$HOME/.ssh/id_rsa}
+timeout_s=${TV_CONNECT_TIMEOUT:-5}
+cmd_timeout=${TV_CMD_TIMEOUT:-30}
+target="$user@$host"
+
+# TV Kit deployment settings
+kit_dir=${TV_KIT_DIR:-$HOME/Projects/tv-kit}
+kit_home=".tv-kit"               # app home on the TV, relative to $HOME
+kit_remote_dir="$kit_home/src"   # synced source tree on the TV
+titan=${TITAN_HOST:-olafurbui@192.168.1.10}
+kit_runtime="XDG_RUNTIME_DIR=/run/user/1000"
+kit_units=(tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service tv-frame.service tvserverd-radioscraper.service tvserverd-radioscraper.timer)
+kit_enable=(tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service tvserverd-radioscraper.timer)
+kit_hot=(tvserverd.service tv-dashboard.service tv-remote.service) # restarted when deps change
+kit_stale_units=(tv-dashboard-dev.service tv-remote-dev.service)
+kit_excludes=(.git node_modules data artifacts .deploy-stage .pi-subagents dist '*.log' '*.sqlite' '*.sqlite-shm' '*.sqlite-wal')
+
+ssh_opts=(-o ConnectTimeout="$timeout_s" -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=no)
+[[ -f "$identity" ]] && ssh_opts+=(-i "$identity" -o IdentitiesOnly=yes)
+batch_opts=("${ssh_opts[@]}" -o BatchMode=yes)
+
+usage() {
+  cat <<'EOF'
+Usage: tvctl COMMAND [ARGS]
+
+Device:
+  doctor                 Check route, SSH, host identity, and KDE session
+  snapshot               One-connection JSON health, playback, load, and process snapshot
+  status                 Show uptime, network, SDDM, and logged-in sessions
+  now                    Show open GUI/media apps and active audio streams
+  screenshot [FILE]      Capture the current KDE screen to a local PNG
+  tablet                 Show the permanent Android tablet's ADB status
+  run -- COMMAND [ARGS]  Run an argv-safe remote command
+  kill PATTERN           Kill processes matching PATTERN (TERM then KILL, verified)
+  shell COMMAND          Run an explicit remote shell command
+  notify MESSAGE         Display a KDE desktop notification
+  request [REASON]       Record an interactive-control request locally
+  open URL               Open URL in the active TV browser session
+  lock                   Lock the active KDE session
+  reboot                 Reboot the TV
+  shutdown               Power off the TV
+  setup-key              Create/install the SSH key interactively
+  ssh                    Open an interactive SSH session
+
+TV Kit (no-build hot-reload deployment; source of truth: ~/Projects/tv-kit):
+  kit sync [MESSAGE]     Fast deploy: rsync source to the TV; bun --watch and
+                         Vite HMR pick edits up instantly. Installs deps/units
+                         only when they changed. Fires background git archive.
+  kit setup              One-time/repair: bun runtime, linger, service units,
+                         legacy /opt deployment cleanup, DB migration, then sync
+  kit golfbox-env [FILE] Atomically install a protected GolfBox .env on the TV
+  kit status             Boot-enabled/active service states and health endpoints
+  kit verify             Require enabled+active services, HTTP health, and WS ping/pong
+  kit check [warnings]   Run TV-local tests and TypeScript/Svelte checks;
+                         warnings shows all Svelte diagnostics
+  kit frame build        Configure and build the native Qt/QML TV Frame on TV
+  kit frame test         Run the TV Frame test suite on TV
+  kit frame deploy       Sync, build, switch from Chrome, then verify TV Frame
+  kit frame health       Require an active, connected TV Frame service
+  kit frame verify       Health check plus one saved physical TV screenshot
+  kit fullscreen [MODE]  Show ruv (default), ruv2, or off in fullscreen
+  kit press SELECTOR     Click a DOM element via CDP (fast, direct browser control)
+  kit playback COMMAND   Read/control playback: state, stop, play, search QUERY,
+                         or deildu ITEM_ID
+  kit epg [status|sync]  Inspect or force the TV-local RÚV EPG sync
+  kit restart [UNIT...]  Restart TV Kit services (kiosk pre-kills stray Chrome)
+  kit logs [UNIT] [N]    Show recent journal lines (default tvserverd, 50)
+  kit archive [MESSAGE]  Commit and push the tree from Titan (archiving only)
+
+Direct mpv (read/change tracks over IPC without reloading playback):
+  mpv tracks             List audio/subtitle tracks and current selections
+  mpv audio ID|auto|off  Select an audio track
+  mpv subtitle ID|auto|off
+                         Select a subtitle track
+
+Deildu catalog (read-only, secret-safe):
+  deildu search QUERY    Search catalog rows
+  deildu item ID         Show one catalog/download row as JSON
+  deildu links ID        Show safe detail, stream, and local torrent links
+  deildu files ID        List files in cached torrent metadata
+
+Environment: TV_HOST, TV_USER, TV_IDENTITY, TV_CONNECT_TIMEOUT, TV_CMD_TIMEOUT,
+             TV_KIT_DIR, TITAN_HOST, TV_FRAME_BUILD_JOBS (1..4, default 2)
+EOF
+}
+
+remote() { timeout "$cmd_timeout" ssh "${batch_opts[@]}" "$target" "$@"; }
+remote_long() { local t=$1; shift; timeout "$t" ssh "${batch_opts[@]}" "$target" "$@"; }
+
+remote_argv() {
+  local quoted= arg
+  for arg in "$@"; do
+    printf -v arg '%q' "$arg"
+    quoted+="${quoted:+ }$arg"
+  done
+  remote "$quoted"
+}
+
+kit_systemctl() { remote "env $kit_runtime systemctl --user $*"; }
+
+kit_orphan_cleanup() {
+  kit_systemctl "stop tv-kiosk.service" >/dev/null 2>&1 || true
+  remote 'flatpak kill com.google.Chrome >/dev/null 2>&1 || true; pkill -9 -f /app/extra/[c]hrome >/dev/null 2>&1 || true; pkill -9 -x aria2c >/dev/null 2>&1 || true; pkill -9 -x mpv >/dev/null 2>&1 || true; pkill -9 -f TVCTL_PLAYBACK_[V]ALUE >/dev/null 2>&1 || true'
+}
+
+kit_health() {
+  local ok=1 url
+  for url in "http://$host:3110/health" "http://$host:3111/" "http://$host:3112/"; do
+    local tries=0
+    until curl -fsS --max-time 3 "$url" >/dev/null 2>&1; do
+      ((++tries >= 8)) && { echo "health FAIL $url"; ok=0; break; }
+      sleep 1
+    done
+    ((tries < 8)) && echo "health ok   $url"
+  done
+  ((ok))
+}
+
+kit_rsync() {
+  local ex=() e
+  for e in "${kit_excludes[@]}"; do ex+=(--exclude "$e"); done
+  timeout 120 rsync -az --delete --timeout=30 \
+    -e "ssh ${batch_opts[*]}" \
+    "${ex[@]}" "$kit_dir"/ "$target:$kit_remote_dir"/
+}
+
+kit_deps() {
+  # Install dependencies on the TV only when lockfile/manifests changed.
+  remote_long 420 "cd $kit_remote_dir && \
+    new=\$(cat bun.lock package.json apps/*/package.json packages/*/package.json 2>/dev/null | sha256sum | cut -d' ' -f1); \
+    old=\$(cat ~/$kit_home/deps.sha 2>/dev/null || true); \
+    if [ \"\$new\" != \"\$old\" ]; then \
+      ~/.bun/bin/bun install --frozen-lockfile && printf '%s' \"\$new\" > ~/$kit_home/deps.sha && echo deps-installed; \
+    else echo deps-unchanged; fi"
+}
+
+kit_units_install() {
+  # Copy changed unit files; print names of units that changed.
+  local list=${kit_units[*]}
+  remote "cd $kit_remote_dir && mkdir -p ~/.config/systemd/user && changed=; \
+    for u in $list; do \
+      if ! cmp -s ops/systemd/user/\$u ~/.config/systemd/user/\$u 2>/dev/null; then \
+        cp ops/systemd/user/\$u ~/.config/systemd/user/\$u && changed=\"\$changed \$u\"; \
+      fi; \
+    done; \
+    rm -f $(printf '~/.config/systemd/user/%s ' "${kit_stale_units[@]}"); \
+    [ -z \"\$changed\" ] || env $kit_runtime systemctl --user daemon-reload; \
+    echo \"changed:\$changed\""
+}
+
+kit_archive() {
+  local message=${1:-"Archive TV Kit $(date -u +'%Y-%m-%dT%H:%M:%SZ')"} q
+  printf -v q '%q' "$message"
+  if [[ -d $kit_dir/.git ]]; then
+    (cd "$kit_dir" && git add -A && { git diff --cached --quiet || git commit -m "$message"; } && git push origin HEAD:main)
+  else
+    timeout 90 ssh "${batch_opts[@]}" "$titan" \
+      "cd ~/Projects/tv-kit && git add -A && { git diff --cached --quiet || git commit -m $q; } && git push origin HEAD:main"
+  fi
+}
+
+kit_sync() {
+  local message=${1:-}
+  echo "== cleanup orphaned players"
+  kit_orphan_cleanup
+  echo "== sync source -> $target:$kit_remote_dir"
+  kit_rsync
+  echo "== dependencies"
+  local deps units
+  deps=$(kit_deps); echo "$deps"
+  echo "== service units"
+  units=$(kit_units_install); echo "$units"
+  kit_systemctl "enable --now ${kit_enable[*]}" >/dev/null 2>&1 || true
+  local restart=()
+  [[ $deps == *deps-installed* ]] && restart+=("${kit_hot[@]}")
+  if [[ $units == *changed:*[a-z]* ]]; then
+    # Restart only long-running units; oneshots (radioscraper) block a
+    # blocking restart for minutes and are driven by their timer instead.
+    local u e
+    for u in ${units#*changed:}; do
+      for e in "${kit_enable[@]}"; do [[ $u == "$e" ]] && restart+=("$u"); done
+    done
+  fi
+  if ((${#restart[@]})); then
+    local uniq; uniq=$(printf '%s\n' "${restart[@]}" | sort -u | tr '\n' ' ')
+    echo "== restart: $uniq"
+    kit_systemctl "restart $uniq"
+  else
+    echo "== no restarts needed (hot reload picks up the synced files)"
+  fi
+  echo "== health"
+  kit_health
+  echo "== archive (background, non-blocking)"
+  (kit_archive "$message" >>/tmp/tv-kit-archive.log 2>&1 && echo "archive ok $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log || echo "archive FAILED $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log) &
+  disown
+  echo "done"
+}
+
+kit_setup() {
+  echo "== bun runtime"
+  remote_long 180 'command -v ~/.bun/bin/bun >/dev/null || curl -fsSL https://bun.sh/install | bash >/dev/null; ~/.bun/bin/bun --version'
+  echo "== runtime + native-frame tools on the TV"
+  remote_long 180 'command -v rsync >/dev/null || sudo -n pacman -S --needed --noconfirm rsync >/dev/null; command -v aria2c >/dev/null || sudo -n pacman -S --needed --noconfirm aria2 >/dev/null; command -v mpv >/dev/null || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; command -v cmake >/dev/null || sudo -n pacman -S --needed --noconfirm cmake ninja qt6-declarative qt6-websockets >/dev/null; test -f /usr/include/mpv/client.h || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; echo runtime-tools-present'
+  echo "== retire dead NFS automount at ~/Projects (replaced by tvctl rsync)"
+  remote 'if grep -q "^100.88.0.9:/home/olafurbui/Projects" /etc/fstab; then \
+      sudo -n cp /etc/fstab /etc/fstab.bak-tvkit; \
+      sudo -n sed -i "s|^100.88.0.9:/home/olafurbui/Projects|#&|" /etc/fstab && echo fstab-nfs-disabled; \
+    else echo fstab-already-clean; fi'
+  remote 'sudo -n systemctl stop --no-block home-olafurbui-Projects.automount 2>/dev/null; sudo -n umount -fl /home/olafurbui/Projects 2>/dev/null; true' || true
+  remote 'timeout 20 sudo -n systemctl daemon-reload && echo reload-ok' || echo 'reload skipped (busy manager); rerun kit setup later'
+  echo "== linger + legacy cleanup (discrete bounded steps)"
+  remote "sudo -n loginctl enable-linger $user && echo linger-ok"
+  remote 'sudo -n systemctl kill -s SIGKILL tvserverd.service 2>/dev/null; sudo -n rm -f /etc/systemd/system/tvserverd.service /etc/systemd/system/multi-user.target.wants/tvserverd.service; echo legacy-unit-removed' || true
+  remote "mkdir -p ~/$kit_home/data ~/$kit_remote_dir && echo dirs-ok"
+  remote "if [ -f /var/lib/tv-kit/tv-kit.sqlite ] && [ ! -f ~/$kit_home/data/tv-kit.sqlite ]; then sudo -n cp -a /var/lib/tv-kit/tv-kit.sqlite* ~/$kit_home/data/ && sudo -n chown $user:$user ~/$kit_home/data/tv-kit.sqlite* && echo db-migrated; else echo db-migration-not-needed; fi"
+  remote 'sudo -n rm -rf /opt/tv-kit /opt/tv-kit-dev /etc/tv-kit && echo legacy-dirs-removed'
+  echo "== TV-local settings overrides (~/$kit_home/env)"
+  remote "[ -f ~/$kit_home/env ] || install -m 0600 /dev/null ~/$kit_home/env; \
+    grep -q '^TV_KIT_DB=' ~/$kit_home/env || printf 'TV_KIT_DB=%s/$kit_home/data/tv-kit.sqlite\n' \"\$HOME\" >> ~/$kit_home/env; \
+    grep -q '^TORRENT_MEDIA_DIR=' ~/$kit_home/env || printf 'TORRENT_MEDIA_DIR=%s/$kit_home/data/torrents\n' \"\$HOME\" >> ~/$kit_home/env; \
+    chmod 0600 ~/$kit_home/env; echo env-ok"
+  echo "== seed database if the TV has none"
+  if ! remote "test -f ~/$kit_home/data/tv-kit.sqlite"; then
+    if [[ -f $kit_dir/data/tv-kit.sqlite ]]; then
+      timeout 60 scp -q "${batch_opts[@]}" "$kit_dir/data/tv-kit.sqlite" "$target:$kit_home/data/tv-kit.sqlite"
+      echo "db-seeded-from-local"
+    else
+      echo "no local database snapshot; server will create a fresh one"
+    fi
+  else
+    echo "db-present"
+  fi
+  kit_sync "${1:-}"
+}
+
+kit_golfbox_env() {
+  (($# <= 1)) || { echo 'tvctl: kit golfbox-env accepts at most one source file' >&2; exit 64; }
+  local source=${1:-$HOME/.config/golfbox/.env} remote_tmp="$kit_home/.env.tmp.$$"
+  [[ -f $source ]] || { echo "tvctl: GolfBox .env not found: $source" >&2; exit 66; }
+  timeout 60 scp -q "${batch_opts[@]}" "$source" "$target:$remote_tmp"
+  remote "chmod 0600 ~/$remote_tmp && mv ~/$remote_tmp ~/$kit_home/.env"
+  echo "golfbox-env-installed ~/$kit_home/.env mode=0600"
+}
+
+kit_status() {
+  echo "== boot enabled"
+  kit_systemctl "is-enabled ${kit_enable[*]}" || true
+  echo "== active"
+  kit_systemctl "list-units --no-pager --no-legend ${kit_units[*]}" || true
+  echo "== health"
+  kit_health || true
+}
+
+kit_verify() {
+  kit_systemctl "is-enabled --quiet ${kit_enable[*]}"
+  kit_systemctl "is-active --quiet ${kit_enable[*]}"
+  kit_health
+  local script='const fail = message => { console.error(message); try { ws.close(); } catch {} process.exit(1); };
+const ws = new WebSocket("ws://127.0.0.1:3110/ws?client=verify", { headers: { Origin: "http://127.0.0.1:3112" } });
+const timer = setTimeout(() => fail("websocket ping timeout"), 5000);
+ws.onerror = () => fail("websocket connection failed");
+ws.onopen = () => ws.send(JSON.stringify({ type: "ping" }));
+ws.onmessage = event => { if (JSON.parse(String(event.data)).type !== "pong") return; clearTimeout(timer); console.log("websocket ping/pong ok"); ws.close(); };'
+  remote_argv ~/.bun/bin/bun -e "$script"
+  echo "services enabled+active"
+}
+
+kit_restart() {
+  local units=("$@")
+  ((${#units[@]})) || units=("${kit_enable[@]}")
+  local unit
+  for unit in "${units[@]}"; do
+    [[ $unit =~ ^[A-Za-z0-9@_.:-]+$ ]] || { echo "tvctl: invalid systemd unit: $unit" >&2; return 64; }
+  done
+  kit_systemctl "daemon-reload"
+  kit_systemctl "restart ${units[*]}"
+  kit_status
+}
+
+kit_logs() {
+  local unit=${1:-tvserverd.service} lines=${2:-50}
+  (($# <= 2)) || { echo 'tvctl: kit logs accepts UNIT and line count' >&2; return 64; }
+  [[ $unit =~ ^[A-Za-z0-9@_.:-]+$ ]] || { echo "tvctl: invalid systemd unit: $unit" >&2; return 64; }
+  [[ $lines =~ ^[1-9][0-9]*$ ]] && ((lines <= 1000)) || { echo 'tvctl: log line count must be 1..1000' >&2; return 64; }
+  kit_systemctl "status --no-pager -n $lines $unit" || \
+    remote "env $kit_runtime journalctl --user -u $unit -n $lines --no-pager"
+}
+
+kit_check() {
+  local warnings=${1:-}
+  [[ -z $warnings || $warnings == warnings ]] || { echo 'tvctl: kit check accepts warnings only' >&2; return 64; }
+  local svelte_check='~/.bun/bin/bun x svelte-check --threshold error --tsconfig ./tsconfig.svelte.json'
+  [[ $warnings == warnings ]] && svelte_check='~/.bun/bin/bun x svelte-check --tsconfig ./tsconfig.svelte.json'
+  remote_long 300 "cd $kit_remote_dir && \
+    ~/.bun/bin/bun test && \
+    ~/.bun/bin/bun x tsc -p tsconfig.json --noEmit && \
+    $svelte_check"
+}
+
+kit_frame_build() {
+  (($# == 0)) || { echo 'tvctl: kit frame build accepts no arguments' >&2; return 64; }
+  local jobs=${TV_FRAME_BUILD_JOBS:-2}
+  [[ $jobs =~ ^[1-4]$ ]] || { echo 'tvctl: TV_FRAME_BUILD_JOBS must be 1..4' >&2; return 64; }
+  remote_long 300 "test -f $kit_remote_dir/apps/tv-frame/CMakeLists.txt || { echo 'tvctl: native frame source is missing' >&2; exit 66; }; \\
+    command -v cmake >/dev/null || { echo 'tvctl: cmake is missing; run tvctl kit setup' >&2; exit 69; }; \\
+    command -v ninja >/dev/null || { echo 'tvctl: ninja is missing; run tvctl kit setup' >&2; exit 69; }; \\
+    cmake -S $kit_remote_dir/apps/tv-frame -B ~/$kit_home/frame-build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && \\
+    cmake --build ~/$kit_home/frame-build --parallel $jobs"
+}
+
+kit_frame_test() {
+  (($# == 0)) || { echo 'tvctl: kit frame test accepts no arguments' >&2; return 64; }
+  kit_frame_build
+  remote_long 300 "ctest --test-dir ~/$kit_home/frame-build --output-on-failure"
+}
+
+kit_frame_health() {
+  (($# == 0)) || { echo 'tvctl: kit frame health accepts no arguments' >&2; return 64; }
+  kit_systemctl 'is-active --quiet tv-frame.service'
+  remote "test -s ~/$kit_home/frame-health.json && ~/.bun/bin/bun -e 'const state=JSON.parse(await Bun.file(process.argv[1]).text()); if(!state.connected || !state.updatedAt || !state.lastMessageAt || Date.now()-state.updatedAt>30000 || Date.now()-state.lastMessageAt>30000) process.exit(1); console.log(JSON.stringify(state));' ~/$kit_home/frame-health.json"
+}
+
+kit_frame_verify() {
+  (($# <= 1)) || { echo 'tvctl: kit frame verify accepts at most one screenshot path' >&2; return 64; }
+  kit_frame_health
+  local output=${1:-"$PWD/tv-frame-verify-$(date -u +%Y%m%d-%H%M%S).png"}
+  "$0" screenshot "$output" >/dev/null
+  [[ -s $output ]] || { echo "tvctl: native-frame screenshot is empty: $output" >&2; return 1; }
+  printf 'native-frame visual confirmation: %s\n' "$output"
+}
+
+kit_frame_deploy() {
+  (($# <= 1)) || { echo 'tvctl: kit frame deploy accepts at most one message' >&2; return 64; }
+  echo '== stop kiosk and orphaned players'
+  kit_orphan_cleanup
+  echo "== sync source -> $target:$kit_remote_dir"
+  kit_rsync
+  echo '== dependencies'
+  kit_deps
+  echo '== install user units'
+  kit_units_install
+  echo '== build native frame'
+  kit_frame_build
+  echo '== switch display client'
+  kit_systemctl 'daemon-reload'
+  kit_systemctl 'disable --now tv-kiosk.service tv-dashboard.service' || true
+  kit_systemctl 'enable --now tvserverd.service tv-remote.service tv-frame.service tvserverd-radioscraper.timer'
+  kit_frame_verify
+  (kit_archive "${1:-Deploy native TV Frame}" >>/tmp/tv-kit-archive.log 2>&1 && echo "archive ok $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log || echo "archive FAILED $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log) &
+  disown
+}
+
+kit_epg_status() {
+  remote_argv python -c 'import sqlite3
+from pathlib import Path
+path = Path.home() / ".tv-kit/data/tv-kit.sqlite"
+db = sqlite3.connect(path)
+versions = ",".join(str(row[0]) for row in db.execute("SELECT version FROM schema_migrations ORDER BY version"))
+integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
+print(f"schema={versions} integrity={integrity}")
+for slug, count in db.execute("SELECT channel_slug,COUNT(*) FROM ruv_epg_events GROUP BY channel_slug ORDER BY channel_slug"):
+    print(f"{slug}={count}")
+run = db.execute("SELECT status,item_count,error FROM ruv_scrape_runs WHERE kind=? ORDER BY id DESC LIMIT 1", ("epg",)).fetchone()
+if run:
+    print(f"last_epg={run[0]} events={run[1]}")
+    if run[2]: print(f"error={run[2]}")'
+}
+
+kit_epg_sync() {
+  if remote_argv pgrep -f 'apps/server/src/[r]uvscraper.ts' >/dev/null; then
+    echo 'RÚV sync already running' >&2
+    return 75
+  fi
+  remote_long 240 "cd $kit_remote_dir && set -a && source .env && source ~/$kit_home/env && set +a && \
+    ~/.bun/bin/bun -e 'import { scrapeRuvEpg } from \"./apps/server/src/ruvscraper.ts\"; console.log(JSON.stringify(await scrapeRuvEpg()))'"
+  kit_epg_status
+}
+
+kit_fullscreen() {
+  local mode=${1:-ruv}
+  (($# <= 1)) || { echo 'tvctl: kit fullscreen accepts ruv, ruv2, or off' >&2; exit 64; }
+  case $mode in ruv|ruv2|off) ;; *) echo 'tvctl: kit fullscreen accepts ruv, ruv2, or off' >&2; exit 64 ;; esac
+  local script='const mode = Bun.env.TVCTL_FULLSCREEN;
+let ws;
+const fail = message => { console.error(message); try { ws?.close(); } catch {} process.exit(1); };
+const watchdog = setTimeout(() => fail("TV Kit WebSocket timeout"), 5000);
+ws = new WebSocket("ws://127.0.0.1:3110/ws", { headers: { Origin: "http://127.0.0.1:3112" } });
+ws.onerror = () => fail("TV Kit WebSocket connection failed");
+ws.onopen = () => {
+  if (mode !== "off") ws.send(JSON.stringify({ type: "command", action: "ruv-channel", value: mode }));
+  setTimeout(() => ws.send(JSON.stringify({ type: "command", action: "fullscreen", value: mode !== "off" })), mode === "off" ? 0 : 150);
+  setTimeout(async () => {
+    try {
+      const state = (await (await fetch("http://127.0.0.1:3110/health")).json()).state;
+      const ok = state.media.fullscreen === (mode !== "off") && (mode === "off" || state.media.id === `ruv-channel-${mode}`);
+      console.log(`fullscreen=${state.media.fullscreen ? "on" : "off"} media=${state.media.id} status=${state.media.status}`);
+      clearTimeout(watchdog);
+      ws.close();
+      if (!ok) process.exitCode = 1;
+    } catch (error) { fail(String(error)); }
+  }, 700);
+};'
+  remote_argv env TVCTL_FULLSCREEN="$mode" ~/.bun/bin/bun -e "$script"
+}
+
+kit_press() {
+  (($# == 1)) || { echo 'tvctl: kit press requires one CSS selector' >&2; exit 64; }
+  local selector=$1
+  remote_argv env TVCTL_PRESS_SELECTOR="$selector" ~/.bun/bin/bun -e '
+const selector = Bun.env.TVCTL_PRESS_SELECTOR;
+// Get the kiosk page WebSocket URL from CDP endpoint
+const pages = await (await fetch("http://127.0.0.1:9222/json")).json();
+const wsUrl = pages[0]?.webSocketDebuggerUrl;
+if (!wsUrl) { console.error("no CDP page found"); process.exit(1); }
+
+const ws = new WebSocket(wsUrl);
+const send = (method, params = {}) => new Promise((resolve, reject) => {
+  const id = Math.random();
+  ws.addEventListener("message", function handler(e) {
+    const msg = JSON.parse(e.data);
+    if (msg.id === id) { ws.removeEventListener("message", handler); resolve(msg.result ?? msg.error); }
+  }, { once: false });
+  ws.send(JSON.stringify({ id, method, params }));
+});
+
+await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error("CDP connect failed")); });
+
+// Click via CDP Runtime.evaluate — fastest path, no DOM traversal round-trips
+const result = await send("Runtime.evaluate", {
+  expression: `
+    (() => {
+      const el = document.querySelector("${selector.replace(/"/g, "\\\"")}");
+      if (!el) return "NOT_FOUND";
+      el.click();
+      return "OK " + (el.textContent || "").slice(0, 60).replace(/\\s+/g, " ").trim();
+    })()`,
+  returnByValue: true,
+});
+
+const value = result?.result?.value;
+if (value === "NOT_FOUND") { console.error("selector not found: " + selector); process.exit(2); }
+console.log(value);
+ws.close();
+'
+}
+
+kit_playback() {
+  local mode=${1:-state}; shift || true
+  case $mode in
+    state)
+      (($# == 0)) || { echo 'tvctl: kit playback state accepts no arguments' >&2; exit 64; }
+      remote_argv ~/.bun/bin/bun -e 'const health=await (await fetch("http://127.0.0.1:3110/health")).json(); const current=health.state; console.log(JSON.stringify({playing:current.playing,id:current.media.id,title:current.media.title,engine:current.media.engine||"none",position:current.media.currentTime,status:current.media.status,clients:health.clients}));'
+      return
+      ;;
+    search)
+      (($#)) || { echo 'tvctl: kit playback search requires a title query' >&2; exit 64; }
+      local query=$* escaped
+      escaped=${query//\'/\'\'}
+      remote_argv sqlite3 "/home/$user/$kit_home/data/tv-kit.sqlite" "SELECT id,title,original_title FROM deildu_items WHERE title LIKE '%$escaped%' OR original_title LIKE '%$escaped%' ORDER BY id;"
+      return
+      ;;
+    stop|play)
+      (($# == 0)) || { echo "tvctl: kit playback $mode accepts no arguments" >&2; exit 64; }
+      ;;
+    deildu)
+      (($# == 1)) && [[ $1 =~ ^[1-9][0-9]*$ ]] || { echo 'tvctl: kit playback deildu requires one positive item id' >&2; exit 64; }
+      ;;
+    *) echo 'tvctl: kit playback accepts state, stop, play, search QUERY, or deildu ITEM_ID' >&2; exit 64 ;;
+  esac
+  local value=${1:-0}
+  local script='const mode = Bun.env.TVCTL_PLAYBACK;
+const value = Number(Bun.env.TVCTL_PLAYBACK_VALUE || 0);
+let ws;
+let baseline;
+const abort = () => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "command", action: "stop-playback", label: "tvctl timeout" })); } catch {} };
+const fail = (message, stop = false) => { console.error(message); if (stop) abort(); setTimeout(() => { try { ws?.close(); } catch {} process.exit(1); }, stop ? 200 : 0); };
+const state = async () => (await (await fetch("http://127.0.0.1:3110/health")).json()).state;
+const done = current => { console.log(JSON.stringify({ playing: current.playing, id: current.media.id, title: current.media.title, engine: current.media.engine || "none", position: current.media.currentTime, status: current.media.status })); ws?.close(); setTimeout(() => process.exit(0), 100); };
+const watchdog = setTimeout(() => fail("TV Kit playback produced no frames", true), 25000);
+const send = () => ws.send(JSON.stringify(mode === "deildu"
+  ? { type: "command", action: "deildu-play", value, label: `tvctl ${mode}` }
+  : mode === "stop"
+    ? { type: "command", action: "stop-playback", label: `tvctl ${mode}` }
+    : { type: "command", action: "set-playing", value: true, label: `tvctl ${mode}` }));
+const verify = async (attempt = 0) => {
+  const current = await state();
+  if (mode === "stop" && !current.playing || mode === "play" && current.playing && current.media.src) { clearTimeout(watchdog); return done(current); }
+  if (mode === "deildu" && current.media.id === `deildu-${value}`) {
+    if (baseline === undefined) baseline = current.media.currentTime;
+    if (["mpv", "browser"].includes(current.media.engine) && current.media.status === "ready" && current.media.currentTime > baseline + 0.5) { clearTimeout(watchdog); return done(current); }
+    if (current.media.status === "error") return fail("TV Kit playback failed", true);
+  }
+  if (attempt >= 11) return fail("TV Kit playback produced no frames", true);
+  setTimeout(() => verify(attempt + 1), 2000);
+};
+ws = new WebSocket("ws://127.0.0.1:3110/ws?client=tvctl", { headers: { Origin: "http://127.0.0.1:3112" } });
+ws.onerror = () => fail("TV Kit WebSocket connection failed");
+ws.onopen = async () => {
+  const before = await state();
+  if (mode === "stop" && !before.playing || mode === "play" && before.playing) return done(before);
+  send();
+  setTimeout(() => verify(), mode === "deildu" ? 1000 : 400);
+};'
+  remote_argv env TVCTL_PLAYBACK="$mode" TVCTL_PLAYBACK_VALUE="$value" ~/.bun/bin/bun -e "$script"
+}
+
+mpv_control() {
+  local action=${1:-tracks}; shift || true
+  case $action in
+    tracks)
+      (($# == 0)) || { echo 'tvctl: mpv tracks accepts no arguments' >&2; exit 64; }
+      ;;
+    audio|subtitle)
+      (($# == 1)) && [[ $1 == auto || $1 == off || $1 =~ ^[1-9][0-9]*$ ]] || {
+        echo "tvctl: mpv $action requires a positive track ID, auto, or off" >&2
+        exit 64
+      }
+      ;;
+    *) echo 'tvctl: mpv accepts tracks, audio ID|auto|off, or subtitle ID|auto|off' >&2; exit 64 ;;
+  esac
+  local value=${1:-}
+  local script='import { existsSync } from "node:fs";
+const action = Bun.env.TVCTL_MPV_ACTION || "tracks";
+const raw = Bun.env.TVCTL_MPV_VALUE || "";
+const socketPath = ["/run/user/1000/tv-direct-mpv.sock", "/run/user/1000/tv-kit-mpv.sock"].find(existsSync);
+if (!socketPath) { console.error("tvctl: no active mpv IPC socket"); process.exit(1); }
+let requestId = 0;
+let setId = 0;
+const commands = [];
+if (action !== "tracks") {
+  const property = action === "audio" ? "aid" : "sid";
+  const value = raw === "off" ? "no" : raw === "auto" ? "auto" : Number(raw);
+  setId = ++requestId;
+  commands.push({ command: ["set_property", property, value], request_id: setId });
+}
+const tracksId = ++requestId;
+const audioId = ++requestId;
+const subtitleId = ++requestId;
+commands.push(
+  { command: ["get_property", "track-list"], request_id: tracksId },
+  { command: ["get_property", "aid"], request_id: audioId },
+  { command: ["get_property", "sid"], request_id: subtitleId },
+);
+const child = Bun.spawn({
+  cmd: ["timeout", "2", "socat", "-", `UNIX-CONNECT:${socketPath}`],
+  stdin: "pipe", stdout: "pipe", stderr: "pipe",
+});
+child.stdin.write(commands.map(command => JSON.stringify(command)).join("\n") + "\n");
+child.stdin.end();
+const output = await new Response(child.stdout).text();
+await child.exited;
+const responses = new Map();
+for (const line of output.split("\n")) {
+  try { const value = JSON.parse(line); if (value.request_id) responses.set(value.request_id, value); } catch {}
+}
+if (setId && responses.get(setId)?.error !== "success") {
+  console.error(`tvctl: mpv rejected ${action} track ${raw}: ${responses.get(setId)?.error || "no response"}`);
+  process.exit(1);
+}
+const tracksResponse = responses.get(tracksId);
+if (tracksResponse?.error !== "success" || !Array.isArray(tracksResponse.data)) {
+  console.error(`tvctl: could not read mpv tracks: ${tracksResponse?.error || "no response"}`);
+  process.exit(1);
+}
+const tracks = tracksResponse.data;
+const audio = tracks.filter(track => track.type === "audio").map(track => ({
+  id: track.id, language: track.lang || "", title: track.title || "", codec: track.codec || "",
+  channels: track["audio-channels"] || null, selected: Boolean(track.selected),
+}));
+const subtitles = tracks.filter(track => track.type === "sub").map(track => ({
+  id: track.id, language: track.lang || "", title: track.title || "", codec: track.codec || "",
+  forced: Boolean(track.forced), selected: Boolean(track.selected),
+}));
+const selectedAudio = responses.get(audioId)?.data;
+const selectedSubtitle = responses.get(subtitleId)?.data;
+console.log(JSON.stringify({
+  socket: socketPath,
+  selectedAudio: selectedAudio === false ? "off" : selectedAudio,
+  selectedSubtitle: selectedSubtitle === false ? "off" : selectedSubtitle,
+  audio,
+  subtitles,
+}));'
+	remote_argv env TVCTL_MPV_ACTION="$action" TVCTL_MPV_VALUE="$value" ~/.bun/bin/bun -e "$script"
+}
+
+deildu_query() {
+  local action=${1:-}; shift || true
+  case $action in
+    search)
+      (($#)) || { echo 'tvctl: deildu search requires a query' >&2; exit 64; }
+      local query=$* escaped
+      escaped=${query//\'/\'\'}
+      remote_argv sqlite3 -json "/home/$user/$kit_home/data/tv-kit.sqlite" \
+        "SELECT i.id,i.title,i.original_title,c.name AS category,i.size_bytes,i.seeders,i.leechers,COALESCE(d.status,'missing') AS status FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id LEFT JOIN deildu_downloads d ON d.item_id=i.id WHERE i.title LIKE '%$escaped%' OR i.original_title LIKE '%$escaped%' ORDER BY i.seeders DESC,i.id DESC LIMIT 50;"
+      ;;
+    item)
+      (($# == 1)) && [[ $1 =~ ^[1-9][0-9]*$ ]] || { echo 'tvctl: deildu item requires one positive item ID' >&2; exit 64; }
+      remote_argv sqlite3 -json "/home/$user/$kit_home/data/tv-kit.sqlite" \
+        "SELECT i.id,i.title,i.original_title,c.id AS category_id,c.name AS category,c.media_kind,i.size_bytes,i.seeders,i.leechers,i.playback_position,i.playback_duration,COALESCE(d.file_index,0) AS file_index,COALESCE(d.file_path,'') AS file_path,COALESCE(d.file_size,0) AS file_size,COALESCE(d.status,'missing') AS status,COALESCE(d.downloaded_bytes,0) AS downloaded_bytes,COALESCE(d.error,'') AS error FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id LEFT JOIN deildu_downloads d ON d.item_id=i.id WHERE i.id=$1;"
+      ;;
+    links)
+      (($# == 1)) && [[ $1 =~ ^[1-9][0-9]*$ ]] || { echo 'tvctl: deildu links requires one positive item ID' >&2; exit 64; }
+      remote_argv env --chdir="/home/$user/$kit_remote_dir" TVCTL_DEILDU_ID="$1" ~/.bun/bin/bun -e 'import { existsSync } from "node:fs";
+const id=Number(Bun.env.TVCTL_DEILDU_ID);
+const base=(Bun.env.DEILDU_BASE_URL||"").replace(/\/$/,"");
+const server=(Bun.env.VITE_TVSERVER_URL||"").replace(/\/$/,"");
+const torrentPath=`/home/'"$user"'/'"$kit_home"'/data/torrents/deildu/${id}/source.torrent`;
+console.log(JSON.stringify({id,detailUrl:`${base}/details.php?id=${id}`,streamUrl:`${server}/deildu/stream/${id}`,torrentPath,torrentCached:existsSync(torrentPath),authenticatedDownloadUrl:"redacted"}));'
+      ;;
+    files)
+      (($# == 1)) && [[ $1 =~ ^[1-9][0-9]*$ ]] || { echo 'tvctl: deildu files requires one positive item ID' >&2; exit 64; }
+      remote_argv sh -c 'aria2c --show-files "$1" | sed -E "/^ http/d;/^Magnet URI:/d"' sh "/home/$user/$kit_home/data/torrents/deildu/$1/source.torrent"
+      ;;
+    *) echo 'tvctl: deildu accepts search QUERY, item ID, links ID, or files ID' >&2; exit 64 ;;
+  esac
+}
+
+tv_snapshot() {
+  (($# == 0)) || { echo 'tvctl: snapshot accepts no arguments' >&2; exit 64; }
+  local script='import { freemem, hostname, loadavg, totalmem, uptime } from "node:os";
+const command = value => {
+  const result = Bun.spawnSync(["bash", "-lc", value], { stdout: "pipe", stderr: "pipe" });
+  return { ok: result.exitCode === 0, output: result.stdout.toString().trim() };
+};
+const serviceNames = ["tvserverd.service", "tv-dashboard.service", "tv-remote.service", "tv-kiosk.service", "tvserverd-radioscraper.timer"];
+const shown = command("XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show " + serviceNames.join(" ") + " -p Id -p ActiveState -p UnitFileState --no-pager").output;
+const services = shown.split(/\n\s*\n/).filter(Boolean).map(block => Object.fromEntries(block.split("\n").map(line => line.split(/=(.*)/s).slice(0, 2))));
+let health = null;
+const endpointEntries = await Promise.all([["server", "http://127.0.0.1:3110/health"], ["dashboard", "http://127.0.0.1:3111/"], ["remote", "http://127.0.0.1:3112/"]].map(async ([name, url]) => {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    if (name === "server" && response.ok) health = await response.json();
+    return [name, { ok: response.ok, status: response.status }];
+  } catch (error) {
+    return [name, { ok: false, error: String(error) }];
+  }
+}));
+const endpoints = Object.fromEntries(endpointEntries);
+const media = health?.state?.media || {};
+const count = name => Number(command("pgrep -cx " + name).output || 0);
+console.log(JSON.stringify({
+  system: { hostname: hostname(), uptimeSeconds: Math.round(uptime()), loadAverage: loadavg(), memoryBytes: { total: totalmem(), free: freemem() } },
+  endpoints,
+  services,
+  playback: health ? { playing: Boolean(health.state?.playing), id: media.id || "", title: media.title || "", engine: media.engine || "none", status: media.status || "", position: media.currentTime || 0, duration: media.duration || 0, clients: health.clients || 0 } : null,
+  processes: { mpv: count("mpv"), aria2c: count("aria2c"), chrome: count("chrome"), stremio: count("stremio") },
+}));'
+  remote_argv ~/.bun/bin/bun -e "$script"
+}
+
+remote_screenshot_path=
+cleanup_screenshot() {
+  [[ -n $remote_screenshot_path ]] || return 0
+  remote_argv rm -f "$remote_screenshot_path" >/dev/null 2>&1 || true
+  remote_screenshot_path=
+}
+
+case ${1:-help} in
+  help|-h|--help) usage ;;
+  kit)
+    shift
+    sub=${1:-status}; shift || true
+    case $sub in
+      sync|deploy) kit_sync "$*" ;;
+      setup) kit_setup "$*" ;;
+      golfbox-env) kit_golfbox_env "$@" ;;
+      status) kit_status ;;
+      verify) (($# == 0)) || { echo 'tvctl: kit verify accepts no arguments' >&2; exit 64; }; kit_verify ;;
+      check) (($# <= 1)) || { echo 'tvctl: kit check accepts warnings only' >&2; exit 64; }; kit_check "${1:-}" ;;
+      frame)
+        frame_action=${1:-health}; shift || true
+        case $frame_action in
+          build) kit_frame_build "$@" ;;
+          test) kit_frame_test "$@" ;;
+          deploy) kit_frame_deploy "$@" ;;
+          health) kit_frame_health "$@" ;;
+          verify) kit_frame_verify "$@" ;;
+          *) echo 'tvctl: kit frame accepts build, test, health, or verify' >&2; exit 64 ;;
+        esac
+        ;;
+      fullscreen) kit_fullscreen "$@" ;;
+      press) kit_press "$@" ;;
+      playback) kit_playback "$@" ;;
+      epg)
+        epg_action=${1:-status}; shift || true
+        case $epg_action in
+          status) (($# == 0)) || { echo 'tvctl: kit epg status accepts no arguments' >&2; exit 64; }; kit_epg_status ;;
+          sync) (($# == 0)) || { echo 'tvctl: kit epg sync accepts no arguments' >&2; exit 64; }; kit_epg_sync ;;
+          *) echo 'tvctl: kit epg accepts status or sync' >&2; exit 64 ;;
+        esac
+        ;;
+      restart) kit_restart "$@" ;;
+      logs) kit_logs "$@" ;;
+      archive) kit_archive "$*" ;;
+      *) echo "tvctl: unknown kit command: $sub" >&2; usage >&2; exit 64 ;;
+    esac
+    ;;
+  mpv)
+    shift
+    mpv_control "$@"
+    ;;
+  deildu)
+    shift
+    deildu_query "$@"
+    ;;
+  snapshot)
+    shift
+    tv_snapshot "$@"
+    ;;
+  doctor)
+    printf 'target=%s\n' "$target"
+    ip route get "$host" 2>/dev/null || { echo 'route=unreachable'; exit 2; }
+    remote 'test "$(cat /etc/hostname)" = tv && echo hostname=tv || { echo hostname-mismatch; exit 3; }; printf "ssh=ok\n"; systemctl is-active NetworkManager sddm; loginctl list-sessions --no-legend' || {
+      rc=$?
+      echo "ssh=unreachable-or-unauthorized (exit=$rc)" >&2
+      exit "$rc"
+    }
+    ;;
+  status)
+    remote 'printf "host=%s\n" "$(cat /etc/hostname)"; uptime; iface=$(ip route show default | awk "NR==1 {print \$5}"); ip -brief address show "$iface"; systemctl is-active NetworkManager sddm; loginctl list-sessions --no-legend'
+    ;;
+  now)
+    remote 'printf "applications:\n"; ps -u "$(id -u)" -o comm= | sort -u | grep -E "^(chrome|firefox|konsole|mpv|stremio|vlc)$" || true; printf "audio-streams:\n"; XDG_RUNTIME_DIR=/run/user/1000 wpctl status | awk "found && /^Video/{exit} /Streams:/{found=1} found"'
+    ;;
+  screenshot)
+    shift
+    (($# <= 1)) || { echo 'tvctl: screenshot accepts at most one output path' >&2; exit 64; }
+    output=${1:-"$PWD/tv-screenshot-$(date -u +%Y%m%d-%H%M%S).png"}
+    [[ $output == /* ]] || output="$PWD/$output"
+    [[ ! -d $output ]] || { echo "tvctl: output path is a directory: $output" >&2; exit 64; }
+    remote_screenshot_path="/tmp/tvctl-screenshot-$$-$RANDOM.png"
+    trap cleanup_screenshot EXIT INT TERM
+    remote_argv env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus WAYLAND_DISPLAY=wayland-0 DISPLAY=:1 spectacle -b -n -o "$remote_screenshot_path"
+    timeout 60 scp -q "${batch_opts[@]}" "$target:$remote_screenshot_path" "$output"
+    [[ -s $output ]] || { echo "tvctl: screenshot copy is empty: $output" >&2; exit 1; }
+    cleanup_screenshot
+    trap - EXIT INT TERM
+    printf '%s\n' "$output"
+    ;;
+  tablet)
+    remote '/usr/bin/adb start-server >/dev/null; /usr/bin/adb devices -l'
+    ;;
+  kill)
+    shift
+    (($# == 1)) || { echo 'tvctl: kill requires one process name/pattern' >&2; exit 64; }
+    # Pattern travels over stdin so pgrep/pkill -f can never match our own
+    # remote ssh shell (a pattern literal in the remote cmdline kills the
+    # session itself -> exit 255).
+    printf '%s' "$1" | remote 'pat=$(cat); pids=$(pgrep -f -i -- "$pat") || { echo "no match: $pat"; exit 1; }
+      kill $pids 2>/dev/null; sleep 1
+      left=$(pgrep -f -i -- "$pat") && { kill -9 $left 2>/dev/null; sleep 1; }
+      if pgrep -f -i -- "$pat" >/dev/null; then echo "still running: $pat"; exit 1; else echo "killed: $pat"; fi'
+    ;;
+  run)
+    shift
+    [[ ${1:-} == -- ]] && shift
+    (($#)) || { echo 'tvctl: missing command' >&2; exit 64; }
+    remote_argv "$@"
+    ;;
+  shell)
+    shift
+    (($# == 1)) || { echo 'tvctl: shell requires one quoted command' >&2; exit 64; }
+    remote "$1"
+    ;;
+  notify)
+    shift
+    (($#)) || { echo 'tvctl: missing message' >&2; exit 64; }
+    msg=$*
+    remote_argv env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus notify-send -a tvctl 'Remote message' "$msg"
+    ;;
+  request)
+    shift
+    printf 'tvctl: interactive-control request recorded; no TV notification was sent.\n'
+    ;;
+  open)
+    shift
+    (($# == 1)) || { echo 'tvctl: open requires one URL' >&2; exit 64; }
+    url=$1
+    [[ $url =~ ^https?:// ]] || { echo 'tvctl: open accepts only http(s) URLs' >&2; exit 64; }
+    remote_argv env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus WAYLAND_DISPLAY=wayland-0 DISPLAY=:1 flatpak run com.google.Chrome "$url" || remote_argv env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus WAYLAND_DISPLAY=wayland-0 DISPLAY=:1 xdg-open "$url"
+    ;;
+  lock) remote loginctl lock-sessions ;;
+  reboot)
+    # Clean reboot via PID1; if the manager/D-Bus is wedged, fall back to
+    # systemctl -ff (direct reboot(2) syscall, no PID1 involvement).
+    remote 'sudo -n systemctl reboot' || remote 'sudo -n systemctl reboot -ff' || remote 'sudo -n reboot -f'
+    ;;
+  shutdown) remote sudo -n systemctl poweroff ;;
+  setup-key)
+    install -d -m 700 "$HOME/.ssh"
+    [[ -f "$identity" ]] || ssh-keygen -t ed25519 -f "$identity" -C 'tvctl access to tv'
+    ssh-copy-id -i "$identity.pub" "$target"
+    ;;
+  ssh) exec ssh "${ssh_opts[@]}" "$target" ;;
+  *) echo "tvctl: unknown command: $1" >&2; usage >&2; exit 64 ;;
+esac

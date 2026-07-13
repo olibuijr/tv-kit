@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Read GolfBox tee sheets without putting credentials in command arguments."""
+
+import argparse
+import datetime as dt
+import http.cookiejar
+import json
+import os
+import re
+import sys
+import urllib.parse
+import urllib.parse
+import urllib.request
+from html import unescape
+from html.parser import HTMLParser
+from pathlib import Path
+
+ENV_FILE = Path(os.environ.get("GOLFBOX_ENV_FILE", Path.home() / ".config/golfbox/.env"))
+USER_AGENT = "golfboxctl/1.0"
+
+
+def load_env() -> None:
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            if line and not line.lstrip().startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key, value)
+    for name in ("GOLFBOX_USERNAME", "GOLFBOX_PASSWORD", "GOLFBOX_BASE_URL"):
+        if not os.environ.get(name):
+            raise SystemExit(f"Missing {name} in {ENV_FILE}")
+
+
+class FormParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fields: dict[str, str] = {}
+        self.resources: list[tuple[str, str, bool]] = []
+        self.in_resources = False
+        self.option: dict[str, str | bool] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "input" and values.get("name") and values.get("value") is not None:
+            self.fields[str(values["name"])] = str(values["value"])
+        elif tag == "select" and values.get("name") == "ddlRessource":
+            self.in_resources = True
+        elif self.in_resources and tag == "option":
+            self.option = {
+                "value": values.get("value") or "",
+                "selected": "selected" in values,
+                "label": "",
+            }
+
+    def handle_data(self, data: str) -> None:
+        if self.option is not None:
+            self.option["label"] = str(self.option["label"]) + data
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "option" and self.option is not None:
+            value = str(self.option["value"])
+            label = str(self.option["label"]).strip()
+            selected = bool(self.option["selected"])
+            self.resources.append((value, label, selected))
+            if selected:
+                self.fields["ddlRessource"] = value
+            self.option = None
+        elif tag == "select":
+            self.in_resources = False
+
+
+class GolfBox:
+    def __init__(self) -> None:
+        load_env()
+        self.base = os.environ["GOLFBOX_BASE_URL"].rstrip("/")
+        self.locale = os.environ.get("GOLFBOX_LOCALE", "1039")
+        jar = http.cookiejar.CookieJar()
+        self.http = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        self.booking_path = ""
+
+    def request(self, path: str, fields: dict[str, str] | None = None) -> str:
+        data = urllib.parse.urlencode(fields).encode() if fields is not None else None
+        request = urllib.request.Request(
+            self.base + path,
+            data=data,
+            headers={"User-Agent": USER_AGENT},
+        )
+        with self.http.open(request, timeout=30) as response:
+            return response.read().decode("utf-8", "replace")
+
+    def login(self) -> None:
+        landing = self.request(
+            f"/login.asp?lcid={self.locale}",
+            {
+                "loginform.submitted": "true",
+                "command": "login",
+                "loginform.username": os.environ["GOLFBOX_USERNAME"],
+                "loginform.password": os.environ["GOLFBOX_PASSWORD"],
+                "loginform.submit": "LOGIN",
+            },
+        )
+        match = re.search(
+            r'href=["\']([^"\']*bookingStartlist\.asp[^"\']*)',
+            landing,
+            re.I,
+        )
+        if not match:
+            raise RuntimeError("GolfBox login failed or tee-sheet link was not found")
+        self.booking_path = unescape(match.group(1))
+
+    def sheet(self, date: dt.date, resource: str = "") -> dict[str, object]:
+        if not self.booking_path:
+            self.login()
+        current = self.request(self.booking_path)
+        parser = FormParser()
+        parser.feed(current)
+        if resource:
+            chosen = next(
+                (item for item in parser.resources if resource.casefold() in item[1].casefold()),
+                None,
+            )
+            if chosen is None:
+                raise RuntimeError(f"GolfBox resource not found: {resource}")
+            parser.fields["ddlRessource"] = chosen[0]
+        display = f"{date.day}.{date.month}.{date.year}"
+        parser.fields.update(
+            {"command": "calendar1_select", "commandValue": display, "txtDate_Start": display}
+        )
+        html = self.request(self.booking_path, parser.fields)
+        return parse_sheet(html, date)
+
+    def rounds(self) -> dict[str, object]:
+        """Fetch round history from GolfBox WHS handicap JSON API."""
+        if not self.booking_path:
+            self.login()
+        front = self.request(
+            "/site/my_golfbox/myFrontPage.asp?selected={EE401136-753B-426C-AC15-B4B9EF1177EB}"
+        )
+        name_match = re.search(r"Ólafur[^<]*Búi[^<]*|member-name[^>]*>([^<]+)", front)
+        member_name = ""
+        if name_match:
+            member_name = re.sub(r"\s+", " ", name_match.group(0) if not name_match.lastindex else name_match.group(1)).strip()
+        else:
+            for m in re.finditer(r">([^<]{4,40})<", front):
+                t = m.group(1).strip()
+                if "Ólafur" in t or "Búi" in t:
+                    member_name = t
+                    break
+        hcp_page = self.request(
+            "/site/my_golfbox/score/whs/currentHCP.asp?selected={1D21F0D9-988D-4DAA-8843-EF7FC3EDA75D}"
+        )
+        m = re.search(r"whsPlayerNumber=([a-zA-Z0-9-]+)", hcp_page)
+        if not m:
+            raise RuntimeError("could not find whsPlayerNumber in HCP page")
+        player_id = m.group(1)
+        raw = self.request(
+            f"/site/score/whs/jsonLoadCurrentHandicap.asp?selected_member={{{player_id.upper()}}}&whsPlayerNumber={player_id}"
+        )
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"failed to parse rounds JSON: {e}") from e
+        if not isinstance(data, list):
+            raise RuntimeError(f"unexpected rounds response type: {type(data).__name__}")
+        rounds_list = []
+        for r in data:
+            sr = r.get("scoreResult", {})
+            rd = r.get("roundDate", "")
+            rounds_list.append({
+                "date": rd[:8] if len(rd) >= 8 else rd,
+                "time": rd[9:14] if len(rd) >= 14 else "",
+                "course": r.get("courseName", ""),
+                "club": r.get("courseClubName", ""),
+                "tee": r.get("teeName", ""),
+                "marker": r.get("markerName", ""),
+                "type": r.get("roundType"),
+                "par": sr.get("coursePar"),
+                "rating": sr.get("courseRating"),
+                "slope": sr.get("slopeRating"),
+                "gross": sr.get("adjustedGrossScoreOnly"),
+                "differential": sr.get("scoreDifferential"),
+                "hcpBefore": r.get("oldHcp"),
+                "hcpAfter": r.get("newHcp"),
+                "hcpCurrent": r.get("currentHCP"),
+            })
+        by_course: dict[str, list[dict[str, object]]] = {}
+        for rnd in rounds_list:
+            course = rnd["course"] or "Unknown"
+            by_course.setdefault(course, []).append(rnd)
+        return {
+            "name": member_name if member_name else "Ólafur Búi Ólafsson",
+            "club": "Golfklúbbur Akureyrar",
+            "handicap": data[0].get("currentHCP") if data else None,
+            "totalRounds": len(rounds_list),
+            "byCourse": by_course,
+            "rounds": rounds_list,
+        }
+
+    def friends(self) -> list[dict[str, object]]:
+        """Scrape golf friends (golfvinir) page."""
+        if not self.booking_path:
+            self.login()
+        html = self.request(
+            "/site/playergroups/listGroups.asp?selected={F91B77FE-0055-4656-97C4-61D8923962B6}"
+        )
+        friends: list[dict[str, object]] = []
+        for row_match in re.finditer(
+            r"<tr[^>]*>(.*?)</tr>", html, re.I | re.S
+        ):
+            row = row_match.group(1)
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.I | re.S)
+            cell_texts = []
+            for cell in cells:
+                clean = re.sub(r"<[^>]+>", " ", cell)
+                clean = re.sub(r"\s+", " ", clean).strip()
+                cell_texts.append(clean)
+            # GolfBox groups table: name, member#, hcp, club
+            if len(cell_texts) >= 3 and re.search(r"\d{2}-\d{4}", cell_texts[1] if len(cell_texts) > 1 else ""):
+                try:
+                    hcp_val = float(cell_texts[2].replace(",", ".")) if len(cell_texts) > 2 else None
+                except (ValueError, TypeError):
+                    hcp_val = None
+                friends.append({
+                    "name": cell_texts[0],
+                    "memberNumber": cell_texts[1] if len(cell_texts) > 1 else "",
+                    "handicap": hcp_val,
+                    "club": cell_texts[3] if len(cell_texts) > 3 else "",
+                })
+        return friends
+
+
+def clean_html(value: str) -> str:
+    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", value))).strip()
+
+
+def parse_sheet(html: str, date: dt.date) -> dict[str, object]:
+    course = ""
+    select = re.search(r'<select[^>]+id=["\']ddlRessource["\'][^>]*>(.*?)</select>', html, re.I | re.S)
+    if select:
+        selected = re.search(r'<option[^>]*selected[^>]*>(.*?)</option>', select.group(1), re.I | re.S)
+        if selected:
+            course = clean_html(selected.group(1))
+    rows: list[dict[str, object]] = []
+    starts = list(re.finditer(r'<div class=["\']([^"\']*\blist-row\b[^"\']*\bhour\b[^"\']*)["\']>', html, re.I))
+    for index, start in enumerate(starts):
+        block = html[start.end() : starts[index + 1].start() if index + 1 < len(starts) else len(html)]
+        time_match = re.search(r'<div class=["\']timecell["\']>(\d{2}:\d{2})</div>', block, re.I)
+        if not time_match:
+            continue
+        names = [
+            clean_html(name)
+            for name in re.findall(r'<div class=["\'][^"\']*\bfw-bold\b[^"\']*["\'][^>]*>(.*?)</div>', block, re.I | re.S)
+        ]
+        rows.append({
+            "time": time_match.group(1),
+            "status": "free" if " free" in f" {start.group(1)}" else "occupied",
+            "players": names,
+        })
+    return {"date": date.isoformat(), "course": course, "slots": rows}
+
+
+def iso_date(value: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
+
+
+def output(value: object, pretty: bool) -> None:
+    print(json.dumps(value, ensure_ascii=False, indent=2 if pretty else None))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="golfboxctl")
+    parser.add_argument("--pretty", action="store_true")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("status")
+    sheet = commands.add_parser("tee-sheet")
+    sheet.add_argument("--date", type=iso_date, default=dt.date.today())
+    sheet.add_argument("--resource", default="Jaðar")
+    sheet.add_argument("--name", default="")
+    person = commands.add_parser("person")
+    person.add_argument("name")
+    person.add_argument("--from", dest="start", type=iso_date, default=dt.date.today())
+    person.add_argument("--days", type=int, default=14, choices=range(1, 32), metavar="1..31")
+    person.add_argument("--resource", default="Jaðar")
+    rounds_cmd = commands.add_parser("rounds")
+    rounds_cmd.add_argument("--pretty", action="store_true")
+    friends_cmd = commands.add_parser("friends")
+    friends_cmd.add_argument("--pretty", action="store_true")
+    args = parser.parse_args()
+
+    client = GolfBox()
+    client.login()
+    if args.command == "status":
+        output({"ok": True, "service": "GolfBox", "authenticated": True}, args.pretty)
+        return
+    if args.command == "tee-sheet":
+        result = client.sheet(args.date, args.resource)
+        if args.name:
+            query = args.name.casefold()
+            result["slots"] = [
+                slot for slot in result["slots"]
+                if any(query in name.casefold() for name in slot["players"])
+            ]
+        output(result, args.pretty)
+        return
+    if args.command == "rounds":
+        result = client.rounds()
+        output(result, args.pretty)
+        return
+    if args.command == "friends":
+        result = client.friends()
+        output(result, args.pretty)
+        return
+    bookings = []
+    for offset in range(args.days):
+        date = args.start + dt.timedelta(days=offset)
+        result = client.sheet(date, args.resource)
+        for slot in result["slots"]:
+            for name in slot["players"]:
+                if args.name.casefold() in name.casefold():
+                    bookings.append({"date": result["date"], "time": slot["time"], "name": name})
+    output({"person": args.name, "from": args.start.isoformat(), "days": args.days, "bookings": bookings}, args.pretty)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, RuntimeError, urllib.error.URLError) as error:
+        print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False), file=sys.stderr)
+        raise SystemExit(1)

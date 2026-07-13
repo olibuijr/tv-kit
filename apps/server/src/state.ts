@@ -86,6 +86,7 @@ export function createDefaultState(): HomeState {
 		view: "home",
 		previousView: "home",
 		deilduCategoryId: 0,
+		deilduShowId: "",
 		newsArticleId: 0,
 		power: true,
 		lastAction: "Tilbúið",
@@ -241,6 +242,9 @@ export function normalizeHomeState(
 		fullscreen: boolean(mediaSource.fullscreen, mediaFallback.fullscreen),
 		favorite: boolean(mediaSource.favorite, mediaFallback.favorite),
 		status,
+		...(mediaSource.engine === "mpv" || mediaSource.engine === "browser"
+			? { engine: mediaSource.engine as "mpv" | "browser" }
+			: {}),
 	};
 	const view =
 		typeof source.view === "string" && views.has(source.view as View)
@@ -289,6 +293,7 @@ export function normalizeHomeState(
 				Number.MAX_SAFE_INTEGER,
 			),
 		),
+		deilduShowId: string(source.deilduShowId, fallback.deilduShowId, 256),
 		newsArticleId: Math.round(
 			number(
 				source.newsArticleId,
@@ -304,5 +309,25 @@ export function normalizeHomeState(
 		tvFavorites: [...favorites.tv],
 		programFavorites: [...favorites.programs],
 		cast,
+	};
+}
+
+export function stopTransientPlaybackOnStartup(state: HomeState): HomeState {
+	if (
+		!state.media.id.startsWith("deildu-") &&
+		!state.media.id.startsWith("torrent-")
+	)
+		return state;
+	return {
+		...state,
+		playing: false,
+		lastAction: "Tilbúið",
+		media: {
+			...state.media,
+			src: "",
+			status: "idle",
+			fullscreen: false,
+			engine: undefined,
+		},
 	};
 }

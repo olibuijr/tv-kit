@@ -19,5 +19,8 @@
     "@types/bun": "latest",
     "svelte-check": "latest",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "pino": "latest"
   }
 }

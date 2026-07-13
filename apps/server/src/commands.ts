@@ -5,6 +5,7 @@ export type ParsedCommand = Command & { label?: string };
 const views = new Set<View>(["home", "tv", "radio", "media", "deildu", "news"]);
 const noValueActions = new Set([
 	"toggle-play",
+	"stop-playback",
 	"toggle-mute",
 	"back",
 	"power",
@@ -59,6 +60,13 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 	const label =
 		typeof candidate.label === "string" ? candidate.label : undefined;
 	const action = candidate.action;
+	if (action === "set-playing" && typeof candidate.value === "boolean")
+		return {
+			type: "command",
+			action,
+			value: candidate.value,
+			...(label === undefined ? {} : { label }),
+		};
 
 	if (noValueActions.has(action)) {
 		if (candidate.value !== undefined) return null;
@@ -158,6 +166,13 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			...(label === undefined ? {} : { label }),
 		};
 	}
+	if (action === "deildu-show" && typeof candidate.value === "string" && candidate.value.length <= 256)
+		return {
+			type: "command",
+			action: "deildu-show",
+			value: candidate.value,
+			...(label === undefined ? {} : { label }),
+		};
 	if (
 		action === "key" &&
 		typeof candidate.value === "string" &&
@@ -246,7 +261,7 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			candidate.value !== undefined &&
 			candidate.value !== null &&
 			(typeof candidate.value !== "object" || Array.isArray(candidate.value))
-		)
+	)
 			return null;
 		const value = candidate.value as { pages?: unknown } | undefined;
 		let pages: number | undefined;

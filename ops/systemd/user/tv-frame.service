@@ -1,0 +1,19 @@
+[Unit]
+Description=TV Kit native Qt/QML display frame
+After=graphical-session.target tvserverd.service
+Wants=tvserverd.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:1
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=TV_FRAME_SERVER_URL=http://127.0.0.1:3110
+Environment=TV_FRAME_HEALTH_FILE=%h/.tv-kit/frame-health.json
+ExecStartPre=/usr/bin/bash -c 'test -x "$HOME/.tv-kit/frame-build/tv-frame"'
+ExecStart=%h/.tv-kit/frame-build/tv-frame
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

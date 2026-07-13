@@ -5,7 +5,9 @@ import { config } from "./config";
 import { statement } from "./db";
 import {
 	beginStream,
+	browserNativeFile,
 	type DownloadState,
+	mpvStreamSource,
 	playbackKind,
 	serveStream,
 	type StreamContext,
@@ -170,6 +172,8 @@ export type TorrentPlayback = {
 	fileName: string;
 	kind: MediaKind;
 	src: string;
+	mpvSrc: string;
+	browserPlayable: boolean;
 };
 
 export async function startTorrentMediaPlayback(
@@ -184,12 +188,16 @@ export async function startTorrentMediaPlayback(
 		torrentMediaContext(id, value.torrent_uri),
 		onProgress,
 	);
+	const src = `${config.serverUrl}/torrent/media/stream/${id}`;
 	return {
 		id,
 		title: value.title,
 		fileName: stream.fileName,
 		kind: playbackKind("movie", stream.fileName),
-		src: `${config.serverUrl}/torrent/media/stream/${id}`,
+		src,
+		mpvSrc: mpvStreamSource(stream, src),
+		browserPlayable:
+			stream.status === "ready" && (await browserNativeFile(stream.path)),
 	};
 }
 

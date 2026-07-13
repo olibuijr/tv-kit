@@ -1,0 +1,4 @@
+interface:
+  display_name: "TV Kit Native Frame"
+  short_description: "Build and verify the Qt/QML TV frame."
+  default_prompt: "Build, test, deploy, and visually verify the TV Kit native Qt/QML frame."

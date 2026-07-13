@@ -27,6 +27,10 @@
   let player: HlsPlayer | undefined;
   let playerElement: HTMLMediaElement | undefined;
   let localError = "";
+  let loadedSrc = "";
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryCount = 0;
+  let retrySrc = "";
   let lastProgress = 0;
   let reportedDuration = 0;
   let trackSignature = "";
@@ -40,8 +44,10 @@
   $: displayTitle = liveProgramme?.title || media.title;
   $: displaySubtitle = liveProgramme?.category || (media.subtitle === displayTitle ? "" : media.subtitle) || (media.live ? "Bein útsending" : "");
   $: displaySource = [displayTitle, displaySubtitle].includes(media.source) ? "" : media.source;
-  $: videoSource = ["video", "movie", "tv"].includes(media.kind) && Boolean(media.src);
+  $: mpvMode = media.engine === "mpv";
+  $: videoSource = ["video", "movie", "tv"].includes(media.kind) && Boolean(media.src) && !mpvMode;
   $: audioSource = ["radio", "music", "podcast"].includes(media.kind) && Boolean(media.src);
+  $: if (typeof document !== "undefined") document.documentElement.classList.toggle("mpv-passthrough", mpvMode && media.fullscreen);
   $: if (media.id !== observedId || media.currentTime !== observedCurrent) {
     observedId = media.id;
     observedCurrent = media.currentTime;
@@ -55,7 +61,11 @@
   $: osdVisible = !media.fullscreen || !state.playing || Boolean(media.panel) || now - osdStartedAt < 10_000;
   $: displayTime = interpolateMediaTime(media, state.playing, observedAt, now);
   $: progress = media.live || !media.duration ? 100 : Math.min(100, displayTime / media.duration * 100);
-  $: if (mediaElement && media.src) syncPlayback();
+  // Re-run on any playback-relevant change (not just media.src) so pressing play
+  // on the remote actually retries play() after an autoplay/buffer rejection
+  // instead of staying stuck on the "press play again" error.
+  $: playbackKey = [media.src, media.live, state.playing, state.volume, state.muted, media.currentTime, media.playbackRate, media.subtitleTrack, media.audioTrack].join("|");
+  $: if (mediaElement && playbackKey) syncPlayback();
 
   function formatTime(seconds: number) {
     if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -82,19 +92,37 @@
       }
     });
     playerElement = mediaElement;
+    loadedSrc = "";
   }
 
   function syncPlayback() {
     if (!mediaElement) return;
     ensurePlayer();
-    player?.load(media.src, media.live);
+    // Load only when the source actually changes; the reactive above now fires
+    // on every state tick, and reloading each time would restart the stream.
+    if (loadedSrc !== media.src) {
+      clearTimeout(retryTimer);
+      if (retrySrc !== media.src) {
+        retrySrc = media.src;
+        retryCount = 0;
+      }
+      player?.load(media.src, media.live);
+      loadedSrc = media.src;
+    }
     mediaElement.volume = state.volume / 100;
     mediaElement.muted = state.muted;
     mediaElement.playbackRate = media.playbackRate;
     if (!media.live && mediaElement.readyState && Math.abs(mediaElement.currentTime - media.currentTime) > 3) mediaElement.currentTime = media.currentTime;
     player?.selectSubtitle(media.subtitleTrack);
     player?.selectAudio(media.audioTrack);
-    if (state.playing && mediaElement.paused) void mediaElement.play().catch(() => localError = "Spilun var stöðvuð af vafranum. Ýttu aftur á spila í fjarstýringunni.");
+    if (state.playing && mediaElement.paused)
+      void mediaElement
+        .play()
+        .then(() => { localError = ""; })
+        .catch(() => {
+          if (media.id.startsWith("deildu-")) failed();
+          else localError = "Spilun var stöðvuð af vafranum. Ýttu aftur á spila í fjarstýringunni.";
+        });
     if (!state.playing && !mediaElement.paused) mediaElement.pause();
     updateMediaSession();
   }
@@ -106,6 +134,8 @@
   }
 
   function ready() {
+    clearTimeout(retryTimer);
+    retryCount = 0;
     localError = "";
     if (mediaElement) {
       try { attachAnalyser(mediaElement); } catch { /* optional */ }
@@ -118,6 +148,17 @@
   }
 
   function failed() {
+    clearTimeout(retryTimer);
+    if (media.id.startsWith("deildu-") && retryCount < 6) {
+      retryCount++;
+      localError = "Straumurinn er að hlaðast. Reyni aftur…";
+      command("player-status", "loading");
+      retryTimer = setTimeout(() => {
+        loadedSrc = "";
+        syncPlayback();
+      }, 3_000);
+      return;
+    }
     localError = "Straumurinn er ekki tiltækur. Veldu annað efni í fjarstýringunni.";
     command("player-status", "error");
   }
@@ -135,6 +176,7 @@
     navigator.mediaSession.setActionHandler("previoustrack", () => command("media-previous"));
     navigator.mediaSession.setActionHandler("nexttrack", () => command("media-next"));
     return () => {
+      clearTimeout(retryTimer);
       player?.destroy();
       navigator.mediaSession.setActionHandler("play", null);
       navigator.mediaSession.setActionHandler("pause", null);
@@ -144,9 +186,11 @@
   });
 </script>
 
-<section class:fullscreen={media.fullscreen} class:osd-hidden={!osdVisible} class:has-video={videoSource} class="global-player" aria-label="Alþjóðlegur spilari">
-  <div class:audio-art={!videoSource} class="player-visual">
-    {#if videoSource}
+<section class:fullscreen={media.fullscreen} class:osd-hidden={!osdVisible} class:has-video={videoSource || mpvMode} class:mpv={mpvMode} class="global-player" aria-label="Alþjóðlegur spilari">
+  <div class:audio-art={!videoSource && !mpvMode} class="player-visual">
+    {#if mpvMode}
+      <!-- mpv renders the video on a transparent surface beneath this HUD -->
+    {:else if videoSource}
       <video bind:this={mediaElement} poster={media.artwork || undefined} playsinline crossorigin="anonymous" on:canplay={ready} on:error={failed} on:timeupdate={timeUpdate} on:ended={() => command("media-next")}></video>
     {:else if audioSource}
       <audio bind:this={mediaElement} crossorigin="anonymous" on:canplay={ready} on:error={failed} on:timeupdate={timeUpdate} on:ended={() => command("media-next")}></audio>
@@ -201,6 +245,9 @@
   .player-copy{min-width:0;display:grid;grid-template-columns:1fr auto}.player-copy>span{font-size:10px;color:var(--primary);font-weight:750}.player-copy>strong{grid-column:1/3;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0}.player-copy>small{grid-column:1/3;color:var(--muted);font-size:10px}.player-copy>small b{font-weight:500}.timeline{grid-column:1/3;margin-top:8px;display:grid;grid-template-columns:42px 1fr 42px;align-items:center;gap:8px;font-size:9px;color:var(--muted)}.timeline i{height:3px;background:var(--border);border-radius:99px;overflow:hidden}.timeline i b{display:block;height:100%;background:var(--primary)}
   .transport,.player-tools{display:flex;align-items:center;gap:7px}.transport span,.player-tools>span{height:43px;min-width:43px;padding:0 9px;border:1px solid var(--border);border-radius:9px;background:var(--raised);display:flex;align-items:center;justify-content:center;gap:5px;color:var(--muted);font-size:9px}.transport .play{width:50px;height:50px;border-radius:50%;background:var(--primary);color:white}.player-tools{justify-content:flex-end}.player-tools span.active{border-color:var(--primary);color:var(--primary)}
   .player-panel{position:absolute;right:42px;bottom:calc(100% + 9px);width:410px;max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-card)}.player-panel header{height:48px;padding:0 14px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.player-panel article{min-height:62px;padding:10px 14px;display:grid;grid-template-columns:52px 1fr;align-items:center;gap:10px;border-bottom:1px solid var(--border)}.player-panel article.current,.player-panel .selected{background:var(--raised)}.player-panel article time{font-size:10px;color:var(--primary)}.player-panel article div{display:flex;flex-direction:column}.player-panel article strong{font-size:12px}.player-panel article span,.player-panel p{font-size:10px;color:var(--muted)}.option{height:50px;padding:0 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}.player-error{position:absolute;left:128px;bottom:8px;padding:6px 10px;border-radius:7px;background:var(--occasion);color:white;font-size:10px}
+  .global-player.mpv .player-visual{background:transparent;border-color:transparent}
+  .global-player.mpv.fullscreen .player-visual{background:transparent}
+  :global(html.mpv-passthrough),:global(html.mpv-passthrough body),:global(html.mpv-passthrough #app){background:transparent !important}
   .global-player.fullscreen{position:fixed;inset:0;width:auto;height:100dvh;padding:36px 42px;z-index:50;overflow:visible;opacity:1;pointer-events:auto;grid-template-columns:minmax(340px,1fr) auto minmax(430px,auto);align-content:end;background:transparent}.global-player.fullscreen::after{content:'';position:absolute;inset:auto 0 0 0;height:160px;background:linear-gradient(to top,rgba(0,0,0,.55),rgba(0,0,0,.18) 55%,transparent);backdrop-filter:blur(28px) saturate(200%);-webkit-backdrop-filter:blur(28px) saturate(200%);pointer-events:none}.fullscreen .player-visual{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;z-index:-1}.fullscreen .player-visual video{object-fit:contain}.fullscreen .player-copy,.fullscreen .transport,.fullscreen .player-tools{position:relative;z-index:1;transition:transform .35s ease,opacity .35s ease;color:white;text-shadow:0 1px 3px #000,0 0 8px #000}.fullscreen.osd-hidden::after{transform:translateY(100%);opacity:0}.fullscreen.osd-hidden .player-copy,.fullscreen.osd-hidden .transport,.fullscreen.osd-hidden .player-tools{transform:translateY(140px);opacity:0;pointer-events:none}.fullscreen .player-copy>strong{font-size:31px;text-shadow:0 1px 4px rgba(0,0,0,.5)}.fullscreen .player-panel{bottom:120px}
   @keyframes spin{to{transform:rotate(360deg)}}
   @media(max-width:1200px){.global-player{padding-inline:20px;grid-template-columns:64px minmax(180px,1fr) auto}.global-player.has-video{grid-template-columns:101px minmax(180px,1fr) auto}.player-tools{display:none}.player-visual{width:62px;height:62px}.has-video .player-visual{width:99px;aspect-ratio:16/10;height:auto}}

@@ -789,8 +789,13 @@ export function dashboardContent(): Omit<
 	| "torrentMovies"
 	| "deilduCategories"
 	| "deilduItems"
+	| "deilduShows"
+	| "deilduShow"
 	| "deilduPagination"
 	| "deilduScrape"
+	| "golfTeeTimes"
+	| "golfPerson"
+	| "golfBookings"
 > {
 	return {
 		generatedAt: Date.now(),

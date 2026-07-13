@@ -25,7 +25,7 @@ TimeoutStartSec=120
 # decoded frame gets read back to CPU and re-uploaded every frame (render engine
 # pegs, 1080p60 stutters). egl + AcceleratedVideoDecodeLinuxZeroCopyGL keeps the
 # VA surface on the GPU (EGLImage), which is what makes 60 fps smooth on HD 530.
-ExecStart=/usr/bin/flatpak run com.google.Chrome --kiosk --incognito --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen --ozone-platform=wayland --ignore-gpu-blocklist --use-gl=egl --enable-gpu-rasterization --enable-zero-copy --enable-features=VaapiVideoDecoder,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL http://127.0.0.1:3111
+ExecStart=/usr/bin/flatpak run com.google.Chrome --kiosk --incognito --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen --enable-transparent-visuals --ozone-platform=wayland --ignore-gpu-blocklist --use-gl=egl --enable-gpu-rasterization --enable-zero-copy --enable-features=VaapiVideoDecoder,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL --remote-debugging-port=9222 http://127.0.0.1:3111
 ExecStopPost=-/usr/bin/pkill -9 -f com.google.Chrome
 Restart=always
 RestartSec=3

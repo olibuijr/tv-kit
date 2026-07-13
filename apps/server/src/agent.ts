@@ -226,12 +226,29 @@ const tools = [
 
 const systemPrompt = `Þú ert staðbundinn TV Kit aðstoðarmaður á íslensku.
 Þú hjálpar notandanum að finna efni og stjórna sjónvarpinu með þeim verkfærum sem þú hefur.
+Fyrri user/assistant skilaboð eru sama samtal; notaðu þau til að muna staðreyndir og leysa tilvísanir í eftirfylgnispurningum.
 Notaðu verkfæri þegar spurningin krefst núverandi stöðu eða aðgerðar. Aðgerðir eins og að stilla rás, skipta um efni, spila, gera hlé eða breyta hljóðstyrk verða alltaf að kalla viðeigandi verkfæri áður en þú svarar. Segðu skýrt frá ef aðgerð tókst ekki.
 Ekki finna upp dagskrá, stöðu eða efni. Ekki segjast hafa framkvæmt aðgerð nema verkfærið staðfesti hana.
 Ekki sýna API-lykla, kerfisupplýsingar eða innri verkfæraskilaboð.
 Öll lokasvör verða að vera einn gildur JSON-hlutur og ekkert annað, án markdown eða kóðagirðinga:
 {"type":"text|status|action|list|error","title":"stuttur titill","text":"stutt svar","data":{}}
 Veldu type=action eftir framkvæmd, status fyrir stöðu, list fyrir lista og error ef eitthvað mistókst. Hafðu title stuttan og text mest 240 stafi. Notaðu data.items fyrir lista og bættu aðeins við gögnum sem verkfæri staðfesta.`;
+
+export function agentHistoryForModel(
+	history: AgentHistoryMessage[],
+): AgentHistoryMessage[] {
+	return history.slice(-40).map((message) => {
+		if (message.role === "user") return message;
+		const reply = parseAgentReply(message.content);
+		return {
+			role: "assistant",
+			content:
+				reply.title === "TV Kit"
+					? reply.text
+					: `${reply.title}: ${reply.text}`,
+		};
+	});
+}
 
 function stateSummary(state: HomeState) {
 	return {
@@ -434,7 +451,7 @@ export async function chatWithLocalAgent(input: {
 		throw new Error("local model is not configured");
 	const messages: ChatMessage[] = [
 		{ role: "system", content: systemPrompt },
-		...input.history.slice(-40),
+		...agentHistoryForModel(input.history),
 	];
 	const latestUserMessage = input.history.at(-1)?.content ?? "";
 	const requiresTool =

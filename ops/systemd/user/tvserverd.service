@@ -9,9 +9,20 @@ WorkingDirectory=%h/.tv-kit/src
 EnvironmentFile=%h/.tv-kit/src/.env
 EnvironmentFile=-%h/.tv-kit/env
 Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin
+Environment=DISPLAY=:1
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStartPre=-/usr/bin/pkill -9 -x aria2c
+ExecStartPre=-/usr/bin/pkill -9 -x mpv
+ExecStartPre=-/usr/bin/pkill -9 -f TVCTL_PLAYBACK_[V]ALUE
 ExecStart=/usr/bin/env bun --watch apps/server/src/index.ts
+ExecStopPost=-/usr/bin/pkill -9 -x aria2c
+ExecStopPost=-/usr/bin/pkill -9 -x mpv
+ExecStopPost=-/usr/bin/pkill -9 -f TVCTL_PLAYBACK_[V]ALUE
 Restart=always
 RestartSec=2
+KillMode=control-group
+SendSIGKILL=yes
 # bun --watch's supervisor swallows SIGTERM; don't wait 90s before SIGKILL.
 TimeoutStopSec=5
 UMask=0077

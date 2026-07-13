@@ -11,12 +11,17 @@ import { tvServerUrl } from "./index";
 
 export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 	generatedAt: 0,
+	golfTeeTimes: null,
+	golfPerson: "",
+	golfBookings: [],
 	channels: [],
 	programs: [],
 	movies: [],
 	torrentMovies: [],
 	deilduCategories: [],
 	deilduItems: [],
+	deilduShows: [],
+	deilduShow: null,
 	deilduPagination: {
 		categoryId: 0,
 		page: 1,
@@ -47,24 +52,32 @@ export async function fetchDashboardContent(
 	deilduCategoryId = 0,
 	deilduPage = 1,
 	deilduPageSize = DEILDU_PAGE_SIZE,
+	deilduShowId = "",
 ): Promise<DashboardContent> {
 	const params = new URLSearchParams({
 		deilduCategory: String(deilduCategoryId),
 		deilduPage: String(deilduPage),
 		deilduPageSize: String(deilduPageSize),
+		deilduShow: deilduShowId,
 	});
 	const response = await fetch(`${tvServerUrl()}/dashboard/content?${params}`, {
 		signal,
+		cache: "no-store",
 	});
 	if (!response.ok) throw new Error(`tvserverd svaraði ${response.status}`);
 	const content = (await response.json()) as DashboardContent;
 	return {
 		...EMPTY_DASHBOARD_CONTENT,
 		...content,
+		golfTeeTimes: content.golfTeeTimes ?? null,
+		golfPerson: content.golfPerson ?? "",
+		golfBookings: content.golfBookings ?? [],
 		movies: content.movies ?? [],
 		torrentMovies: content.torrentMovies ?? [],
 		deilduCategories: content.deilduCategories ?? [],
 		deilduItems: content.deilduItems ?? [],
+		deilduShows: content.deilduShows ?? [],
+		deilduShow: content.deilduShow ?? null,
 		deilduPagination:
 			content.deilduPagination ?? EMPTY_DASHBOARD_CONTENT.deilduPagination,
 		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,

@@ -4,7 +4,7 @@
 
 - For every TV Kit runtime or UI operation, load `.pi/skills/tv-kit-operations/SKILL.md` first.
 - Use `docs/AI_AGENT_TOOLS.md` as the shared command/tool index for coding agents and TV Kit's internal chat agent.
-- Reuse the maintained `tvctl` CLI and native `agent_browser`; do not invent one-off operational scripts.
+- Prefer the typed tools from `.pi/extensions/tv-extension.ts`; fall back to `/home/olafurbui/.local/bin/tvctl` and native `agent_browser`. The only CLI implementation lives at `tools/tvctl`; never copy it into a skill or extension or invent one-off operational scripts.
 
 ## Kanban task board
 
@@ -19,7 +19,7 @@
 ## Runtime architecture
 
 - Source may be edited in `~/Projects/tv-kit` on either midget or Titan; Syncthing mirrors the working tree while `.git` remains host-local (Titan only).
-- TV Kit is a **no-build** project deployed with `tvctl kit sync` (deployment lives in the `tvctl` CLI; `deploy.sh` is a deprecated shim). Sync rsyncs source to the TV's `~/.tv-kit/src`; `bun --watch` and Vite HMR pick edits up instantly, so code-only deploys restart nothing. Git commit+push (fired from Titan in the background by `kit sync`) is archiving only and never gates a deploy.
+- TV Kit is a **no-build** project deployed with `tvctl kit sync`. Sync first stops the kiosk and kills orphaned Chrome/mpv/aria2/playback-verifier processes, then rsyncs source to the TV's `~/.tv-kit/src`; `bun --watch` and Vite HMR pick code edits up instantly, while changed service units are reinstalled and restarted. A sync interrupts active playback by design. Git commit+push (fired from Titan in the background by `kit sync`) is archiving only and never gates a deploy.
 - The TV computer is the only runtime host. Its app home is `~/.tv-kit/` (`src/` synced source, `data/tv-kit.sqlite` live DB, `env` TV-local overrides such as `TV_KIT_DB`). `tvserverd.service`, SQLite, the dashboard/remote Vite dev servers, RÚV/radio background scraping, and kiosk all run on TV as systemd user units. Do not run TV Kit services on Titan.
 - The TV's legacy `/opt/tv-kit` compiled deployment and the dead `~/Projects` NFS automount were retired by `tvctl kit setup`; never reintroduce either.
 - The TV dashboard and Android tablet remote are clients of the TV-local `tvserverd`. They must not create a second authoritative state store or write directly to SQLite.
@@ -49,9 +49,30 @@
 ## Torrent streaming (Deildu + media catalog)
 
 - Both Deildu items and the `torrent_media` catalog stream on demand through one shared aria2 engine in `apps/server/src/deilduStream.ts` (`beginStream`/`serveStream` over a `StreamContext`). It owns a single active stream and a single aria2 process — correct for one TV, one playback. Never add a second torrent client (e.g. the WebTorrent npm package) or a parallel aria2 process; add new torrent sources as a new `StreamContext` adapter instead.
-- Playback is remote-triggered (`deildu-play <id>`, `torrent-media <id>`) and renders into the dashboard `GlobalPlayer` HUD exactly like RÚV/radio. The server picks the media file, buffers head+tail before returning `src`, then serves progressive HTTP range requests at `/deildu/stream/:id` and `/torrent/media/stream/:id`. Start-of-playback choppiness while the middle fills is expected.
+- Playback is remote-triggered (`deildu-play <id>`, `torrent-media <id>`) and renders through the dashboard `GlobalPlayer` HUD exactly like RÚV/radio. The server picks the media file and returns its progressive range URL as soon as aria2 is active; range requests wait only for their required pieces at `/deildu/stream/:id` and `/torrent/media/stream/:id`. Start-of-playback choppiness while the middle fills is expected.
 - `torrent_media` rows stream from their public `http(s)` `.torrent` URI on demand — do not require a pre-downloaded file or gate the remote card on `status==='ready'`. The engine's internal statuses map onto the table's narrower CHECK set in `torrentMedia.ts` without a migration. Magnet URIs are unsupported (the bencode parser needs `.torrent` metadata); Deildu fetches need the passkey.
-- Browser codec limit: the dashboard `<video>` only decodes browser-native codecs (H.264/AAC in mp4). x265/HEVC, 10-bit, AC3/EAC3/DTS audio, and MKV releases will not play in Chrome — those need native mpv or a server-side transcode to H.264/AAC, a deliberate separate change. Do not assume every torrent plays in the HUD; probe with `ffprobe` before blaming the player.
+- Native mpv is the primary and expected torrent engine. `tvctl kit setup` installs it; `tvserverd` starts one mpv process on demand and drives it over `MPV_IPC_SOCKET`. Never eagerly launch an idle fullscreen mpv window: it can cover the dashboard with black pixels. Confirm `engine:"mpv"`, one mpv process, advancing time, and real pixels. Browser torrent playback is gated by `BROWSER_TORRENT_PLAYBACK_ENABLED` and remains off by default.
+- Browser fallback only decodes browser-native codecs (H.264/AAC in mp4). x265/HEVC, 10-bit, AC3/EAC3/DTS audio, and MKV releases require mpv or a deliberate server-side transcode. Probe uncertain releases with `ffprobe` before blaming the HUD.
+- Torrent playback is transient across daemon restarts: startup clears persisted `playing`, stale torrent `src`, engine, and fullscreen state because `reconcileStreams()` has no active producer to resume. The user must select the item again after a restart; never autoplay stale partial bytes.
+- A torrent is complete only when its selected file has the expected size and aria2's correct control file is absent. For multi-file torrents that file is `<item-dir>/<torrent-name>.aria2`, not `<media-file>.aria2`; never trust apparent file size or a stale DB `ready` value alone.
+- Completed verified files are passed to mpv as local paths. Only incomplete active torrents use progressive HTTP range URLs.
+
+## Deildu catalog title cleaning and enrichment
+
+- The `deildu_items` SQLite table is authoritative for cleaned display titles, original release titles, metadata, TMDB ids, cleanup state, and review errors. Clean the pending DB catalog, not only IDs from the latest scrape, so older failed rows are retried.
+- Deterministic, evidence-backed release parsing must persist independently of optional enrichment services. A local LLM or TMDB outage may leave only unresolved rows retryable; it must never block safe title cleanup for other rows.
+- Preserve `original_title` and send ambiguous or validation-failed names to review. A truncated (`(...)`) source may use an exact title prefix only when its season/episode, year, or release marker supports that prefix; never invent title metadata to make a catalog card look cleaner.
+- A remote-triggered catalog job is complete only after its scheduled-task state reports completion and the dashboard has refreshed its DB-backed content. Verify a normalized sample in the remote and dashboard DOM; account for the dashboard content polling interval before calling a fresh job stale.
+- `tvserverd.service` and `tvctl kit sync` kill stale mpv, aria2, Chrome, and `tvctl` playback-verifier processes. Do not remove this cleanup or allow parallel player engines.
+- Playback readiness comes only from native mpv IPC/cache state and advancing `time-pos`. Dashboard `player-status`, `playing:true`, URL assignment, or aria2 head/tail priority are not readiness. A no-frame deadline must invoke `stop-playback` once, unload mpv, stop aria2, clear the source/fullscreen state, and never retry automatically.
+- Progressive HTTP responses may return a bounded subset of an open-ended request, as allowed by RFC 9110. Bound incomplete responses to the current torrent piece; do not retain large waiting ranges or write/broadcast SQLite progress from request polling.
+
+## Direct mpv maintenance
+
+- Direct mpv is an explicit maintenance mode, not a second authoritative TV Kit player. Stop TV Kit media/kiosk services first, keep exactly one systemd-owned `tv-direct-mpv.service`, and leave SQLite/shared UI state untouched.
+- Require a piece-verified local file, VA-API hardware decode, near-zero `avsync`, zero/stable frame drops, and exactly one PipeWire sink. Decoder errors such as `Invalid NAL unit size` indicate missing/corrupt torrent pieces, not an mpv tuning problem; run aria2 integrity repair.
+- Use `tvctl mpv tracks` for read-only track discovery and `tvctl mpv audio ID|auto|off` or `tvctl mpv subtitle ID|auto|off` for explicit changes. These operate over JSON IPC without reloading playback.
+- Use `tvctl deildu search QUERY`, `item ID`, `links ID`, and `files ID` for fast secret-safe discovery. Never print or reconstruct passkey-bearing download, tracker announce, or magnet values.
 
 ## RÚV EPG
 
@@ -67,6 +88,7 @@
 - Test one forced radio scrape and one due-check skip. Confirm the API count equals the SQLite count.
 - For EPG changes, run `tvctl kit epg sync`, require a complete latest run and nonzero counts for all configured channels, then compare any remaining gap with the upstream XML.
 - Verify TV and remote commands survive a `tvserverd` restart before considering a data feature complete.
+- Finish autonomous work with an evidence-backed review: inspect the live result, run the smallest relevant check, update these rules when a durable operational lesson is found, and leave the Kanban task in `review`.
 
 ## TV kiosk browser
 
@@ -89,6 +111,8 @@
 
 - The TV dashboard is display-only. Never render pressable controls (buttons, sliders, links) on the dashboard; render passive indicators instead. Every interactive control lives on the tablet remote and mutates state through `tvserverd` WebSocket commands.
 - Remote and dashboard WebSockets use application-level ping/pong (10-second ping, 30-second stale timeout) because tablet sleep and network roaming can leave browser sockets half-open without firing `close`. Preserve the visibility-triggered stale check and verify the path with `tvctl kit verify`.
+- Each remote browser tab uses a stable unique `remote-<id>` WebSocket identity. Never collapse every tablet/tab back to `client=remote`; server de-duplication would make clients replace one another and blink between connected/reconnecting.
+- GolfBox round/friend endpoints are explicit detail-view actions only. Do not call them from remote startup, WebSocket reconnect, or visibility handlers.
 - The dashboard `GlobalPlayer` shows transport/tool state as passive chips; seek, panels, subtitles, audio track, speed, favourite, and fullscreen are all remote commands (`seek`, `player-panel`, `subtitle`, `audio-track`, `playback-rate`, `toggle-favorite`, `radio-favorite`, `fullscreen`).
 - The fullscreen button must never appear on the TV; fullscreen is toggled only from the remote.
 
