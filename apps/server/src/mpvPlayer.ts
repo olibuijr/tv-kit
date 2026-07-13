@@ -19,6 +19,7 @@ type MpvUpdate = {
 	restarted?: boolean;
 	pausedForCache?: boolean;
 	bufferingPercent?: number;
+	disconnected?: boolean;
 };
 
 let child: ReturnType<typeof Bun.spawn> | null = null;
@@ -108,9 +109,11 @@ async function connect() {
 				close() {
 					connected = false;
 					socket = null;
+					onUpdate?.({ disconnected: true });
 				},
 				error() {
 					connected = false;
+					onUpdate?.({ disconnected: true });
 				},
 			},
 		});
@@ -191,6 +194,7 @@ async function startMpvOnce() {
 				connected = false;
 				socket = null;
 				child = null;
+				onUpdate?.({ disconnected: true });
 			},
 		});
 		// mpv needs a moment to create the IPC socket.

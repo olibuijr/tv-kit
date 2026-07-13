@@ -198,6 +198,21 @@ let lastMpvTimeBroadcast = 0;
 let lastMpvBufferLog = -1;
 setMpvUpdateHandler((update) => {
   if (state.media.engine !== "mpv") return;
+  // mpv can die outside a deliberate stopMpv() call (e.g. an operator kill
+  // during deploy/orphan-cleanup). Without this, state.playing stays stale
+  // "true" with no real mpv process — clients (the native frame) trust that
+  // flag to know whether video owns the screen, so a stale flag leaves the
+  // frame's background transparent with nothing behind it.
+  if (update.disconnected) {
+    if (state.playing || state.media.status !== "idle") {
+      state.playing = false;
+      state.media.status = "idle";
+      state.media.buffering = undefined;
+      state.lastAction = "mpv aftengdist óvænt";
+      broadcast();
+    }
+    return;
+  }
   let changed = false;
   if (update.loaded && state.media.status !== "loading") {
     state.media.status = "loading";

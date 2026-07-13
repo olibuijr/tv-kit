@@ -26,7 +26,8 @@ ApplicationWindow {
     // window: --force-window=no). While video is active, menus hide and the
     // background goes transparent so mpv shows through; only the HUD/OSD
     // panel stay opaque on top of it.
-    readonly property bool videoActive: media.engine === "mpv"
+    readonly property bool videoActive: frame.connected
+        && media.engine === "mpv"
         && media.kind !== "radio" && media.kind !== "music"
         && Boolean(media.src)
         && (state.playing === true || media.status === "loading")
