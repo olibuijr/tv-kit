@@ -165,7 +165,7 @@ async function startMpvOnce() {
 				"--force-window=no",
 				"--fullscreen=no",
 				"--ontop=no",
-				"--no-focus-on-open",
+				"--focus-on=never",
 				"--border=no",
 				"--geometry=100%x100%+0+0",
 				"--no-osc",
