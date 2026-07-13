@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import Tv.Frame
 
 ApplicationWindow {
@@ -9,10 +10,7 @@ ApplicationWindow {
     height: 1080
     visible: true
     visibility: Window.FullScreen
-    // Window-level transparency (see main.cpp) lets fullscreen mpv, kept
-    // below by a KWin "keep above" rule on this window, show through
-    // wherever nothing opaque is drawn.
-    color: "transparent"
+    color: Theme.bg
     title: "TV Kit"
 
     FrameClient { id: frame; Component.onCompleted: start() }
@@ -22,32 +20,98 @@ ApplicationWindow {
     readonly property var media: state.media || ({})
     readonly property string view: state.view || "home"
     readonly property bool power: state.power !== false
-    // mpv owns a visible window only for video (radio is audio-only, no
-    // window: --force-window=no). While video is active, menus hide and the
-    // background goes transparent so mpv shows through; only the HUD/OSD
-    // panel stay opaque on top of it.
-    readonly property bool videoActive: frame.connected
-        && media.engine === "mpv"
+    // mpv is embedded as a normal QML item (video) — no separate window, no
+    // window-manager stacking. "Video active" just means the menu chrome
+    // (declared below, later = on top) should hide so the video shows.
+    readonly property bool videoActive: media.engine === "mpv"
         && media.kind !== "radio" && media.kind !== "music"
         && Boolean(media.src)
-        // "idle"/"error" status means no real mpv frames are backing this
-        // flag, however the server's playing/panel bits are currently set
-        // (e.g. mid-reconnect) — never go transparent for that, or the raw
-        // desktop shows through with nothing playing behind it.
-        && (media.status === "loading" || media.status === "ready")
-        && (state.playing === true || media.status === "loading")
     property real now: Date.now()
+
+    // Playback-sync bookkeeping (mirrors what tvserverd's mpvPlayer.ts used
+    // to do server-side; mpv now lives in this process, so this process
+    // drives it directly from state and reports progress back over the
+    // frame's own WebSocket command channel).
+    property string lastLoadedSrc: ""
+    property int lastSeekToken: -1
+    property real lastProgressSentAt: 0
+    property real lastBufferingSentAt: 0
 
     Timer {
         interval: 1000; running: true; repeat: true
         onTriggered: root.now = Date.now()
     }
 
-    // Opaque menu background — hidden while video plays so mpv shows through.
+    MpvVideo {
+        id: video
+        anchors.fill: parent
+        layer.enabled: Boolean(root.media.panel)
+
+        onPositionChanged: {
+            const t = Date.now()
+            if (t - root.lastProgressSentAt < 1000) return
+            root.lastProgressSentAt = t
+            frame.sendCommand("media-progress", position)
+        }
+        onDurationChanged: if (duration > 0) frame.sendCommand("media-duration", duration)
+        onPlaybackRestarted: frame.sendCommand("player-status", "ready")
+        onPausedForCacheChanged: {
+            if (pausedForCache) frame.sendCommand("player-status", "loading")
+        }
+        onBufferingPercentChanged: {
+            const t = Date.now()
+            if (t - root.lastBufferingSentAt < 500) return
+            root.lastBufferingSentAt = t
+            frame.sendCommand("media-buffering", bufferingPercent)
+        }
+        onEndOfFile: (reason) => {
+            if (reason === "eof") frame.sendCommand("set-playing", false)
+        }
+    }
+
+    Connections {
+        target: frame
+        function onStateChanged() {
+            const src = root.media.src || ""
+            if (root.videoActive) {
+                if (src !== root.lastLoadedSrc) {
+                    root.lastLoadedSrc = src
+                    video.loadSource(src)
+                }
+                video.setPaused(root.state.playing !== true)
+                const token = root.media.seekToken || 0
+                if (root.lastSeekToken === -1) {
+                    root.lastSeekToken = token
+                } else if (token !== root.lastSeekToken) {
+                    root.lastSeekToken = token
+                    video.seekAbsolute(root.media.currentTime || 0)
+                }
+            } else if (root.lastLoadedSrc !== "") {
+                root.lastLoadedSrc = ""
+                video.stop()
+            }
+        }
+    }
+
+    // Opaque menu background — painted after (on top of) the video, and
+    // hides entirely while video is active so the embedded mpv shows through.
     Rectangle {
         anchors.fill: parent
         color: Theme.bg
         visible: root.power && !root.videoActive
+    }
+
+    // Liquid-glass backdrop for the OSD panel: a blurred copy of the video,
+    // full-window but only ever visible where OsdPanel's translucent tint
+    // sits above it — every other opaque sibling (header/menu/video itself)
+    // paints over it elsewhere. Only rendered while a panel is open.
+    MultiEffect {
+        anchors.fill: parent
+        source: video
+        visible: Boolean(root.media.panel)
+        blurEnabled: true
+        blur: 1.0
+        blurMax: 64
     }
 
     // Standby
@@ -138,12 +202,12 @@ ApplicationWindow {
     }
 
     // OSD panel (Dagskrá/EPG, subtitles, audio track) — opaque, drawn above
-    // mpv while video plays. Anchored above the HUD so both stay visible.
+    // the video whenever a panel is toggled on, on top of the HUD.
     OsdPanel {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: hud.top
-        visible: root.power && Boolean(root.media.panel) && (root.state.playing || root.videoActive)
+        open: root.power && Boolean(root.media.panel) && (root.state.playing || root.videoActive)
         media: root.media
         now: root.now
     }

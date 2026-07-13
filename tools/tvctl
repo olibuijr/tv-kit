@@ -204,7 +204,7 @@ kit_setup() {
   echo "== bun runtime"
   remote_long 180 'command -v ~/.bun/bin/bun >/dev/null || curl -fsSL https://bun.sh/install | bash >/dev/null; ~/.bun/bin/bun --version'
   echo "== runtime tools + Qt runtime libs on the TV (build tools stay on Titan)"
-  remote_long 180 'command -v rsync >/dev/null || sudo -n pacman -S --needed --noconfirm rsync >/dev/null; command -v aria2c >/dev/null || sudo -n pacman -S --needed --noconfirm aria2 >/dev/null; command -v mpv >/dev/null || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; pacman -Q qt6-declarative qt6-websockets >/dev/null 2>&1 || sudo -n pacman -S --needed --noconfirm qt6-declarative qt6-websockets >/dev/null; sudo -n pacman -Rns --noconfirm cmake ninja >/dev/null 2>&1 || true; echo runtime-tools-present'
+  remote_long 180 'command -v rsync >/dev/null || sudo -n pacman -S --needed --noconfirm rsync >/dev/null; command -v aria2c >/dev/null || sudo -n pacman -S --needed --noconfirm aria2 >/dev/null; command -v mpv >/dev/null || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; pacman -Q qt6-declarative qt6-websockets mpvqt >/dev/null 2>&1 || sudo -n pacman -S --needed --noconfirm qt6-declarative qt6-websockets mpvqt >/dev/null; sudo -n pacman -Rns --noconfirm cmake ninja >/dev/null 2>&1 || true; echo runtime-tools-present'
   echo "== retire dead NFS automount at ~/Projects (replaced by tvctl rsync)"
   remote 'if grep -q "^100.88.0.9:/home/olafurbui/Projects" /etc/fstab; then \
       sudo -n cp /etc/fstab /etc/fstab.bak-tvkit; \
@@ -344,25 +344,6 @@ kit_frame_verify() {
   printf 'native-frame visual confirmation: %s\n' "$output"
 }
 
-# mpv plays fullscreen without --ontop (see mpvPlayer.ts); this KWin rule
-# keeps the Qt frame window always above it so the frame's HUD/OSD panel
-# (rendered with a transparent background outside those areas) composites
-# over the video instead of being hidden beneath it.
-kit_frame_kwin_rule() {
-  remote 'command -v kwriteconfig6 >/dev/null || exit 0; \
-    kwriteconfig6 --file kwinrulesrc --group General --key count 1; \
-    kwriteconfig6 --file kwinrulesrc --group General --key rules 1; \
-    kwriteconfig6 --file kwinrulesrc --group 1 --key Description "TV Frame keep above"; \
-    kwriteconfig6 --file kwinrulesrc --group 1 --key wmclass "tv-frame"; \
-    kwriteconfig6 --file kwinrulesrc --group 1 --key wmclasscomplete "false"; \
-    kwriteconfig6 --file kwinrulesrc --group 1 --key wmclassmatch "1"; \
-    kwriteconfig6 --file kwinrulesrc --group 1 --key above "true"; \
-    kwriteconfig6 --file kwinrulesrc --group 1 --key aboverule "3"; \
-    env '"$kit_runtime"' qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1 \
-      || env '"$kit_runtime"' qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true; \
-    echo kwin-rule-installed'
-}
-
 kit_frame_deploy() {
   (($# <= 1)) || { echo 'tvctl: kit frame deploy accepts at most one message' >&2; return 64; }
   echo '== stop orphaned players'
@@ -380,8 +361,6 @@ kit_frame_deploy() {
   echo '== switch display client'
   kit_systemctl 'daemon-reload'
   kit_systemctl "enable --now ${kit_enable[*]}"
-  echo '== keep-above KWin rule'
-  kit_frame_kwin_rule
   kit_frame_verify
   (kit_archive "${1:-Deploy native TV Frame}" >>/tmp/tv-kit-archive.log 2>&1 && echo "archive ok $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log || echo "archive FAILED $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log) &
   disown

@@ -56,11 +56,16 @@ export type MediaItem = {
 	fullscreen: boolean;
 	favorite: boolean;
 	status: "idle" | "loading" | "ready" | "error";
-	// "mpv": video pixels come from the native mpv backend; the Qt TV Frame
-	// renders the UI beneath it. "browser" is a legacy value kept for stored state.
+	// "mpv": video renders via libmpv embedded directly in the native Qt TV
+	// Frame (apps/tv-frame's MpvVideo item) — no separate mpv process or
+	// window. "browser" is a legacy value kept for stored state.
 	engine?: "browser" | "mpv";
 	// mpv cache buffering percent (0-100) while status is "loading".
 	buffering?: number;
+	// Incremented only by an explicit "seek" command (never by the frame's
+	// own periodic "media-progress" reports), so the frame can tell a real
+	// seek target apart from its own progress echoing back through state.
+	seekToken?: number;
 	// Live torrent transfer telemetry for the loading overlay.
 	transfer?: {
 		peers: number;
@@ -415,6 +420,7 @@ export type Command =
 				| "playback-rate"
 				| "media-progress"
 				| "media-duration"
+				| "media-buffering"
 				| "news-scroll"
 				| "news-article"
 				| "ruv-program"

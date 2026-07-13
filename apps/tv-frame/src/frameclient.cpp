@@ -102,6 +102,17 @@ void FrameClient::connectSocket()
     socket_.open(request);
 }
 
+void FrameClient::sendCommand(const QString &action, const QVariant &value)
+{
+    if (!connected_) return;
+    QJsonObject message{
+        {QStringLiteral("type"), QStringLiteral("command")},
+        {QStringLiteral("action"), action},
+    };
+    if (value.isValid()) message.insert(QStringLiteral("value"), QJsonValue::fromVariant(value));
+    socket_.sendTextMessage(QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
+}
+
 void FrameClient::handleMessage(const QString &raw)
 {
     QJsonParseError parseError;

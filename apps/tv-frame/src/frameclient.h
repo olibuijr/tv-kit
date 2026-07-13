@@ -8,9 +8,11 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <QWebSocket>
+#include <qqmlintegration.h>
 
 class FrameClient : public QObject {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
     Q_PROPERTY(QVariantMap state READ state NOTIFY stateChanged)
     Q_PROPERTY(QVariantMap content READ content NOTIFY contentChanged)
@@ -31,7 +33,11 @@ public:
     Q_INVOKABLE void start();
     Q_INVOKABLE void refreshContent();
     Q_INVOKABLE void refreshStations();
-
+    // Pushes {"type":"command","action":action,"value":value} — the same
+    // wire protocol the tablet remote and tvctl use. Lets the frame report
+    // playback progress/status back (media-progress, player-status) since
+    // mpv now lives here instead of in tvserverd.
+    Q_INVOKABLE void sendCommand(const QString &action, const QVariant &value);
 signals:
     void connectedChanged();
     void stateChanged();

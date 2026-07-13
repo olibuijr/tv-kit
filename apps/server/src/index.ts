@@ -71,14 +71,6 @@ import {
 } from "./httpAccess";
 import { RuvScheduler, type RuvJob } from "./ruvScheduler";
 import {
-  mpvAvailable,
-  mpvSeek,
-  setMpvUpdateHandler,
-  startMpv,
-  stopMpv,
-  syncMpv,
-} from "./mpvPlayer";
-import {
   createDefaultState,
   normalizeHomeState,
   stopTransientPlaybackOnStartup,
@@ -160,7 +152,6 @@ const persistDeilduPlayback = () => {
 const broadcast = () => {
   persistDeilduPlayback();
   saveState(state);
-  syncMpv(state.media, state.playing, state.volume, state.muted);
   const payload = JSON.stringify({ type: "state", state });
   log.trace(
     { clients: clients.size, action: state.lastAction },
@@ -187,97 +178,10 @@ function stopPlayback(message = "Spilun stöðvuð", error = false) {
     engine: undefined,
   };
   state.lastAction = message;
-  stopMpv();
   void stopDeilduStream();
   broadcast();
 }
 
-// mpv reports real playback position/duration/pause for mpv-backed media so the
-// HUD timeline tracks the native player. Throttle time updates to ~1s.
-let lastMpvTimeBroadcast = 0;
-let lastMpvBufferLog = -1;
-setMpvUpdateHandler((update) => {
-  if (state.media.engine !== "mpv") return;
-  // mpv can die outside a deliberate stopMpv() call (e.g. an operator kill
-  // during deploy/orphan-cleanup). Without this, state.playing stays stale
-  // "true" with no real mpv process — clients (the native frame) trust that
-  // flag to know whether video owns the screen, so a stale flag leaves the
-  // frame's background transparent with nothing behind it.
-  if (update.disconnected) {
-    if (state.playing || state.media.status !== "idle") {
-      state.playing = false;
-      state.media.status = "idle";
-      state.media.buffering = undefined;
-      state.lastAction = "mpv aftengdist óvænt";
-      broadcast();
-    }
-    return;
-  }
-  let changed = false;
-  if (update.loaded && state.media.status !== "loading") {
-    state.media.status = "loading";
-    changed = true;
-  }
-  if (update.restarted && state.media.status !== "ready") {
-    state.media.status = "ready";
-    state.media.buffering = undefined;
-    changed = true;
-  }
-  if (update.pausedForCache !== undefined) {
-    const next = update.pausedForCache ? "loading" : state.media.status;
-    if (next !== state.media.status) {
-      state.media.status = next;
-      changed = true;
-    }
-  }
-  if (typeof update.bufferingPercent === "number") {
-    state.media.buffering = update.bufferingPercent;
-    changed = true;
-    const bucket = Math.floor(update.bufferingPercent / 10) * 10;
-    if (bucket !== lastMpvBufferLog) {
-      lastMpvBufferLog = bucket;
-      console.log(`mpv buffering ${bucket}% media=${state.media.id}`);
-    }
-  }
-  if (typeof update.duration === "number" && update.duration > 0) {
-    state.media.duration = update.duration;
-    changed = true;
-  }
-  if (typeof update.pause === "boolean" && state.playing === update.pause) {
-    state.playing = !update.pause;
-    changed = true;
-  }
-  if (update.eof) {
-    state.playing = false;
-    changed = true;
-  }
-  if (typeof update.timePos === "number") {
-    state.media.currentTime = update.timePos;
-    if (update.timePos > 0 && state.media.status === "loading")
-      state.media.status = "ready";
-    if (Date.now() - lastMpvTimeBroadcast >= 1_000) {
-      lastMpvTimeBroadcast = Date.now();
-      changed = true;
-    }
-  }
-  if (changed) broadcast();
-});
-
-// The native Qt frame renders UI only; every playback (RÚV live, Sarpurinn,
-// radio, torrents) goes through native mpv. Engage mpv asynchronously; the
-// next broadcast loads the source via syncMpv.
-function engageMpvEngine() {
-  state.media.engine = "mpv";
-  void startMpv().then(() => {
-    if (state.media.engine !== "mpv") return;
-    if (!mpvAvailable()) {
-      state.media.status = "error";
-      state.playing = false;
-      state.lastAction = "mpv ræsist ekki";
-    }
-    broadcast();
-  });
-}
 
 // Push aria2 transfer telemetry (peers, speed, downloaded bytes) into the
 // active torrent's media state so the loading overlay can render it.
@@ -353,7 +257,7 @@ function tuneRadio(id: number) {
     favorite: state.radioFavorites.includes(station.id),
     status: "loading",
   };
-  engageMpvEngine();
+  state.media.engine = "mpv";
   upsertMedia(state.media);
   recordPlayback(state.media);
   state.lastAction = `Spila ${station.name}`;
@@ -445,7 +349,7 @@ function tuneTvSlug(slug: string) {
     favorite: state.tvFavorites.includes(channel.slug),
     status: "loading",
   };
-  engageMpvEngine();
+  state.media.engine = "mpv";
   upsertMedia(state.media);
   recordPlayback(state.media);
   state.lastAction = `Spila ${channel.name}`;
@@ -508,7 +412,7 @@ function playRuvEpisode(id: string) {
     favorite: state.programFavorites.includes(episode.programId),
     status: "loading",
   };
-  engageMpvEngine();
+  state.media.engine = "mpv";
   upsertMedia(state.media);
   recordPlayback(state.media);
   state.lastAction =
@@ -569,8 +473,6 @@ async function playTorrentMedia(id: string) {
       id,
       torrentProgressBroadcast(`torrent-${id}`),
     );
-    await startMpv();
-    if (!mpvAvailable()) throw new Error("mpv ræsist ekki");
     console.log(`torrent playback ${id} engine=mpv`);
     state.media = {
       ...state.media,
@@ -640,8 +542,6 @@ async function playDeilduItem(id: number) {
       id,
       torrentProgressBroadcast(`deildu-${id}`),
     );
-    await startMpv();
-    if (!mpvAvailable()) throw new Error("mpv ræsist ekki");
     console.log(`Deildu playback ${id} engine=mpv`);
     const refreshed = getDeilduItem(id) ?? item;
     const labels = deilduPlaybackLabels(id);
@@ -729,7 +629,7 @@ function startCast(input: {
     status: "loading",
   };
   state.lastAction = `${input.source} cast: ${input.title}`;
-  engageMpvEngine();
+  state.media.engine = "mpv";
   upsertMedia(state.media);
   broadcast();
   return true;
@@ -1573,15 +1473,9 @@ const server = Bun.serve<WebSocketData>({
       } else if (message.action === "stop-playback") {
         stopPlayback(message.label || "Spilun stöðvuð");
         return;
-      } else if (message.action === "set-playing") {
+      } else if (message.action === "set-playing")
         state.playing = message.value;
-        if (state.playing && state.media.engine === "mpv" && !mpvAvailable())
-          engageMpvEngine();
-      } else if (message.action === "toggle-play") {
-        state.playing = !state.playing;
-        if (state.playing && state.media.engine === "mpv" && !mpvAvailable())
-          engageMpvEngine();
-      }
+      else if (message.action === "toggle-play") state.playing = !state.playing;
       else if (message.action === "toggle-mute") state.muted = !state.muted;
       else if (message.action === "volume") state.volume = message.value;
       else if (message.action === "scene") state.scene = message.value;
@@ -1606,7 +1500,8 @@ const server = Bun.serve<WebSocketData>({
           state.media.duration || Number.MAX_SAFE_INTEGER,
           message.value,
         );
-        if (message.action === "seek") mpvSeek(state.media.currentTime);
+        if (message.action === "seek")
+          state.media.seekToken = (state.media.seekToken || 0) + 1;
         persistEpisodeProgress();
       } else if (message.action === "playback-rate")
         state.media.playbackRate = message.value;
@@ -1620,10 +1515,11 @@ const server = Bun.serve<WebSocketData>({
         state.media.panel = (message.value || null) as PlayerPanel;
       else if (message.action === "fullscreen")
         state.media.fullscreen = message.value;
-      else if (message.action === "player-status") {
-        if (state.media.engine === "mpv") return;
+      else if (message.action === "player-status")
         state.media.status = message.value as MediaItem["status"];
-      } else if (message.action === "player-tracks") {
+      else if (message.action === "media-buffering")
+        state.media.buffering = message.value as number;
+      else if (message.action === "player-tracks") {
         if (message.value.source !== state.media.src) return;
         const subtitles = message.value.subtitles.filter(
           (track, index, tracks) =>
@@ -1698,7 +1594,7 @@ ruvScheduler.start();
 reconcileStreams();
 // Live radio/TV survives a daemon restart: re-engage mpv for the persisted
 // station/channel (torrents are intentionally cleared on startup instead).
-if (state.playing && state.media.live && state.media.src) engageMpvEngine();
+if (state.playing && state.media.live && state.media.src) state.media.engine = "mpv";
 
 const runDeilduIfDue = () => {
   if (
@@ -1749,7 +1645,6 @@ function shutdown() {
   if (golfboxStartTimer) clearTimeout(golfboxStartTimer);
   if (golfboxSyncTimer) clearInterval(golfboxSyncTimer);
   ruvScheduler.stop();
-  stopMpv();
   void stopDeilduStream();
   void server.stop(true);
   setTimeout(() => process.exit(0), 1_000).unref();

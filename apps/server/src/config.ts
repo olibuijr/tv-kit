@@ -147,26 +147,6 @@ export const config = Object.freeze({
 	tmdbApiKey: optional("TMDB_API_KEY"),
 	tmdbApiBase: optional("TMDB_API_BASE").replace(/\/$/, ""),
 	tmdbImageBase: optional("TMDB_IMAGE_BASE").replace(/\/$/, ""),
-	mpvBin: optional("MPV_BIN") || "mpv",
-	mpvIpcSocket:
-		optional("MPV_IPC_SOCKET") ||
-		`${optional("XDG_RUNTIME_DIR") || "/tmp"}/tv-kit-mpv.sock`,
-	mpvHwdec: optional("MPV_HWDEC") || "vaapi",
-	mpvVideoSync: optional("MPV_VIDEO_SYNC") || "audio",
-	mpvCacheSecs: optionalNumber("MPV_CACHE_SECS", 45, 1, 300),
-	mpvCachePauseWait: optionalNumber("MPV_CACHE_PAUSE_WAIT", 8, 0.1, 30),
-	mpvDemuxerMaxBytes: optionalNumber(
-		"MPV_DEMUXER_MAX_BYTES",
-		67_108_864,
-		1_048_576,
-		536_870_912,
-	),
-	mpvStreamBufferBytes: optionalNumber(
-		"MPV_STREAM_BUFFER_BYTES",
-		1_048_576,
-		131_072,
-		16_777_216,
-	),
 	castIngressToken: optional("CAST_INGRESS_TOKEN"),
 	latitude: required("HOME_LATITUDE"),
 	longitude: required("HOME_LONGITUDE"),

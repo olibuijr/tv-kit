@@ -92,7 +92,7 @@ Rectangle {
             color: hud.media.live ? Theme.primary : Theme.ink
             font.pixelSize: hud.media.live ? 19 : 24
             font.family: "monospace"
-            font.bold: hud.media.live
+            font.bold: Boolean(hud.media.live)
         }
     }
 }
