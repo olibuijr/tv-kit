@@ -8,7 +8,11 @@ Flickable {
     readonly property var movies: content.movies || []
     readonly property var programs: content.programs || []
     readonly property var torrentMovies: content.torrentMovies || []
-    readonly property var continueWatching: content.continueWatching || []
+    readonly property var continueWatching: (content.continueWatching || []).map(item => ({
+        title: item.episode.programTitle,
+        image: item.episode.image,
+        latestEpisode: { title: item.episode.title, image: item.episode.image },
+    }))
 
     contentWidth: width
     contentHeight: rails.height

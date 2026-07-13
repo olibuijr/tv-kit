@@ -59,7 +59,7 @@ Item {
                 radius: 12
                 color: Theme.raised
                 clip: true
-                Image { anchors.fill: parent; source: view.article.mainImageUrl || ""; fillMode: Image.PreserveAspectCrop }
+                Image { anchors.fill: parent; anchors.margins: 0; source: view.article.mainImageUrl || ""; fillMode: Image.PreserveAspectFit }
             }
             Repeater {
                 model: view.paragraphs(view.article.bodyHtml)
@@ -102,19 +102,21 @@ Item {
                     anchors.margins: 16
                     spacing: 16
                     Rectangle {
-                        width: 150; height: parent.height
+                        width: 160; height: parent.height
+                        anchors.verticalCenter: parent.verticalCenter
                         radius: 8
-                        color: Theme.raised
+                        color: "#000000"
                         clip: true
                         Image {
                             anchors.fill: parent
+                            anchors.margins: 4
                             source: modelData.mainImageUrl || ""
-                            fillMode: Image.PreserveAspectCrop
+                            fillMode: Image.PreserveAspectFit
                             visible: status === Image.Ready
                         }
                     }
                     Column {
-                        width: parent.width - 180
+                        width: parent.width - 190
                         spacing: 6
                         Text { text: modelData.categoryTitle || modelData.topicName || "RÚV"; color: Theme.accent; font.pixelSize: 15; font.bold: true }
                         Text {

@@ -71,16 +71,16 @@ Item {
             height: parent.height - y
             clip: true
             interactive: false
-            cellWidth: 350
-            cellHeight: 264
+            cellWidth: Math.floor(width / Math.max(4, Math.floor(width / 400)))
+            cellHeight: Math.floor(cellWidth * 9 / 16) + 78
             model: view.show ? (view.show.episodes || []) : []
             delegate: Column {
                 required property var modelData
                 readonly property bool active: view.activeMediaId === "deildu-" + modelData.itemId
-                width: 330
+                width: GridView.view.cellWidth - 20
                 spacing: 8
                 Rectangle {
-                    width: 330; height: 186
+                    width: parent.width; height: Math.floor(parent.width * 9 / 16)
                     radius: 10
                     color: Theme.raised
                     border.color: parent.active ? Theme.primary : "transparent"
@@ -150,15 +150,15 @@ Item {
             height: parent.height - y
             clip: true
             interactive: false
-            cellWidth: 320
-            cellHeight: 304
+            cellWidth: Math.floor(width / Math.max(5, Math.floor(width / 340)))
+            cellHeight: Math.floor(cellWidth * 2 / 3) + 82
             model: view.shows.length ? view.shows : view.items
             delegate: Column {
                 required property var modelData
-                width: 300
+                width: GridView.view.cellWidth - 20
                 spacing: 8
                 Rectangle {
-                    width: 300; height: 200
+                    width: parent.width; height: Math.floor(parent.width * 2 / 3)
                     radius: 10
                     color: Theme.raised
                     clip: true

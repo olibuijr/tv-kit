@@ -100,8 +100,8 @@ ApplicationWindow {
             Layout.fillHeight: true
             Layout.leftMargin: Theme.marginX
             Layout.rightMargin: Theme.marginX
-            Layout.topMargin: 24
-            Layout.bottomMargin: 14
+            Layout.topMargin: 18
+            Layout.bottomMargin: 12
             currentIndex: Math.max(0, ["home", "tv", "radio", "media", "deildu", "news"].indexOf(root.view))
 
             HomeView { state: root.state; content: root.content; now: root.now }

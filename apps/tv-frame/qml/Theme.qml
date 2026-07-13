@@ -14,7 +14,7 @@ QtObject {
     readonly property color accent: "#e9b46a"
     readonly property color good: "#79d49b"
 
-    readonly property int marginX: 42
+    readonly property int marginX: 28
 
     function clock(seconds) {
         const total = Math.max(0, Math.floor(seconds || 0))

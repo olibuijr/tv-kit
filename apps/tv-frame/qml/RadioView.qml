@@ -14,7 +14,7 @@ Item {
         id: grid
         required property var items
         interactive: false
-        cellWidth: 300
+        cellWidth: Math.floor(width / Math.max(3, Math.floor(width / 330)))
         cellHeight: 120
         model: items
         delegate: Item {
@@ -78,7 +78,7 @@ Item {
         StationGrid {
             visible: view.favoriteStations.length > 0
             width: parent.width
-            height: Math.ceil(view.favoriteStations.length / Math.max(1, Math.floor(width / 300))) * 120
+            height: Math.ceil(view.favoriteStations.length / Math.max(3, Math.floor(width / 330))) * 120
             items: view.favoriteStations
         }
 
