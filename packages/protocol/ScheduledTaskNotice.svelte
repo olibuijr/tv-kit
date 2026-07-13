@@ -9,14 +9,26 @@
 
   async function refresh() {
     try {
-      const [deilduResponse, golfboxResponse] = await Promise.all([
+      const [deilduResponse, golfboxResponse, publicResponse] = await Promise.all([
         fetch(`${tvServerUrl()}/agent/tasks/deildu-import`),
         fetch(`${tvServerUrl()}/agent/tasks/golfbox-sync`),
+        fetch(`${tvServerUrl()}/agent/tasks/public-torrent-import`),
       ]);
-      if (!deilduResponse.ok || !golfboxResponse.ok) return;
+      if (!deilduResponse.ok || !golfboxResponse.ok || !publicResponse.ok) return;
       const deildu = await deilduResponse.json() as { task: Task; scrape: { running: boolean; completedPages: number; totalPages: number; message: string } };
       const golfbox = await golfboxResponse.json() as { task: Task };
-      task = golfbox.task.running ? golfbox.task : deildu.task.running ? { ...deildu.task, title: "Skanna skrár og hreinsa heiti" } : deildu.scrape.running ? { title: "Flytja inn Deildu", running: true, phase: "import", current: deildu.scrape.completedPages, total: deildu.scrape.totalPages, message: deildu.scrape.message } : undefined;
+      const publicTorrents = await publicResponse.json() as { task: Task; scrape: { running: boolean; inserted: number; updated: number; itemCount: number; message: string } };
+      task = golfbox.task.running
+        ? golfbox.task
+        : deildu.task.running
+          ? { ...deildu.task, title: "Skanna skrár og hreinsa heiti" }
+          : deildu.scrape.running
+            ? { title: "Flytja inn Deildu", running: true, phase: "import", current: deildu.scrape.completedPages, total: deildu.scrape.totalPages, message: deildu.scrape.message }
+            : publicTorrents.scrape.running
+              ? { title: "Sæki opinbera torrenta", running: true, phase: "scrape", current: publicTorrents.scrape.inserted, total: 0, message: publicTorrents.scrape.message }
+              : publicTorrents.task.running
+                ? { ...publicTorrents.task, title: "Hreinsa og auðga torrent-titla" }
+                : undefined;
     } catch { /* retry without replacing the last known state */ }
   }
 
