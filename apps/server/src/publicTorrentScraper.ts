@@ -1,6 +1,10 @@
 import { config } from "./config";
-import { db, statement } from "./db";
+import { statement } from "./db";
 import { cleanImportedPublicTorrents } from "./publicTorrentCleanupJob";
+import {
+	scrapeAllSourcesConcurrent,
+	type TorrentSource,
+} from "./publicTorrentSources";
 
 
 export type PublicTorrentRecord = {
@@ -24,11 +28,6 @@ export type PublicTorrentRecord = {
 	publishedAt: number | null;
 	lastSeenAt: number;
 };
-
-type PublicTorrentFetch = (
-	input: URL | RequestInfo,
-	init?: RequestInit,
-) => Promise<Response>;
 
 type RunRow = {
 	started_at: number;
@@ -108,132 +107,6 @@ function latestState(): PublicTorrentScrapeState {
 
 export const publicTorrentScrapeState = latestState();
 
-function finiteInteger(value: unknown, fallback = 0) {
-	const number = Number(value);
-	return Number.isSafeInteger(number) && number >= 0 ? number : fallback;
-}
-
-function finiteNumber(value: unknown) {
-	const number = Number(value);
-	return Number.isFinite(number) ? number : null;
-}
-
-function timestamp(value: unknown) {
-	if (typeof value !== "string" || !value.trim()) return null;
-	const parsed = Date.parse(value);
-	return Number.isFinite(parsed) ? parsed : null;
-}
-
-function webUrl(value: unknown) {
-	if (typeof value !== "string") return "";
-	try {
-		const url = new URL(value);
-		return url.protocol === "https:" || url.protocol === "http:"
-			? url.toString()
-			: "";
-	} catch {
-		return "";
-	}
-}
-
-export function normalizeKnabenHit(
-	value: unknown,
-	now = Date.now(),
-): PublicTorrentRecord | null {
-	if (!value || typeof value !== "object") return null;
-	const field = (key: string): unknown => Reflect.get(value, key);
-	const hash = field("hash");
-	const infoHash =
-		typeof hash === "string" ? hash.trim().toUpperCase() : "";
-	if (!/^[A-F0-9]{40}$/.test(infoHash)) return null;
-	const rawTitle = field("title");
-	const originalTitle = typeof rawTitle === "string" ? rawTitle.trim() : "";
-	if (!originalTitle || originalTitle.length > 500) return null;
-	const rawCategory = field("category");
-	const category = typeof rawCategory === "string" ? rawCategory.trim() : "";
-	const mediaKind = /^tv(?:\s|\/|$)/i.test(category)
-		? "tv"
-		: /^movies?(?:\s|\/|$)/i.test(category)
-			? "movie"
-			: null;
-	if (!mediaKind) return null;
-	const rawCategoryIds = field("categoryId");
-	const categoryIds = Array.isArray(rawCategoryIds)
-		? rawCategoryIds
-				.map((item) => Number(item))
-				.filter((item) => Number.isSafeInteger(item) && item > 0)
-		: [];
-	const rawId = field("id");
-	const cachedOrigin = field("cachedOrigin");
-	const tracker = field("tracker");
-	const trackerId = field("trackerId");
-	const magnetUrl = field("magnetUrl");
-	const grabs = field("grabs");
-	const publishedAt = timestamp(field("date"));
-	const lastSeenAt = timestamp(field("lastSeen")) ?? publishedAt ?? now;
-	const directLink = webUrl(field("link"));
-	return {
-		infoHash,
-		sourceId: typeof rawId === "string" ? rawId : String(rawId ?? infoHash),
-		source:
-			typeof cachedOrigin === "string" && cachedOrigin.trim()
-				? cachedOrigin.trim()
-				: typeof tracker === "string" && tracker.trim()
-					? tracker.trim()
-					: "Knaben",
-		sourceUrl: webUrl(field("details")),
-		tracker: typeof tracker === "string" ? tracker.trim() : "",
-		trackerId: typeof trackerId === "string" ? trackerId.trim() : "",
-		category,
-		categoryIds,
-		torrentUri: directLink || null,
-		magnetUri:
-			typeof magnetUrl === "string" && magnetUrl.startsWith("magnet:?")
-				? magnetUrl
-				: "",
-		originalTitle,
-		mediaKind,
-		sizeBytes: finiteInteger(field("bytes")),
-		seeders: finiteInteger(field("seeders")),
-		leechers: finiteInteger(field("peers")),
-		grabs: grabs === null || grabs === undefined ? null : finiteInteger(grabs),
-		virusScore: finiteNumber(field("virusDetection")),
-		publishedAt,
-		lastSeenAt,
-	};
-}
-
-function preferableRecord(
-	current: PublicTorrentRecord,
-	candidate: PublicTorrentRecord,
-) {
-	if (Boolean(candidate.torrentUri) !== Boolean(current.torrentUri))
-		return candidate.torrentUri ? candidate : current;
-	if (candidate.seeders !== current.seeders)
-		return candidate.seeders > current.seeders ? candidate : current;
-	return candidate.lastSeenAt > current.lastSeenAt ? candidate : current;
-}
-
-export function deduplicatePublicTorrents(records: PublicTorrentRecord[]) {
-	const found = new Map<string, PublicTorrentRecord>();
-	for (const record of records) {
-		const current = found.get(record.infoHash);
-		found.set(
-			record.infoHash,
-			current ? preferableRecord(current, record) : record,
-		);
-	}
-	return [...found.values()];
-}
-
-
-function delay(ms: number) {
-	if (!ms) return Promise.resolve();
-	const { promise, resolve } = Promise.withResolvers<void>();
-	setTimeout(resolve, ms);
-	return promise;
-}
-
 function progress(
 	patch: Partial<PublicTorrentScrapeState>,
 	onProgress?: () => void,
@@ -245,7 +118,7 @@ function progress(
 export async function scrapePublicTorrents(
 	onProgress?: () => void,
 	onComplete?: () => void,
-	fetchImpl: PublicTorrentFetch = fetch,
+	sources?: TorrentSource[],
 ) {
 	if (publicTorrentScrapeState.running) return { ...publicTorrentScrapeState };
 	const startedAt = Date.now();
@@ -272,138 +145,45 @@ export async function scrapePublicTorrents(
 		},
 		onProgress,
 	);
-	const records: PublicTorrentRecord[] = [];
-	const errors: string[] = [];
-	let successfulPages = 0;
 	try {
-		for (let page = 0; page < config.publicTorrentMaxPages; page++) {
-			progress(
-				{
-					message: `Opinber torrent-gögn · síða ${page + 1}/${config.publicTorrentMaxPages}`,
-				},
-				onProgress,
-			);
-			try {
-				const response = await fetchImpl(config.publicTorrentApiUrl, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						"User-Agent": config.publicTorrentUserAgent,
-					},
-					body: JSON.stringify({
-						order_by: "date",
-						order_direction: "desc",
-						categories: config.publicTorrentCategories,
-						from: page * config.publicTorrentPageSize,
-						size: config.publicTorrentPageSize,
-						hide_unsafe: true,
-						hide_xxx: true,
-						seconds_since_last_seen: config.publicTorrentLookbackSeconds,
-					}),
-					signal: AbortSignal.timeout(config.publicTorrentFetchTimeoutMs),
-				});
-				if (!response.ok)
-					throw new Error(`Opinber torrent-vísir svaraði HTTP ${response.status}`);
-				const payload: unknown = await response.json();
-				if (
-					!payload ||
-					typeof payload !== "object" ||
-					!("hits" in payload) ||
-					!Array.isArray(payload.hits)
-				)
-					throw new Error("Opinber torrent-vísir skilaði ógildu svari");
-				const hits = payload.hits;
-				for (const hit of hits) {
-					const normalized = normalizeKnabenHit(hit);
-					if (normalized) records.push(normalized);
-				}
-				successfulPages++;
+		const summary = await scrapeAllSourcesConcurrent({
+			onSourceStart: (source) =>
+				progress({ message: `Sæki frá ${source}…` }, onProgress),
+			onBatch: (source, batchInserted, batchUpdated, sampleTitle) =>
 				progress(
 					{
-						completedPages: successfulPages,
-						itemCount: records.length,
+						inserted: publicTorrentScrapeState.inserted + batchInserted,
+						updated: publicTorrentScrapeState.updated + batchUpdated,
+						itemCount:
+							publicTorrentScrapeState.itemCount +
+							batchInserted +
+							batchUpdated,
+						message: batchInserted
+							? `${source}: +${batchInserted} nýir torrentar${sampleTitle ? ` · ${sampleTitle}` : ""}`
+							: `${source}: uppfærði ${batchUpdated}`,
 					},
 					onProgress,
-				);
-				if (hits.length < config.publicTorrentPageSize) break;
-			} catch (error) {
-				errors.push(error instanceof Error ? error.message : String(error));
-				break;
-			}
-			await delay(config.publicTorrentScrapePacingMs);
-		}
-		if (!successfulPages) throw new Error(errors[0] ?? "Engin gögn sótt");
-		const normalized = deduplicatePublicTorrents(records);
-		let inserted = 0;
-		let updated = 0;
-		const sources = new Set(normalized.map((record) => record.tracker));
-		db.transaction(() => {
-			const exists = statement(
-				"SELECT 1 FROM public_torrents WHERE info_hash=?",
-			);
-			const upsert = statement(`
-				INSERT INTO public_torrents (
-					info_hash,source_id,source,source_url,tracker,tracker_id,category,category_ids,
-					torrent_uri,magnet_uri,original_title,media_kind,size_bytes,seeders,leechers,
-					grabs,virus_score,published_at,last_seen_at,first_seen_at,updated_at
-				) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-				ON CONFLICT(info_hash) DO UPDATE SET
-					source_id=excluded.source_id,source=excluded.source,
-					source_url=CASE WHEN excluded.source_url!='' THEN excluded.source_url ELSE public_torrents.source_url END,
-					tracker=excluded.tracker,tracker_id=excluded.tracker_id,
-					category=excluded.category,category_ids=excluded.category_ids,
-					torrent_uri=COALESCE(excluded.torrent_uri,public_torrents.torrent_uri),
-					magnet_uri=CASE WHEN excluded.magnet_uri!='' THEN excluded.magnet_uri ELSE public_torrents.magnet_uri END,
-					original_title=excluded.original_title,media_kind=excluded.media_kind,
-					size_bytes=excluded.size_bytes,seeders=excluded.seeders,leechers=excluded.leechers,
-					grabs=excluded.grabs,virus_score=excluded.virus_score,
-					published_at=excluded.published_at,last_seen_at=excluded.last_seen_at,
-					updated_at=excluded.updated_at
-			`);
-			for (const record of normalized) {
-				if (exists.get(record.infoHash)) updated++;
-				else inserted++;
-				upsert.run(
-					record.infoHash,
-					record.sourceId,
-					record.source,
-					record.sourceUrl,
-					record.tracker,
-					record.trackerId,
-					record.category,
-					JSON.stringify(record.categoryIds),
-					record.torrentUri,
-					record.magnetUri,
-					record.originalTitle,
-					record.mediaKind,
-					record.sizeBytes,
-					record.seeders,
-					record.leechers,
-					record.grabs,
-					record.virusScore,
-					record.publishedAt,
-					record.lastSeenAt,
-					startedAt,
-					Date.now(),
-				);
-			}
-		})();
+				),
+			onSourceDone: (source, total) =>
+				progress(
+					{ message: `${source} búið · ${total} torrentar` },
+					onProgress,
+				),
+			},
+			sources,
+		);
+		if (!summary.total && !publicTorrentScrapeState.itemCount)
+			throw new Error("Engin gögn sótt frá neinum vísi");
 		progress(
 			{
-				inserted,
-				updated,
-				itemCount: normalized.length,
-				sourceCount: sources.size,
+				sourceCount: summary.sources,
 				message: "Hreinsa opinbera torrent-titla…",
 			},
 			onProgress,
 		);
 		const cleanup = await cleanImportedPublicTorrents(onProgress);
-		const status = errors.length || cleanup.phase === "error" ? "partial" : "complete";
-		const errorText = [
-			...errors,
-			...(cleanup.lastError ? [cleanup.lastError] : []),
-		].join(" | ");
+		const status = cleanup.phase === "error" ? "partial" : "complete";
+		const errorText = cleanup.lastError ?? "";
 		statement(
 			`UPDATE public_torrent_scrape_runs
 			 SET finished_at=?,status=?,source_count=?,item_count=?,added_count=?,updated_count=?,
@@ -412,10 +192,10 @@ export async function scrapePublicTorrents(
 		).run(
 			Date.now(),
 			status,
-			sources.size,
-			normalized.length,
-			inserted,
-			updated,
+			publicTorrentScrapeState.sourceCount,
+			publicTorrentScrapeState.itemCount,
+			publicTorrentScrapeState.inserted,
+			publicTorrentScrapeState.updated,
 			cleanup.cleaned,
 			cleanup.enriched,
 			cleanup.reviewed,

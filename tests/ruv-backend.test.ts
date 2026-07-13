@@ -24,6 +24,8 @@ import {
 	normalizeHomeState,
 	stopTransientPlaybackOnStartup,
 } from "../apps/server/src/state";
+import type { PublicTorrentRecord } from "../apps/server/src/publicTorrentScraper";
+import type { TorrentSource } from "../apps/server/src/publicTorrentSources";
 
 const root = mkdtempSync(join(tmpdir(), "tv-kit-test-"));
 const golfboxCtl = join(root, "golfboxctl");
@@ -328,67 +330,87 @@ test("empty database applies ordered migrations and idempotent state seed", () =
 	expect(database.loadState()?.lastAction).toBe("fyrsta");
 });
 
-test("public torrent scraper normalizes, deduplicates, cleans, and records its run", async () => {
+function publicRecord(
+	over: Partial<PublicTorrentRecord>,
+): PublicTorrentRecord {
+	return {
+		infoHash: "",
+		sourceId: "",
+		source: "",
+		sourceUrl: "",
+		tracker: "",
+		trackerId: "",
+		category: "",
+		categoryIds: [],
+		torrentUri: null,
+		magnetUri: "",
+		originalTitle: "",
+		mediaKind: "movie",
+		sizeBytes: 0,
+		seeders: 0,
+		leechers: 0,
+		grabs: null,
+		virusScore: null,
+		publishedAt: null,
+		lastSeenAt: Date.now(),
+		...over,
+	};
+}
+
+function fakeSource(
+	name: string,
+	scrape: (onBatch: (records: PublicTorrentRecord[]) => void) => Promise<void>,
+): TorrentSource {
+	return {
+		name,
+		pacingMs: 0,
+		search: async () => [],
+		scrapeRecent: scrape,
+	};
+}
+
+test("public torrent scraper upserts, cleans, and records concurrent source runs", async () => {
 	const hashes = {
 		deadCalm: "A".repeat(40),
 		show: "B".repeat(40),
 	};
-	const pages = [
-		[
-			{
-				id: "tpb-dead-calm",
-				hash: hashes.deadCalm,
-				title: "Dead.Calm.1989.1080p.BluRay.x264",
-				category: "Movies / HD",
-				categoryId: [3001000],
-				tracker: "The Pirate Bay",
-				seeders: 12,
-				peers: 2,
-				bytes: 3_600_000_000,
-				date: "2026-07-13T10:00:00Z",
-				lastSeen: "2026-07-13T11:00:00Z",
-			},
-			{
-				id: "yts-dead-calm",
-				hash: hashes.deadCalm.toLowerCase(),
-				title: "Dead.Calm.1989.1080p.BluRay.x264",
-				category: "Movies / HD",
-				categoryId: [3001000],
-				tracker: "YTS",
-				seeders: 4,
-				peers: 1,
-				bytes: 3_600_000_000,
-				link: "https://knaben.example/dead-calm.torrent",
-				date: "2026-07-13T10:00:00Z",
-				lastSeen: "2026-07-13T11:01:00Z",
-			},
-		],
-		[
-			{
-				id: "show-1",
-				hash: hashes.show,
-				title: "The.Show.S01E01.1080p.WEB-DL.x264",
-				category: "TV / HD",
-				categoryId: [2001000],
-				tracker: "1337x",
-				seeders: 8,
-				peers: 3,
-				bytes: 1_500_000_000,
-				date: "2026-07-13T09:00:00Z",
-				lastSeen: "2026-07-13T11:02:00Z",
-			},
-		],
+	const sources = [
+		fakeSource("ThePirateBay", async (onBatch) => {
+			onBatch([
+				publicRecord({
+					infoHash: hashes.deadCalm,
+					sourceId: "tpb-dead-calm",
+					source: "ThePirateBay",
+					tracker: "ThePirateBay",
+					trackerId: "thepiratebay",
+					originalTitle: "Dead.Calm.1989.1080p.BluRay.x264",
+					mediaKind: "movie",
+					seeders: 12,
+					sizeBytes: 3_600_000_000,
+					torrentUri: "https://tpb.example/dead-calm.torrent",
+				}),
+			]);
+		}),
+		fakeSource("1337x", async (onBatch) => {
+			onBatch([
+				publicRecord({
+					infoHash: hashes.show,
+					sourceId: "show-1",
+					source: "1337x",
+					tracker: "1337x",
+					trackerId: "1337x",
+					originalTitle: "The.Show.S01E01.1080p.WEB-DL.x264",
+					mediaKind: "tv",
+					seeders: 8,
+					sizeBytes: 1_500_000_000,
+				}),
+			]);
+		}),
 	];
-	const requests: RequestInit[] = [];
-	let page = 0;
-	const fakeFetch = async (_input: URL | RequestInfo, init?: RequestInit) => {
-		requests.push(init ?? {});
-		return Response.json({ hits: pages[page++] ?? [] });
-	};
 	const result = await publicTorrents.scrapePublicTorrents(
 		undefined,
 		undefined,
-		fakeFetch,
+		sources,
 	);
 	expect(result).toMatchObject({
 		status: "complete",
@@ -396,14 +418,7 @@ test("public torrent scraper normalizes, deduplicates, cleans, and records its r
 		updated: 0,
 		itemCount: 2,
 		cleaned: 2,
-	});
-	expect(requests).toHaveLength(2);
-	expect(JSON.parse(String(requests[0].body))).toMatchObject({
-		from: 0,
-		size: 2,
-		hide_unsafe: true,
-		hide_xxx: true,
-		categories: [2001000, 3001000],
+		sourceCount: 2,
 	});
 	type PublicDbRow = {
 		info_hash: string;
@@ -423,8 +438,8 @@ test("public torrent scraper normalizes, deduplicates, cleans, and records its r
 	expect(rows).toEqual([
 		{
 			info_hash: hashes.deadCalm,
-			source: "YTS",
-			torrent_uri: "https://knaben.example/dead-calm.torrent",
+			source: "ThePirateBay",
+			torrent_uri: "https://tpb.example/dead-calm.torrent",
 			original_title: "Dead.Calm.1989.1080p.BluRay.x264",
 			title: "Dead Calm",
 			media_kind: "movie",
@@ -464,7 +479,7 @@ test("public torrent scraper normalizes, deduplicates, cleans, and records its r
 	});
 });
 
-test("public torrent scraper preserves healthy rows when the upstream fails", async () => {
+test("public torrent scraper preserves healthy rows when every source fails", async () => {
 	database.statement(
 		`INSERT INTO public_torrents (
 			info_hash,source_id,source,original_title,media_kind,last_seen_at,first_seen_at,updated_at
@@ -479,12 +494,18 @@ test("public torrent scraper preserves healthy rows when the upstream fails", as
 		1,
 		1,
 	);
-	const failedFetch = async () =>
-		new Response("unavailable", { status: 503 });
+	const sources = [
+		fakeSource("ThePirateBay", async () => {
+			throw new Error("network down");
+		}),
+		fakeSource("Knaben", async () => {
+			throw new Error("network down");
+		}),
+	];
 	const result = await publicTorrents.scrapePublicTorrents(
 		undefined,
 		undefined,
-		failedFetch,
+		sources,
 	);
 	expect(result.status).toBe("error");
 	expect(
@@ -498,7 +519,7 @@ test("public torrent scraper preserves healthy rows when the upstream fails", as
 			.get(),
 	).toEqual({
 		status: "error",
-		error: "Opinber torrent-vísir svaraði HTTP 503",
+		error: "Engin gögn sótt frá neinum vísi",
 	});
 });
 

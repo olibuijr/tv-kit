@@ -6,11 +6,24 @@ import { db, statement } from "./db";
 
 export interface TorrentSource {
 	name: string;
+	// Delay between successive HTTP requests to this source, so per-source
+	// rate limits / flood triggers are respected while sources run concurrently.
+	pacingMs: number;
 	search(
 		query: string,
 		mediaKind?: "movie" | "tv",
 	): Promise<PublicTorrentRecord[]>;
+	// Firehose scrape of the newest / best-seeded torrents for this source.
+	// Yields batches so the orchestrator can upsert + notify in real time.
+	scrapeRecent?(
+		onBatch: (records: PublicTorrentRecord[]) => void,
+	): Promise<void>;
 }
+
+const sleep = (ms: number) =>
+	ms > 0
+		? new Promise<void>((r) => setTimeout(r, ms))
+		: Promise.resolve();
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -88,22 +101,22 @@ function normalizeApibayHit(hit: ApibayHit, now: number): PublicTorrentRecord | 
 	const added = Number(hit.added) || 0;
 	const publishedAt = added > 0 ? added * 1000 : null;
 	const categoryNum = Number(hit.category) || 0;
-	const categoryIds = categoryNum > 0 ? [categoryNum * 1000, categoryNum * 1000 + 1000] : [];
-	const categoryName =
-		categoryNum === 200
-			? "Video"
-			: categoryNum === 100
-				? "Audio"
-				: categoryNum === 300
-					? "Applications"
-					: categoryNum === 400
-						? "Games"
-						: "Other";
-	const mediaKind = categoryNum === 200
-		? mediaKindFromTitle(title) ?? "movie"
-		: categoryNum === 500
+	const categoryIds = categoryNum > 0 ? [categoryNum] : [];
+	// TPB category numbers: 2xx = Video (201 Movies, 202 Movies DVDR,
+	// 205 TV shows, 207 HD Movies, 208 HD TV shows).
+	const categoryName = categoryNum >= 200 && categoryNum < 300
+		? "Video"
+		: categoryNum >= 100 && categoryNum < 200
+			? "Audio"
+			: "Other";
+	const mediaKind =
+		categoryNum === 205 || categoryNum === 208
 			? ("tv" as const)
-			: null;
+			: categoryNum === 201 || categoryNum === 202 || categoryNum === 207
+				? ("movie" as const)
+				: categoryNum === 200
+					? (mediaKindFromTitle(title) ?? "movie")
+					: null;
 	if (!mediaKind) return null;
 
 	return {
@@ -129,12 +142,29 @@ function normalizeApibayHit(hit: ApibayHit, now: number): PublicTorrentRecord | 
 	};
 }
 
+// TPB precompiled top-100 feeds by category — best-seeded content, no query.
+const APIBAY_TOP100_CATEGORIES: Record<string, number> = {
+	movies: 207,
+	moviesSd: 201,
+	tv: 205,
+	tvHd: 208,
+};
+
 function createApibaySource(fetchImpl: FetchFn = fetch): TorrentSource {
+	const parseHits = (hits: ApibayHit[] | null, mediaKind?: "movie" | "tv") => {
+		if (!hits || !Array.isArray(hits)) return [];
+		const now = Date.now();
+		return hits
+			.map((h) => normalizeApibayHit(h, now))
+			.filter((r): r is PublicTorrentRecord => r !== null)
+			.filter((r) => !mediaKind || r.mediaKind === mediaKind);
+	};
 	return {
 		name: "ThePirateBay",
+		pacingMs: 700,
 		async search(query, mediaKind) {
 			const cat = mediaKind ? (APiBAY_CATEGORIES[mediaKind] ?? "") : "";
-			const url = `${"https://apibay.org"}/q.php?q=${encodeURIComponent(query)}&cat=${cat}`;
+			const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}&cat=${cat}`;
 			try {
 				const response = await fetchWithTimeout(
 					url,
@@ -143,15 +173,30 @@ function createApibaySource(fetchImpl: FetchFn = fetch): TorrentSource {
 					fetchImpl,
 				);
 				if (!response.ok) return [];
-				const hits = await safeJson<ApibayHit[]>(response);
-				if (!hits || !Array.isArray(hits)) return [];
-				const now = Date.now();
-				return hits
-					.map((h) => normalizeApibayHit(h, now))
-					.filter((r): r is PublicTorrentRecord => r !== null)
-					.filter((r) => !mediaKind || r.mediaKind === mediaKind);
+				return parseHits(await safeJson<ApibayHit[]>(response), mediaKind);
 			} catch {
 				return [];
+			}
+		},
+		async scrapeRecent(onBatch) {
+			const feeds = Object.values(APIBAY_TOP100_CATEGORIES);
+			for (const cat of feeds) {
+				try {
+					const url = `https://apibay.org/precompiled/data_top100_${cat}.json`;
+					const response = await fetchWithTimeout(
+						url,
+						{},
+						config.publicTorrentFetchTimeoutMs,
+						fetchImpl,
+					);
+					if (response.ok) {
+						const batch = parseHits(await safeJson<ApibayHit[]>(response));
+						if (batch.length) onBatch(batch);
+					}
+				} catch {
+					// one feed failing must not abort the rest
+				}
+				await sleep(this.pacingMs);
 			}
 		},
 	};
@@ -237,39 +282,43 @@ const KNABEN_SEARCH_CATEGORIES: Record<string, number[]> = {
 };
 
 function createKnabenSource(fetchImpl: FetchFn = fetch): TorrentSource {
+	const post = async (body: Record<string, unknown>) => {
+		const response = await fetchWithTimeout(
+			config.publicTorrentApiUrl,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"User-Agent": config.publicTorrentUserAgent,
+				},
+				body: JSON.stringify(body),
+			},
+			config.publicTorrentFetchTimeoutMs,
+			fetchImpl,
+		);
+		if (!response.ok) return null;
+		return safeJson<{ hits: KnabenHit[] }>(response);
+	};
 	return {
 		name: "Knaben",
+		pacingMs: 500,
 		async search(query, mediaKind) {
 			const categoryIds = mediaKind
 				? (KNABEN_SEARCH_CATEGORIES[mediaKind] ?? config.publicTorrentCategories)
 				: config.publicTorrentCategories;
 			try {
-				const response = await fetchWithTimeout(
-					config.publicTorrentApiUrl,
-					{
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							"User-Agent": config.publicTorrentUserAgent,
-						},
-						body: JSON.stringify({
-							query,
-							search_field: "title",
-							search_type: "70%",
-							order_by: "seeders",
-							order_direction: "desc",
-							categories: categoryIds,
-							from: 0,
-							size: 50,
-							hide_unsafe: true,
-							hide_xxx: true,
-						}),
-					},
-					config.publicTorrentFetchTimeoutMs,
-					fetchImpl,
-				);
-				if (!response.ok) return [];
-				const payload = await safeJson<{ hits: KnabenHit[] }>(response);
+				const payload = await post({
+					query,
+					search_field: "title",
+					search_type: "70%",
+					order_by: "seeders",
+					order_direction: "desc",
+					categories: categoryIds,
+					from: 0,
+					size: 50,
+					hide_unsafe: true,
+					hide_xxx: true,
+				});
 				if (!payload?.hits || !Array.isArray(payload.hits)) return [];
 				const now = Date.now();
 				return payload.hits
@@ -278,6 +327,34 @@ function createKnabenSource(fetchImpl: FetchFn = fetch): TorrentSource {
 					.filter((r) => !mediaKind || r.mediaKind === mediaKind);
 			} catch {
 				return [];
+			}
+		},
+		async scrapeRecent(onBatch) {
+			const pageSize = config.publicTorrentPageSize;
+			for (let page = 0; page < config.publicTorrentMaxPages; page++) {
+				try {
+					const payload = await post({
+						order_by: "date",
+						order_direction: "desc",
+						categories: config.publicTorrentCategories,
+						from: page * pageSize,
+						size: pageSize,
+						hide_unsafe: true,
+						hide_xxx: true,
+						seconds_since_last_seen: config.publicTorrentLookbackSeconds,
+					});
+					const hits = payload?.hits;
+					if (!hits || !Array.isArray(hits) || !hits.length) break;
+					const now = Date.now();
+					const batch = hits
+						.map((h) => normalizeKnabenSearchHit(h, now, null))
+						.filter((r): r is PublicTorrentRecord => r !== null);
+					if (batch.length) onBatch(batch);
+					if (hits.length < pageSize) break;
+				} catch {
+					break;
+				}
+				await sleep(this.pacingMs);
 			}
 		},
 	};
@@ -339,6 +416,7 @@ function parseLeetxRow(html: string, baseUrl: string, now: number): PublicTorren
 function createLeetxSource(fetchImpl: FetchFn = fetch): TorrentSource {
 	return {
 		name: "1337x",
+		pacingMs: 1200,
 		async search(query, mediaKind) {
 			for (const baseUrl of LEETX_MIRRORS) {
 				try {
@@ -433,6 +511,7 @@ function normalizeEztvHit(hit: EztvHit, now: number): PublicTorrentRecord | null
 function createEztvSource(fetchImpl: FetchFn = fetch): TorrentSource {
 	return {
 		name: "EZTV",
+		pacingMs: 1000,
 		async search(query, _mediaKind) {
 			try {
 				const url = `https://eztv.re/api/get-torrents?query=${encodeURIComponent(query)}&limit=30`;
@@ -545,4 +624,66 @@ export function upsertPublicTorrents(
 		}
 	})();
 	return { inserted, updated };
+}
+
+// --- Concurrent multi-source firehose scrape ---
+
+export interface ScrapeHooks {
+	onSourceStart?: (source: string) => void;
+	onBatch?: (
+		source: string,
+		inserted: number,
+		updated: number,
+		sampleTitle: string,
+	) => void;
+	onSourceDone?: (source: string, total: number) => void;
+}
+
+export interface ScrapeSummary {
+	total: number;
+	inserted: number;
+	updated: number;
+	perSource: Record<string, number>;
+	sources: number;
+}
+
+// Runs every source that supports a firehose scrape concurrently — one async
+// task per source — each pacing its own requests so it never trips a per-site
+// flood trigger, while the pool as a whole stays fast. Each batch is upserted
+// and reported the moment it arrives so the DB and UI update in real time.
+export async function scrapeAllSourcesConcurrent(
+	hooks: ScrapeHooks = {},
+	sourceList: TorrentSource[] = torrentSources,
+): Promise<ScrapeSummary> {
+	const sources = sourceList.filter((s) => s.scrapeRecent);
+	const perSource: Record<string, number> = {};
+	let inserted = 0;
+	let updated = 0;
+	let total = 0;
+	await Promise.all(
+		sources.map(async (source) => {
+			hooks.onSourceStart?.(source.name);
+			let sourceTotal = 0;
+			try {
+				await source.scrapeRecent?.((batch) => {
+					const result = upsertPublicTorrents(batch);
+					inserted += result.inserted;
+					updated += result.updated;
+					sourceTotal += batch.length;
+					total += batch.length;
+					hooks.onBatch?.(
+						source.name,
+						result.inserted,
+						result.updated,
+						batch[0]?.originalTitle ?? "",
+					);
+				});
+			} catch {
+				// a single source failing must not abort the others
+			}
+			perSource[source.name] = sourceTotal;
+			hooks.onSourceDone?.(source.name, sourceTotal);
+		}),
+	);
+	return { total, inserted, updated, perSource, sources: sources.length };
 }
