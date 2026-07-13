@@ -12,10 +12,22 @@ qt_add_executable(tv-frame
     src/frameclient.h
 )
 
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 qt_add_qml_module(tv-frame
     URI Tv.Frame
     VERSION 1.0
-    QML_FILES qml/Main.qml
+    QML_FILES
+        qml/Main.qml
+        qml/Theme.qml
+        qml/PlayerHud.qml
+        qml/LoadingOverlay.qml
+        qml/HomeView.qml
+        qml/TvView.qml
+        qml/RadioView.qml
+        qml/MediaView.qml
+        qml/DeilduView.qml
+        qml/NewsView.qml
 )
 
 target_link_libraries(tv-frame PRIVATE

@@ -5,7 +5,6 @@ import { config } from "./config";
 import { statement } from "./db";
 import {
 	beginStream,
-	browserNativeFile,
 	type DownloadState,
 	mpvStreamSource,
 	playbackKind,
@@ -173,7 +172,6 @@ export type TorrentPlayback = {
 	kind: MediaKind;
 	src: string;
 	mpvSrc: string;
-	browserPlayable: boolean;
 };
 
 export async function startTorrentMediaPlayback(
@@ -196,8 +194,6 @@ export async function startTorrentMediaPlayback(
 		kind: playbackKind("movie", stream.fileName),
 		src,
 		mpvSrc: mpvStreamSource(stream, src),
-		browserPlayable:
-			stream.status === "ready" && (await browserNativeFile(stream.path)),
 	};
 }
 

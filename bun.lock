@@ -13,18 +13,6 @@
         "typescript": "5.9.3",
       },
     },
-    "apps/dashboard": {
-      "name": "@tv-kit/dashboard",
-      "dependencies": {
-        "hls.js": "^1.6.15",
-        "lucide-svelte": "latest",
-      },
-      "devDependencies": {
-        "@sveltejs/vite-plugin-svelte": "latest",
-        "svelte": "latest",
-        "vite": "latest",
-      },
-    },
     "apps/remote": {
       "name": "@tv-kit/remote",
       "dependencies": {
@@ -104,8 +92,6 @@
 
     "@sveltejs/vite-plugin-svelte": ["@sveltejs/vite-plugin-svelte@7.2.0", "", { "dependencies": { "deepmerge": "^4.3.1", "magic-string": "^0.30.21", "obug": "^2.1.0", "vitefu": "^1.1.2" }, "peerDependencies": { "svelte": "^5.46.4", "vite": "^8.0.0-beta.7 || ^8.0.0" } }, "sha512-1SpkuMSRLfugrVX+IrKfE1RUegzo8AQzKQ6qQPfVzbcWi5IhuTPaKb5ZrLpucleFznkc4/RTeSPoRnGWFxX+EQ=="],
 
-    "@tv-kit/dashboard": ["@tv-kit/dashboard@workspace:apps/dashboard"],
-
     "@tv-kit/protocol": ["@tv-kit/protocol@workspace:packages/protocol"],
 
     "@tv-kit/remote": ["@tv-kit/remote@workspace:apps/remote"],
@@ -149,8 +135,6 @@
     "fdir": ["fdir@6.5.0", "", { "peerDependencies": { "picomatch": "^3 || ^4" }, "optionalPeers": ["picomatch"] }, "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg=="],
 
     "fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw=="],
-
-    "hls.js": ["hls.js@1.6.16", "", {}, "sha512-VSIRpLfRwlAAdGL4wiTucx2ScRipo0ed1FBatWkyt832jC4CReKstga6yIhYVwGu9LOBjuX9wzmRMeQdBJtzEA=="],
 
     "is-reference": ["is-reference@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.6" } }, "sha512-ixkJoqQvAP88E6wLydLGGqCJsrFUnqoH6HnaczB8XmDH1oaWU+xxdptvikTgaEhtZ53Ky6YXiBuUI2WXLMCwjw=="],
 

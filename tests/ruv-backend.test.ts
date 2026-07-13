@@ -977,26 +977,6 @@ test("mpv reads complete torrents locally and incomplete torrents over HTTP", ()
 	).toBe(httpSrc);
 });
 
-test("browser playback requires an MP4 with H.264 video and AAC audio", () => {
-	expect(
-		deilduStream.browserNativeProbe({
-			format: { format_name: "mov,mp4,m4a,3gp,3g2,mj2" },
-			streams: [
-				{ codec_type: "video", codec_name: "h264" },
-				{ codec_type: "audio", codec_name: "aac" },
-			],
-		}),
-	).toBe(true);
-	expect(
-		deilduStream.browserNativeProbe({
-			format: { format_name: "matroska,webm" },
-			streams: [
-				{ codec_type: "video", codec_name: "hevc" },
-				{ codec_type: "audio", codec_name: "eac3" },
-			],
-		}),
-	).toBe(false);
-});
 
 test("completed Deildu download serves HTTP byte ranges", async () => {
 	const now = Date.now();

@@ -7,13 +7,11 @@
     "radio:sync": "bun apps/server/src/radioscraper.ts",
     "ruv:sync": "bun apps/server/src/ruvscraper.ts daily",
     "ruv:news": "bun apps/server/src/ruvscraper.ts news",
-    "dev:dashboard": "bun --cwd apps/dashboard dev",
     "dev:remote": "bun --cwd apps/remote dev",
     "test": "bun test",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit && bunx svelte-check --threshold error --tsconfig ./tsconfig.svelte.json",
-    "build:dashboard": "cd apps/dashboard && bun run build",
     "build:remote": "cd apps/remote && bun run build",
-    "build": "bun run build:dashboard && bun run build:remote"
+    "build": "bun run build:remote"
   },
   "devDependencies": {
     "@types/bun": "latest",

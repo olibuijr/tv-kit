@@ -39,6 +39,8 @@ type AriaStatus = {
 	completedLength: string;
 	totalLength: string;
 	downloadSpeed?: string;
+	connections?: string;
+	numSeeders?: string;
 	errorMessage?: string;
 	files: AriaFile[];
 };
@@ -53,6 +55,20 @@ type DownloadRow = {
 	error: string;
 	updated_at: number;
 };
+
+// Live transfer telemetry for the single active stream; the loading overlay
+// on the TV frame renders peers/speed/percent from this snapshot.
+export type TransferStats = {
+	peers: number;
+	seeders: number;
+	speedBps: number;
+	downloadedBytes: number;
+	totalBytes: number;
+};
+let lastTransfer: TransferStats | null = null;
+export function transferStats() {
+	return lastTransfer;
+}
 
 export type DownloadState = {
 	fileIndex: number;
@@ -94,7 +110,6 @@ export type DeilduPlayback = {
 	kind: MediaKind;
 	src: string;
 	mpvSrc: string;
-	browserPlayable: boolean;
 };
 
 export function mpvStreamSource(
@@ -415,6 +430,8 @@ async function findTask(deadline: number): Promise<AriaStatus | null> {
 		"completedLength",
 		"totalLength",
 		"downloadSpeed",
+		"connections",
+		"numSeeders",
 		"bitfield",
 		"errorMessage",
 		"files",
@@ -539,6 +556,7 @@ function isComplete(path: string, length: number, itemDir: string) {
 
 async function stopActive(markPaused = true) {
 	monitorGeneration++;
+	lastTransfer = null;
 	const previous = activeStream;
 	const child = activeProcess;
 	activeProcess = null;
@@ -627,6 +645,13 @@ function updateProgress(stream: ActiveStream, current: AriaStatus) {
 		stream.fileLength,
 		Number(current.completedLength) || 0,
 	);
+	lastTransfer = {
+		peers: Number(current.connections) || 0,
+		seeders: Number(current.numSeeders) || 0,
+		speedBps: Number(current.downloadSpeed) || 0,
+		downloadedBytes: completed,
+		totalBytes: stream.fileLength,
+	};
 	const nextStatus = current.status === "complete" ? "ready" : "downloading";
 	stream.status = nextStatus;
 	stream.ctx.save({
@@ -685,52 +710,6 @@ function playbackKind(mediaKind: string, path: string): MediaKind {
 	return mediaKind === "tv" ? "tv" : "movie";
 }
 
-type MediaProbe = {
-	streams?: Array<{ codec_type?: string; codec_name?: string }>;
-	format?: { format_name?: string };
-};
-
-export function browserNativeProbe(probe: MediaProbe) {
-	const video = probe.streams?.find((stream) => stream.codec_type === "video");
-	const audio = probe.streams?.filter((stream) => stream.codec_type === "audio") ?? [];
-	return (
-		Boolean(probe.format?.format_name?.split(",").includes("mp4")) &&
-		video?.codec_name === "h264" &&
-		audio.every((stream) => stream.codec_name === "aac")
-	);
-}
-
-export async function browserNativeFile(path: string) {
-	const child = Bun.spawn({
-		cmd: [
-			config.ffprobeBin,
-			"-v",
-			"error",
-			"-show_entries",
-			"stream=codec_type,codec_name:format=format_name",
-			"-of",
-			"json",
-			path,
-		],
-		stdout: "pipe",
-		stderr: "ignore",
-	});
-	const output = new Response(child.stdout).text();
-	const exitCode = await Promise.race([
-		child.exited,
-		sleep(config.mediaProbeTimeoutMs).then(() => null),
-	]);
-	if (exitCode === null) {
-		child.kill();
-		return false;
-	}
-	if (exitCode !== 0) return false;
-	try {
-		return browserNativeProbe(JSON.parse(await output) as MediaProbe);
-	} catch {
-		return false;
-	}
-}
 
 function cachedReadyStream(ctx: StreamContext): ActiveStream | null {
 	const cached = ctx.load();
@@ -895,8 +874,6 @@ export async function startDeilduPlayback(
 		kind: playbackKind(item.mediaKind, stream.path),
 		src,
 		mpvSrc: mpvStreamSource(stream, src),
-		browserPlayable:
-			stream.status === "ready" && (await browserNativeFile(stream.path)),
 	};
 }
 

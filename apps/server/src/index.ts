@@ -105,6 +105,7 @@ import {
   serveDeilduStream,
   startDeilduPlayback,
   stopDeilduStream,
+  transferStats,
 } from "./deilduStream";
 
 process.title = "tvserverd";
@@ -204,6 +205,7 @@ setMpvUpdateHandler((update) => {
   }
   if (update.restarted && state.media.status !== "ready") {
     state.media.status = "ready";
+    state.media.buffering = undefined;
     changed = true;
   }
   if (update.pausedForCache !== undefined) {
@@ -214,6 +216,8 @@ setMpvUpdateHandler((update) => {
     }
   }
   if (typeof update.bufferingPercent === "number") {
+    state.media.buffering = update.bufferingPercent;
+    changed = true;
     const bucket = Math.floor(update.bufferingPercent / 10) * 10;
     if (bucket !== lastMpvBufferLog) {
       lastMpvBufferLog = bucket;
@@ -243,6 +247,37 @@ setMpvUpdateHandler((update) => {
   }
   if (changed) broadcast();
 });
+
+// The native Qt frame renders UI only; every playback (RÚV live, Sarpurinn,
+// radio, torrents) goes through native mpv. Engage mpv asynchronously; the
+// next broadcast loads the source via syncMpv.
+function engageMpvEngine() {
+  state.media.engine = "mpv";
+  void startMpv().then(() => {
+    if (state.media.engine !== "mpv") return;
+    if (!mpvAvailable()) {
+      state.media.status = "error";
+      state.playing = false;
+      state.lastAction = "mpv ræsist ekki";
+    }
+    broadcast();
+  });
+}
+
+// Push aria2 transfer telemetry (peers, speed, downloaded bytes) into the
+// active torrent's media state so the loading overlay can render it.
+function torrentProgressBroadcast(mediaId: string) {
+  let lastPush = 0;
+  return () => {
+    if (state.media.id !== mediaId) return;
+    const stats = transferStats();
+    if (!stats) return;
+    state.media.transfer = stats;
+    if (Date.now() - lastPush < 1_000) return;
+    lastPush = Date.now();
+    broadcast();
+  };
+}
 
 const agentChatMessages = () =>
   listAgentChatMessages().map((message) =>
@@ -303,6 +338,7 @@ function tuneRadio(id: number) {
     favorite: state.radioFavorites.includes(station.id),
     status: "loading",
   };
+  engageMpvEngine();
   upsertMedia(state.media);
   recordPlayback(state.media);
   state.lastAction = `Spila ${station.name}`;
@@ -392,6 +428,7 @@ function tuneTvSlug(slug: string) {
     favorite: state.tvFavorites.includes(channel.slug),
     status: "loading",
   };
+  engageMpvEngine();
   upsertMedia(state.media);
   recordPlayback(state.media);
   state.lastAction = `Spila ${channel.name}`;
@@ -454,6 +491,7 @@ function playRuvEpisode(id: string) {
     favorite: state.programFavorites.includes(episode.programId),
     status: "loading",
   };
+  engageMpvEngine();
   upsertMedia(state.media);
   recordPlayback(state.media);
   state.lastAction =
@@ -510,18 +548,19 @@ async function playTorrentMedia(id: string) {
   state.lastAction = `Undirbý torrent: ${item.title}`;
   broadcast();
   try {
-    const playback = await startTorrentMediaPlayback(id);
-    const browser =
-      config.browserTorrentPlaybackEnabled && playback.browserPlayable;
-    if (!browser) await startMpv();
-    const native = !browser && mpvAvailable();
-    console.log(`torrent playback ${id} engine=${native ? "mpv" : "browser"}`);
+    const playback = await startTorrentMediaPlayback(
+      id,
+      torrentProgressBroadcast(`torrent-${id}`),
+    );
+    await startMpv();
+    if (!mpvAvailable()) throw new Error("mpv ræsist ekki");
+    console.log(`torrent playback ${id} engine=mpv`);
     state.media = {
       ...state.media,
       kind: playback.kind,
       subtitle: item.license,
-      src: native ? playback.mpvSrc : playback.src,
-      engine: native ? "mpv" : "browser",
+      src: playback.mpvSrc,
+      engine: "mpv",
       status: "loading",
     };
     state.playing = true;
@@ -580,12 +619,13 @@ async function playDeilduItem(id: number) {
   state.lastAction = `Tengi við Deildu: ${item.title}`;
   broadcast();
   try {
-    const playback = await startDeilduPlayback(id);
-    const browser =
-      config.browserTorrentPlaybackEnabled && playback.browserPlayable;
-    if (!browser) await startMpv();
-    const native = !browser && mpvAvailable();
-    console.log(`Deildu playback ${id} engine=${native ? "mpv" : "browser"}`);
+    const playback = await startDeilduPlayback(
+      id,
+      torrentProgressBroadcast(`deildu-${id}`),
+    );
+    await startMpv();
+    if (!mpvAvailable()) throw new Error("mpv ræsist ekki");
+    console.log(`Deildu playback ${id} engine=mpv`);
     const refreshed = getDeilduItem(id) ?? item;
     const labels = deilduPlaybackLabels(id);
     state.media = {
@@ -594,8 +634,8 @@ async function playDeilduItem(id: number) {
       title: labels?.title || playback.title,
       subtitle: labels?.subtitle || "",
       source: `Deildu · ${refreshed.categoryName}`,
-      src: native ? playback.mpvSrc : playback.src,
-      engine: native ? "mpv" : "browser",
+      src: playback.mpvSrc,
+      engine: "mpv",
       status: "loading",
     };
     state.playing = true;
@@ -672,6 +712,7 @@ function startCast(input: {
     status: "loading",
   };
   state.lastAction = `${input.source} cast: ${input.title}`;
+  engageMpvEngine();
   upsertMedia(state.media);
   broadcast();
   return true;
@@ -1632,6 +1673,9 @@ const ruvScheduler = new RuvScheduler({
 });
 ruvScheduler.start();
 reconcileStreams();
+// Live radio/TV survives a daemon restart: re-engage mpv for the persisted
+// station/channel (torrents are intentionally cleared on startup instead).
+if (state.playing && state.media.live && state.media.src) engageMpvEngine();
 
 const runDeilduIfDue = () => {
   if (

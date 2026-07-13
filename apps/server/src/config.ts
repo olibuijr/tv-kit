@@ -147,12 +147,6 @@ export const config = Object.freeze({
 	tmdbApiKey: optional("TMDB_API_KEY"),
 	tmdbApiBase: optional("TMDB_API_BASE").replace(/\/$/, ""),
 	tmdbImageBase: optional("TMDB_IMAGE_BASE").replace(/\/$/, ""),
-	ffprobeBin: optional("FFPROBE_BIN") || "ffprobe",
-	mediaProbeTimeoutMs: optionalNumber("MEDIA_PROBE_TIMEOUT_MS", 5_000, 500, 30_000),
-	browserTorrentPlaybackEnabled: optionalBoolean(
-		"BROWSER_TORRENT_PLAYBACK_ENABLED",
-		false,
-	),
 	mpvBin: optional("MPV_BIN") || "mpv",
 	mpvIpcSocket:
 		optional("MPV_IPC_SOCKET") ||

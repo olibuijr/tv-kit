@@ -19,11 +19,11 @@
 ## Runtime architecture
 
 - Source may be edited in `~/Projects/tv-kit` on either midget or Titan; Syncthing mirrors the working tree while `.git` remains host-local (Titan only).
-- TV Kit is a **no-build** project deployed with `tvctl kit sync`. Sync first stops the kiosk and kills orphaned Chrome/mpv/aria2/playback-verifier processes, then rsyncs source to the TV's `~/.tv-kit/src`; `bun --watch` and Vite HMR pick code edits up instantly, while changed service units are reinstalled and restarted. A sync interrupts active playback by design. Git commit+push (fired from Titan in the background by `kit sync`) is archiving only and never gates a deploy.
-- The native Qt/QML TV Frame (`apps/tv-frame`) is the sole exception to no-build, and it is **never built on the TV**: build it on Titan (`tvctl kit frame build` → `~/.cache/tv-kit/frame-build`), push the binary with `tvctl kit frame deploy`, and restart `tv-frame.service`. Titan and the TV run identical Arch Qt/glibc versions, so the binary is directly compatible. The TV carries only Qt runtime libraries — no cmake/ninja/compilers.
-- The TV computer is the only runtime host. Its app home is `~/.tv-kit/` (`src/` synced source, `data/tv-kit.sqlite` live DB, `env` TV-local overrides such as `TV_KIT_DB`). `tvserverd.service`, SQLite, the dashboard/remote Vite dev servers, RÚV/radio background scraping, and kiosk all run on TV as systemd user units. Do not run TV Kit services on Titan.
+- TV Kit server/remote code is **no-build** and deployed with `tvctl kit sync`. Sync first kills orphaned Chrome/mpv/aria2/playback-verifier processes, then rsyncs source to the TV's `~/.tv-kit/src`; `bun --watch` and Vite HMR pick code edits up instantly, while changed service units are reinstalled and restarted. A sync interrupts active playback by design. Git commit+push (fired from Titan in the background by `kit sync`) is archiving only and never gates a deploy.
+- The native Qt/QML TV Frame (`apps/tv-frame`) is the display client and is **never built on the TV**: build it on Titan (`tvctl kit frame build` → `~/.cache/tv-kit/frame-build`), push the binary with `tvctl kit frame deploy`, and restart `tv-frame.service`. Titan and the TV run identical Arch Qt/glibc versions, so the binary is directly compatible. The TV carries only Qt runtime libraries — no cmake/ninja/compilers.
+- The TV computer is the only runtime host. Its app home is `~/.tv-kit/` (`src/` synced source, `frame-build/tv-frame` binary, `data/tv-kit.sqlite` live DB, `env` TV-local overrides such as `TV_KIT_DB`). `tvserverd.service`, SQLite, the remote Vite dev server, RÚV/radio background scraping, and the TV Frame all run on TV as systemd user units. Do not run TV Kit services on Titan.
 - The TV's legacy `/opt/tv-kit` compiled deployment and the dead `~/Projects` NFS automount were retired by `tvctl kit setup`; never reintroduce either.
-- The TV dashboard and Android tablet remote are clients of the TV-local `tvserverd`. They must not create a second authoritative state store or write directly to SQLite.
+- The TV Frame and Android tablet remote are clients of the TV-local `tvserverd`. They must not create a second authoritative state store or write directly to SQLite.
 
 ## Data is never hardcoded
 
@@ -91,37 +91,38 @@
 - Verify TV and remote commands survive a `tvserverd` restart before considering a data feature complete.
 - Finish autonomous work with an evidence-backed review: inspect the live result, run the smallest relevant check, update these rules when a durable operational lesson is found, and leave the Kanban task in `review`.
 
-## TV kiosk browser
+## Native TV Frame (display client)
 
-- The TV (`192.168.1.12`) renders the dashboard in Flatpak Google Chrome launched in kiosk mode with `--kiosk --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-session-crashed-bubble --disable-infobars --start-fullscreen` pointed at the dashboard URL.
-- The autoplay flag is required: without it Chrome blocks `audio.play()` until a user gesture, so remote-initiated radio playback silently fails with a "needs another press" player error.
-- Never launch the TV browser bare. Relaunch it with the same flag set (transient unit `tv-kiosk`, or the `tv-kiosk.service` user unit once installed on the TV). The Wayland session env on the TV is `DISPLAY=:1`, `WAYLAND_DISPLAY=wayland-0`.
-- Never show native scrollbar chrome on the TV dashboard. Scrollable views remain scrollable, but both standards-based and WebKit scrollbar rendering stay hidden.
-- The kiosk must run Chrome with hardware video decode (`--ignore-gpu-blocklist --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL`). Torrent releases are often 1080p60 H.264; without VA-API Chrome software-decodes and playback stutters. Decode uses the Flatpak runtime's `org.freedesktop.Platform.VAAPI.Intel` extension (Intel iHD) on the TV's HD 530 — do not remove these flags. Verify it engaged with `grep -l iHD_drv_video /proc/$(pgrep -f /app/extra/chrome)/maps` (the GPU process maps the VA driver) rather than trusting the picture alone. The panel runs 1080p60, matching 60 fps content; leave it at 60 Hz.
+- The TV (`192.168.1.12`) renders the UI with the native Qt/QML TV Frame (`apps/tv-frame`) running as `tv-frame.service`. The Chrome kiosk and the Svelte dashboard are retired — never reintroduce them, a second display client, or browser `<video>` playback.
+- Build the frame ONLY on Titan (`tvctl kit frame build`/`test`); `tvctl kit frame deploy` pushes the binary to the TV's `~/.tv-kit/frame-build/tv-frame` and restarts the service. QML/C++ changes require a frame deploy; `kit sync` alone only hot-reloads server/remote code.
+- All playback (RÚV live, Sarpurinn episodes, radio, Deildu/torrents) runs through the single tvserverd-owned mpv (`engine:"mpv"`), fullscreen-on-top of the frame; audio-only radio opens no mpv window so the frame stays visible. `--focus-on=never` replaced the removed `--no-focus-on-open` (mpv ≥ 0.40); keep flags current with the TV's mpv.
+- The frame is documented per page in `.pi/skills/tv-frame-ui/SKILL.md` (index + references). Load it before frame UI work.
+- The frame writes `~/.tv-kit/frame-health.json` every 5 s; `tvctl kit frame health`/`verify` gate on it. The Wayland session env on the TV is `DISPLAY=:1`, `WAYLAND_DISPLAY=wayland-0`.
+- A Stremio-style `LoadingOverlay` covers the frame while a torrent buffers, driven by `state.media.transfer` (aria2 peers/speed/bytes) and `state.media.buffering` (mpv cache percent). Both fields are transient and never persisted.
 
 ## Global player and radio UI
 
-- `apps/dashboard/src/GlobalPlayer.svelte` is mounted globally and docked sticky to the bottom edge (full width, top border only, no floating margins or radius). Keep it that way.
+- `apps/tv-frame/qml/PlayerHud.qml` is the passive transport strip docked to the bottom edge (full width, top border only, no floating margins or radius). Keep it that way.
 - Live-TV OSD copy derives the current programme from DB-backed dashboard content so schedule transitions update without retuning. Deduplicate title/subtitle/source values; a gap should read as the channel plus an honest live-broadcast status, never `RÚV · RÚV` or a missing-data warning.
 - When the user wants uninterrupted viewing during edits, use `tvctl kit fullscreen ruv` (or `ruv2`) and leave it enabled. Retuning resets fullscreen, so the CLI deliberately tunes first and reapplies fullscreen.
-- The dashboard is render-only: radio playback state changes come from the tablet remote through `tvserverd` WebSocket commands (`radio`, `toggle-play`, `media-next`/`media-previous`, `volume`, `player-panel`, `fullscreen`).
-- The remote (`apps/remote`) exposes Radio as a first-class bottom-nav tab; radio mode hides the TV remote/favourites/up-next panels and shows the station browser fed by `GET /radio/stations`.
+- The frame is render-only: playback state changes come from the tablet remote through `tvserverd` WebSocket commands (`radio`, `toggle-play`, `media-next`/`media-previous`, `volume`, `player-panel`, `fullscreen`).
+- The remote (`apps/remote`) exposes Radio as a first-class bottom-nav tab; radio mode hides the TV remote/favourites/up-next panels and shows the station browser fed by `GET /radio/stations`. The frame's `RadioView` reads the same endpoint through `FrameClient`.
 - The radio EPG must stay honest: Spilarinn supplies streams only, so show the live-broadcast placeholder rather than invented programme data.
 
 ## Interaction model
 
-- The TV dashboard is display-only. Never render pressable controls (buttons, sliders, links) on the dashboard; render passive indicators instead. Every interactive control lives on the tablet remote and mutates state through `tvserverd` WebSocket commands.
-- Remote and dashboard WebSockets use application-level ping/pong (10-second ping, 30-second stale timeout) because tablet sleep and network roaming can leave browser sockets half-open without firing `close`. Preserve the visibility-triggered stale check and verify the path with `tvctl kit verify`.
-- Each remote browser tab uses a stable unique `remote-<id>` WebSocket identity. Never collapse every tablet/tab back to `client=remote`; server de-duplication would make clients replace one another and blink between connected/reconnecting.
+- The TV frame is display-only. Never render pressable controls (buttons, sliders, links) on the frame; render passive indicators instead. Every interactive control lives on the tablet remote and mutates state through `tvserverd` WebSocket commands.
+- Remote and frame WebSockets use application-level ping/pong (10-second ping, 30-second stale timeout) because tablet sleep and network roaming can leave sockets half-open without firing `close`. Preserve the stale check and verify the path with `tvctl kit verify`.
+- Each remote browser tab uses a stable unique `remote-<id>` WebSocket identity, and the frame connects as `native-frame-<machine-id>`. Never collapse clients back to a shared id; server de-duplication would make clients replace one another.
 - GolfBox round/friend endpoints are explicit detail-view actions only. Do not call them from remote startup, WebSocket reconnect, or visibility handlers.
-- The dashboard `GlobalPlayer` shows transport/tool state as passive chips; seek, panels, subtitles, audio track, speed, favourite, and fullscreen are all remote commands (`seek`, `player-panel`, `subtitle`, `audio-track`, `playback-rate`, `toggle-favorite`, `radio-favorite`, `fullscreen`).
+- The frame `PlayerHud` shows transport/tool state as passive chips; seek, panels, subtitles, audio track, speed, favourite, and fullscreen are all remote commands (`seek`, `player-panel`, `subtitle`, `audio-track`, `playback-rate`, `toggle-favorite`, `radio-favorite`, `fullscreen`).
 - The fullscreen button must never appear on the TV; fullscreen is toggled only from the remote.
 
 ## Remote-to-TV cross-verification (mandatory)
 
-- After every remote interaction that changes the TV state (navigation, tuning, playback, fullscreen), verify the TV dashboard reflects the change. Do not assume a remote click succeeded just because the remote UI updated.
-- **Primary verification**: dashboard DOM text. `agent_browser get text body --session tv-dashboard` is authoritative for state, navigation, and content changes. Cross-reference key text (page heading, item counts, titles) against the remote state.
-- **Physical screenshot** (`tvctl screenshot /tmp/tv-verify.png`): reserved for pixel-level verification — video playback, visual regressions, layout issues, or when the user asks what's on the TV screen. DOM text covers everything else.
+- After every remote interaction that changes the TV state (navigation, tuning, playback, fullscreen), verify the TV reflects the change. Do not assume a remote click succeeded just because the remote UI updated.
+- **Primary verification**: `tvctl kit playback state` (id, engine, advancing position) plus `~/.tv-kit/frame-health.json` (`view` field) for navigation. The frame is native — there is no dashboard DOM to inspect.
+- **Physical screenshot** (`tvctl screenshot /tmp/tv-verify.png`): the authoritative check for frame layout, video pixels, and visual regressions.
 - When screenshot analysis is needed and the current model lacks vision support, spawn a one-shot agent:
 
   ```sh
@@ -132,15 +133,15 @@
 ## Radio favourites
 
 - Favourite stations persist in the existing `favourites` table (`profile_id` `home`, `media_id` `radio-<id>`, `kind` `radio`); no separate table. The server exposes them in shared state as `radioFavorites: number[]` and accepts the `radio-favorite` command (station id) plus `toggle-favorite` for the currently tuned station.
-- Both UIs show favourites in an "Uppáhaldsstöðvar" section above "Allar stöðvar", animated between lists with Svelte crossfade + flip. Do not duplicate favourites client-side; derive from `state.radioFavorites`.
+- Both UIs show favourites in an "Uppáhaldsstöðvar" section above "Allar stöðvar"; the frame derives both lists from `state.radioFavorites`, the remote animates with Svelte crossfade + flip. Do not duplicate favourites client-side.
 
 ## Audio visualization
 
-- The RadioPage bars are driven by a shared Web Audio `AnalyserNode` (`apps/dashboard/src/audioAnalysis.ts`) fed by the player media element, rendered per-frame with `requestAnimationFrame`. Never reintroduce randomized CSS keyframe equalizers; visualization must reflect the actual stream. Analyser attachment is wrapped in try/catch so a non-CORS stream can never break playback.
+- The remote's radio bars must reflect the actual stream where implemented; never reintroduce randomized CSS keyframe equalizers. The native frame currently renders no equalizer (mpv owns audio); if one is added, drive it from real playback telemetry.
 
 ## Visual language
 
-- Depth comes from the shared `--shadow-card` and `--shadow-soft` tokens defined on the app shells; apply them to cards/panels instead of ad-hoc shadows.
+- Depth on the frame comes from `Theme.qml` tokens (surface/raised/border); on the remote from the shared `--shadow-card` and `--shadow-soft` tokens. Apply tokens instead of ad-hoc values.
 - Station and channel logos render in strict 1:1 boxes with `object-fit`/`background-size: contain`; never crop logos to non-square aspect ratios.
 - User-facing copy on the radio and player surfaces is Icelandic; server-supplied radio EPG strings are Icelandic too. Continue translating remaining surfaces to Icelandic as they are touched.
 

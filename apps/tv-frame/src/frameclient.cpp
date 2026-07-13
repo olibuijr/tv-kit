@@ -3,13 +3,13 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSaveFile>
 #include <QScopeGuard>
-#include <QStandardPaths>
 #include <QUrlQuery>
 
 namespace {
@@ -34,6 +34,7 @@ FrameClient::FrameClient(QObject *parent)
 {
     heartbeat_.setInterval(10'000);
     healthTimer_.setInterval(5'000);
+    contentTimer_.setInterval(60'000);
     connect(&heartbeat_, &QTimer::timeout, this, [this] {
         if (!connected()) return;
         if (QDateTime::currentMSecsSinceEpoch() - lastMessageAt_ > 30'000) {
@@ -43,12 +44,17 @@ FrameClient::FrameClient(QObject *parent)
         socket_.sendTextMessage(QStringLiteral(R"({"type":"ping"})"));
     });
     connect(&healthTimer_, &QTimer::timeout, this, &FrameClient::writeHealth);
+    connect(&contentTimer_, &QTimer::timeout, this, [this] {
+        refreshContent();
+        refreshStations();
+    });
     connect(&socket_, &QWebSocket::connected, this, [this] {
         setConnected(true);
         lastMessageAt_ = QDateTime::currentMSecsSinceEpoch();
         error_.clear();
         emit errorChanged();
         refreshContent();
+        refreshStations();
         writeHealth();
     });
     connect(&socket_, &QWebSocket::disconnected, this, [this] {
@@ -68,6 +74,8 @@ FrameClient::FrameClient(QObject *parent)
 bool FrameClient::connected() const { return connected_; }
 QVariantMap FrameClient::state() const { return state_.toVariantMap(); }
 QVariantMap FrameClient::content() const { return content_.toVariantMap(); }
+QVariantList FrameClient::stations() const { return stations_; }
+QVariantMap FrameClient::article() const { return article_.toVariantMap(); }
 QString FrameClient::error() const { return error_; }
 
 void FrameClient::start()
@@ -76,6 +84,7 @@ void FrameClient::start()
     started_ = true;
     heartbeat_.start();
     healthTimer_.start();
+    contentTimer_.start();
     connectSocket();
 }
 
@@ -89,7 +98,7 @@ void FrameClient::connectSocket()
     query.addQueryItem(QStringLiteral("client"), QStringLiteral("native-frame-") + QSysInfo::machineUniqueId().toHex());
     url.setQuery(query);
     QNetworkRequest request(url);
-    request.setRawHeader("Origin", "http://127.0.0.1:3111");
+    request.setRawHeader("Origin", "http://127.0.0.1:3110");
     socket_.open(request);
 }
 
@@ -101,19 +110,34 @@ void FrameClient::handleMessage(const QString &raw)
     lastMessageAt_ = QDateTime::currentMSecsSinceEpoch();
     const auto type = message.value(QStringLiteral("type")).toString();
     if (type == QStringLiteral("state")) {
+        const auto previous = state_;
         state_ = message.value(QStringLiteral("state")).toObject();
         emit stateChanged();
-        refreshContent();
-    } else if (type == QStringLiteral("content-refresh") && message.value(QStringLiteral("resource")).toString() == QStringLiteral("deildu")) {
+        const auto changed = [&](const char *key) {
+            return previous.value(QLatin1String(key)) != state_.value(QLatin1String(key));
+        };
+        if (changed("view") || changed("deilduCategoryId") || changed("deilduShowId"))
+            refreshContent();
+        const auto articleId = state_.value(QStringLiteral("newsArticleId")).toInt();
+        if (articleId != articleId_) {
+            articleId_ = articleId;
+            refreshArticle();
+        }
+    } else if (type == QStringLiteral("content-refresh")) {
         refreshContent();
     }
-    writeHealth();
+}
+
+QUrl FrameClient::serverPath(const QString &path) const
+{
+    auto url = serverUrl_;
+    url.setPath(path);
+    return url;
 }
 
 QUrl FrameClient::contentUrl() const
 {
-    auto url = serverUrl_;
-    url.setPath(QStringLiteral("/dashboard/content"));
+    auto url = serverPath(QStringLiteral("/dashboard/content"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("deilduCategory"), QString::number(state_.value(QStringLiteral("deilduCategoryId")).toInt()));
     query.addQueryItem(QStringLiteral("deilduPage"), QStringLiteral("1"));
@@ -125,8 +149,7 @@ QUrl FrameClient::contentUrl() const
 
 void FrameClient::refreshContent()
 {
-    QNetworkRequest request(contentUrl());
-    const auto reply = network_.get(request);
+    const auto reply = network_.get(QNetworkRequest(contentUrl()));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         const auto guard = qScopeGuard([reply] { reply->deleteLater(); });
         if (reply->error() != QNetworkReply::NoError) return;
@@ -135,6 +158,43 @@ void FrameClient::refreshContent()
         if (parseError.error != QJsonParseError::NoError) return;
         content_ = next;
         emit contentChanged();
+    });
+}
+
+void FrameClient::refreshStations()
+{
+    const auto reply = network_.get(QNetworkRequest(serverPath(QStringLiteral("/radio/stations"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        const auto guard = qScopeGuard([reply] { reply->deleteLater(); });
+        if (reply->error() != QNetworkReply::NoError) return;
+        QJsonParseError parseError;
+        const auto next = QJsonDocument::fromJson(reply->readAll(), &parseError).object();
+        if (parseError.error != QJsonParseError::NoError) return;
+        stations_ = next.value(QStringLiteral("stations")).toArray().toVariantList();
+        emit stationsChanged();
+    });
+}
+
+void FrameClient::refreshArticle()
+{
+    if (articleId_ <= 0) {
+        if (!article_.isEmpty()) {
+            article_ = {};
+            emit articleChanged();
+        }
+        return;
+    }
+    const auto requested = articleId_;
+    const auto reply = network_.get(QNetworkRequest(serverPath(QStringLiteral("/ruv/news/%1").arg(requested))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, requested] {
+        const auto guard = qScopeGuard([reply] { reply->deleteLater(); });
+        if (requested != articleId_) return;
+        if (reply->error() != QNetworkReply::NoError) return;
+        QJsonParseError parseError;
+        const auto next = QJsonDocument::fromJson(reply->readAll(), &parseError).object();
+        if (parseError.error != QJsonParseError::NoError) return;
+        article_ = next.value(QStringLiteral("article")).toObject();
+        emit articleChanged();
     });
 }
 

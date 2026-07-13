@@ -54,9 +54,19 @@ export type MediaItem = {
 	fullscreen: boolean;
 	favorite: boolean;
 	status: "idle" | "loading" | "ready" | "error";
-	// "mpv": video pixels come from the native mpv backend (transparent HUD on
-	// top). Absent/"browser": the dashboard <video> element renders it.
+	// "mpv": video pixels come from the native mpv backend; the Qt TV Frame
+	// renders the UI beneath it. "browser" is a legacy value kept for stored state.
 	engine?: "browser" | "mpv";
+	// mpv cache buffering percent (0-100) while status is "loading".
+	buffering?: number;
+	// Live torrent transfer telemetry for the loading overlay.
+	transfer?: {
+		peers: number;
+		seeders: number;
+		speedBps: number;
+		downloadedBytes: number;
+		totalBytes: number;
+	};
 };
 
 export type Station = {

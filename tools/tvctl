@@ -14,10 +14,10 @@ kit_home=".tv-kit"               # app home on the TV, relative to $HOME
 kit_remote_dir="$kit_home/src"   # synced source tree on the TV
 titan=${TITAN_HOST:-olafurbui@192.168.1.10}
 kit_runtime="XDG_RUNTIME_DIR=/run/user/1000"
-kit_units=(tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service tv-frame.service tvserverd-radioscraper.service tvserverd-radioscraper.timer)
-kit_enable=(tvserverd.service tv-dashboard.service tv-remote.service tv-kiosk.service tvserverd-radioscraper.timer)
-kit_hot=(tvserverd.service tv-dashboard.service tv-remote.service) # restarted when deps change
-kit_stale_units=(tv-dashboard-dev.service tv-remote-dev.service)
+kit_units=(tvserverd.service tv-remote.service tv-frame.service tvserverd-radioscraper.service tvserverd-radioscraper.timer)
+kit_enable=(tvserverd.service tv-remote.service tv-frame.service tvserverd-radioscraper.timer)
+kit_hot=(tvserverd.service tv-remote.service) # restarted when deps change
+kit_stale_units=(tv-dashboard-dev.service tv-remote-dev.service tv-dashboard.service tv-kiosk.service)
 kit_excludes=(.git node_modules data artifacts .deploy-stage .pi-subagents dist '*.log' '*.sqlite' '*.sqlite-shm' '*.sqlite-wal')
 
 ssh_opts=(-o ConnectTimeout="$timeout_s" -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=no)
@@ -64,11 +64,10 @@ TV Kit (no-build hot-reload deployment; source of truth: ~/Projects/tv-kit):
   kit frame health       Require an active, connected TV Frame service
   kit frame verify       Health check plus one saved physical TV screenshot
   kit fullscreen [MODE]  Show ruv (default), ruv2, or off in fullscreen
-  kit press SELECTOR     Click a DOM element via CDP (fast, direct browser control)
   kit playback COMMAND   Read/control playback: state, stop, play, search QUERY,
                          or deildu ITEM_ID
   kit epg [status|sync]  Inspect or force the TV-local RÚV EPG sync
-  kit restart [UNIT...]  Restart TV Kit services (kiosk pre-kills stray Chrome)
+  kit restart [UNIT...]  Restart TV Kit services
   kit logs [UNIT] [N]    Show recent journal lines (default tvserverd, 50)
   kit archive [MESSAGE]  Commit and push the tree from Titan (archiving only)
 
@@ -104,13 +103,13 @@ remote_argv() {
 kit_systemctl() { remote "env $kit_runtime systemctl --user $*"; }
 
 kit_orphan_cleanup() {
-  kit_systemctl "stop tv-kiosk.service" >/dev/null 2>&1 || true
   remote 'flatpak kill com.google.Chrome >/dev/null 2>&1 || true; pkill -9 -f /app/extra/[c]hrome >/dev/null 2>&1 || true; pkill -9 -x aria2c >/dev/null 2>&1 || true; pkill -9 -x mpv >/dev/null 2>&1 || true; pkill -9 -f TVCTL_PLAYBACK_[V]ALUE >/dev/null 2>&1 || true'
 }
 
+
 kit_health() {
   local ok=1 url
-  for url in "http://$host:3110/health" "http://$host:3111/" "http://$host:3112/"; do
+  for url in "http://$host:3110/health" "http://$host:3112/"; do
     local tries=0
     until curl -fsS --max-time 3 "$url" >/dev/null 2>&1; do
       ((++tries >= 8)) && { echo "health FAIL $url"; ok=0; break; }
@@ -347,7 +346,7 @@ kit_frame_verify() {
 
 kit_frame_deploy() {
   (($# <= 1)) || { echo 'tvctl: kit frame deploy accepts at most one message' >&2; return 64; }
-  echo '== stop kiosk and orphaned players'
+  echo '== stop orphaned players'
   kit_orphan_cleanup
   echo "== sync source -> $target:$kit_remote_dir"
   kit_rsync
@@ -361,8 +360,7 @@ kit_frame_deploy() {
   kit_frame_push
   echo '== switch display client'
   kit_systemctl 'daemon-reload'
-  kit_systemctl 'disable --now tv-kiosk.service tv-dashboard.service' || true
-  kit_systemctl 'enable --now tvserverd.service tv-remote.service tv-frame.service tvserverd-radioscraper.timer'
+  kit_systemctl "enable --now ${kit_enable[*]}"
   kit_frame_verify
   (kit_archive "${1:-Deploy native TV Frame}" >>/tmp/tv-kit-archive.log 2>&1 && echo "archive ok $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log || echo "archive FAILED $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log) &
   disown
@@ -419,47 +417,6 @@ ws.onopen = () => {
   }, 700);
 };'
   remote_argv env TVCTL_FULLSCREEN="$mode" ~/.bun/bin/bun -e "$script"
-}
-
-kit_press() {
-  (($# == 1)) || { echo 'tvctl: kit press requires one CSS selector' >&2; exit 64; }
-  local selector=$1
-  remote_argv env TVCTL_PRESS_SELECTOR="$selector" ~/.bun/bin/bun -e '
-const selector = Bun.env.TVCTL_PRESS_SELECTOR;
-// Get the kiosk page WebSocket URL from CDP endpoint
-const pages = await (await fetch("http://127.0.0.1:9222/json")).json();
-const wsUrl = pages[0]?.webSocketDebuggerUrl;
-if (!wsUrl) { console.error("no CDP page found"); process.exit(1); }
-
-const ws = new WebSocket(wsUrl);
-const send = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = Math.random();
-  ws.addEventListener("message", function handler(e) {
-    const msg = JSON.parse(e.data);
-    if (msg.id === id) { ws.removeEventListener("message", handler); resolve(msg.result ?? msg.error); }
-  }, { once: false });
-  ws.send(JSON.stringify({ id, method, params }));
-});
-
-await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error("CDP connect failed")); });
-
-// Click via CDP Runtime.evaluate — fastest path, no DOM traversal round-trips
-const result = await send("Runtime.evaluate", {
-  expression: `
-    (() => {
-      const el = document.querySelector("${selector.replace(/"/g, "\\\"")}");
-      if (!el) return "NOT_FOUND";
-      el.click();
-      return "OK " + (el.textContent || "").slice(0, 60).replace(/\\s+/g, " ").trim();
-    })()`,
-  returnByValue: true,
-});
-
-const value = result?.result?.value;
-if (value === "NOT_FOUND") { console.error("selector not found: " + selector); process.exit(2); }
-console.log(value);
-ws.close();
-'
 }
 
 kit_playback() {
@@ -640,11 +597,11 @@ const command = value => {
   const result = Bun.spawnSync(["bash", "-lc", value], { stdout: "pipe", stderr: "pipe" });
   return { ok: result.exitCode === 0, output: result.stdout.toString().trim() };
 };
-const serviceNames = ["tvserverd.service", "tv-dashboard.service", "tv-remote.service", "tv-kiosk.service", "tvserverd-radioscraper.timer"];
+const serviceNames = ["tvserverd.service", "tv-remote.service", "tv-frame.service", "tvserverd-radioscraper.timer"];
 const shown = command("XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show " + serviceNames.join(" ") + " -p Id -p ActiveState -p UnitFileState --no-pager").output;
 const services = shown.split(/\n\s*\n/).filter(Boolean).map(block => Object.fromEntries(block.split("\n").map(line => line.split(/=(.*)/s).slice(0, 2))));
 let health = null;
-const endpointEntries = await Promise.all([["server", "http://127.0.0.1:3110/health"], ["dashboard", "http://127.0.0.1:3111/"], ["remote", "http://127.0.0.1:3112/"]].map(async ([name, url]) => {
+const endpointEntries = await Promise.all([["server", "http://127.0.0.1:3110/health"], ["remote", "http://127.0.0.1:3112/"]].map(async ([name, url]) => {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1500) });
     if (name === "server" && response.ok) health = await response.json();
@@ -697,7 +654,6 @@ case ${1:-help} in
         esac
         ;;
       fullscreen) kit_fullscreen "$@" ;;
-      press) kit_press "$@" ;;
       playback) kit_playback "$@" ;;
       epg)
         epg_action=${1:-status}; shift || true
