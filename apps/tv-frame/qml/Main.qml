@@ -28,6 +28,34 @@ ApplicationWindow {
         && Boolean(media.src)
     property real now: Date.now()
 
+    // Auto-hide HUD and cursor after 5s of no media changes.
+    property int hudAutoToken: 0
+    property bool hudAutoVisible: false
+    property string _prevView: ""
+    property string _prevMediaId: ""
+    property string _prevMediaStatus: ""
+    property bool _prevPlaying: false
+
+    function bumpHud() {
+        root.hudAutoToken += 1
+        root.hudAutoVisible = true
+        hudHideTimer.restart()
+        root.cursorShape = Qt.ArrowCursor
+        cursorHideTimer.restart()
+    }
+
+    Timer {
+        id: hudHideTimer
+        interval: 5000
+        onTriggered: root.hudAutoVisible = false
+    }
+
+    Timer {
+        id: cursorHideTimer
+        interval: 5000
+        onTriggered: root.cursorShape = Qt.BlankCursor
+    }
+
     // Playback-sync bookkeeping (mirrors what tvserverd's mpvPlayer.ts used
     // to do server-side; mpv now lives in this process, so this process
     // drives it directly from state and reports progress back over the
@@ -72,6 +100,20 @@ ApplicationWindow {
     Connections {
         target: frame
         function onStateChanged() {
+            // HUD auto-show on view, media identity, status, or playing changes
+            const curView = root.state.view || "home"
+            const curId = (root.state.media && root.state.media.id) || ""
+            const curStatus = (root.state.media && root.state.media.status) || ""
+            const curPlaying = root.state.playing === true
+            if (curView !== root._prevView || curId !== root._prevMediaId
+                || curStatus !== root._prevMediaStatus || curPlaying !== root._prevPlaying) {
+                root.bumpHud()
+            }
+            root._prevView = curView
+            root._prevMediaId = curId
+            root._prevMediaStatus = curStatus
+            root._prevPlaying = curPlaying
+
             const src = root.media.src || ""
             if (root.videoActive) {
                 if (src !== root.lastLoadedSrc) {
@@ -217,7 +259,11 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: root.power && (root.state.playing || root.media.status === "loading" || root.media.status === "error")
+        visible: root.power
+            && root.hudAutoVisible
+            && (root.state.playing || root.media.status === "loading" || root.media.status === "error")
+        opacity: root.hudAutoVisible ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 400 } }
         media: root.media
         playing: root.state.playing === true
     }
