@@ -16,6 +16,7 @@ This is the shared operational index for external coding agents and TV Kit's int
 | Run/verify Deildu catalog cleanup | Tablet remote task control; `tv_deildu search` for a safe DB sample | Not exposed |
 | Set volume | Tablet remote | `set_volume` (0–100) |
 | Deploy source | `tv_kit sync` | Not permitted |
+| Deploy isolated Titan test environment | CLI fallback: `tvctl kit test deploy` | Not permitted |
 | Tests/typechecks | `tv_kit check` | Not permitted |
 | Service/WS health | `tv_snapshot`; `tv_kit status|verify` | Not permitted |
 | EPG inspect/refresh | `tv_kit epg-status|epg-sync` | Not permitted |
@@ -52,6 +53,27 @@ Never infer success from the tablet UI alone.
 ```
 
 Code hot-reloads. Restart only when a service/unit/dependency change requires it.
+
+### Test with cloned production data on Titan
+
+Use the disposable Titan environment instead of deploying to the TV when
+playback must remain uninterrupted:
+
+```bash
+/home/olafurbui/.local/bin/tvctl kit test deploy
+/home/olafurbui/.local/bin/tvctl kit test status
+/home/olafurbui/.local/bin/tvctl kit test verify
+/home/olafurbui/.local/bin/tvctl kit test logs server 100
+/home/olafurbui/.local/bin/tvctl kit test refresh
+/home/olafurbui/.local/bin/tvctl kit test stop
+```
+
+`deploy` and `refresh` use SQLite's online backup command against the live TV
+database, transfer the consistent snapshot to `~/.tv-kit-test/data/`, and
+start isolated transient systemd user services on Titan. Defaults are server
+`192.168.1.10:3220`, remote `192.168.1.10:3222`, and aria2 RPC `3223`.
+Production services, playback, and the authoritative TV database are not
+stopped or modified. The test clone is disposable and never writes back.
 
 ### Native TV Frame (Qt/QML)
 

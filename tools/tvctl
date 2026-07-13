@@ -19,6 +19,15 @@ kit_enable=(tvserverd.service tv-remote.service tv-frame.service tvserverd-radio
 kit_hot=(tvserverd.service tv-remote.service) # restarted when deps change
 kit_stale_units=(tv-dashboard-dev.service tv-remote-dev.service tv-dashboard.service tv-kiosk.service)
 kit_excludes=(.git node_modules data artifacts .deploy-stage .pi-subagents dist '*.log' '*.sqlite' '*.sqlite-shm' '*.sqlite-wal')
+test_home=${TV_TEST_HOME:-$HOME/.tv-kit-test}
+test_host=${TV_TEST_HOST:-192.168.1.10}
+test_server_port=${TV_TEST_SERVER_PORT:-3220}
+test_remote_port=${TV_TEST_REMOTE_PORT:-3222}
+test_rpc_port=${TV_TEST_RPC_PORT:-3223}
+test_db="$test_home/data/tv-kit.sqlite"
+test_env="$test_home/env"
+test_server_unit=tvserverd-test.service
+test_remote_unit=tv-remote-test.service
 
 ssh_opts=(-o ConnectTimeout="$timeout_s" -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=no)
 [[ -f "$identity" ]] && ssh_opts+=(-i "$identity" -o IdentitiesOnly=yes)
@@ -70,6 +79,13 @@ TV Kit (no-build hot-reload deployment; source of truth: ~/Projects/tv-kit):
   kit restart [UNIT...]  Restart TV Kit services
   kit logs [UNIT] [N]    Show recent journal lines (default tvserverd, 50)
   kit archive [MESSAGE]  Commit and push the tree from Titan (archiving only)
+  kit test deploy        Clone the TV DB and deploy isolated test services on Titan
+  kit test refresh       Replace the clone and restart the Titan test services
+  kit test status        Show Titan test services, endpoints, and database summary
+  kit test verify        Require healthy Titan test services and cloned real data
+  kit test logs [server|remote] [N]
+                         Show Titan test service logs
+  kit test stop          Stop the isolated Titan test services
 
 Direct mpv (read/change tracks over IPC without reloading playback):
   mpv tracks             List audio/subtitle tracks and current selections
@@ -84,7 +100,9 @@ Deildu catalog (read-only, secret-safe):
   deildu files ID        List files in cached torrent metadata
 
 Environment: TV_HOST, TV_USER, TV_IDENTITY, TV_CONNECT_TIMEOUT, TV_CMD_TIMEOUT,
-             TV_KIT_DIR, TITAN_HOST, TV_FRAME_BUILD_JOBS (default: nproc)
+             TV_KIT_DIR, TITAN_HOST, TV_FRAME_BUILD_JOBS, TV_TEST_HOME,
+             TV_TEST_HOST, TV_TEST_SERVER_PORT, TV_TEST_REMOTE_PORT,
+             TV_TEST_RPC_PORT
 EOF
 }
 
@@ -299,6 +317,210 @@ kit_check() {
     ~/.bun/bin/bun test && \
     ~/.bun/bin/bun x tsc -p tsconfig.json --noEmit && \
     $svelte_check"
+}
+
+kit_test_validate() {
+  [[ $test_home == /* ]] || { echo 'tvctl: TV_TEST_HOME must be an absolute path' >&2; return 64; }
+  local port
+  for port in "$test_server_port" "$test_remote_port" "$test_rpc_port"; do
+    [[ $port =~ ^[0-9]+$ ]] && ((port >= 1024 && port <= 65535)) || {
+      echo 'tvctl: TV_TEST_*_PORT values must be integers in 1024..65535' >&2
+      return 64
+    }
+  done
+  [[ $test_server_port != "$test_remote_port" &&
+     $test_server_port != "$test_rpc_port" &&
+     $test_remote_port != "$test_rpc_port" ]] || {
+    echo 'tvctl: TV_TEST_*_PORT values must be distinct' >&2
+    return 64
+  }
+  [[ -f $kit_dir/package.json ]] || { echo "tvctl: TV Kit source missing at $kit_dir" >&2; return 66; }
+}
+
+kit_test_ports_free() {
+  command -v ss >/dev/null || { echo 'tvctl: ss is required on Titan' >&2; return 69; }
+  local port
+  for port in "$test_server_port" "$test_remote_port" "$test_rpc_port"; do
+    if ss -H -ltn "sport = :$port" | grep -q .; then
+      echo "tvctl: Titan test port is already in use: $port" >&2
+      return 69
+    fi
+  done
+}
+
+kit_test_write_env() {
+  mkdir -p "$test_home/data/torrents"
+  chmod 0700 "$test_home" "$test_home/data" "$test_home/data/torrents"
+  local tmp="$test_env.tmp.$$"
+  cat >"$tmp" <<EOF
+PORT=$test_server_port
+VITE_TVSERVER_URL=http://$test_host:$test_server_port
+TV_KIT_DB=$test_db
+TORRENT_MEDIA_DIR=$test_home/data/torrents
+DEILDU_STREAM_RPC_PORT=$test_rpc_port
+TV_ALLOWED_ORIGINS=http://$test_host:$test_remote_port,http://127.0.0.1:$test_remote_port
+DEILDU_SCHEDULER_START_DELAY_MS=3600000
+PUBLIC_TORRENT_SCHEDULER_START_DELAY_MS=3600000
+RUV_SCHEDULER_START_DELAY_MS=3600000
+GOLFBOX_SCHEDULER_ENABLED=false
+EOF
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$test_env"
+}
+
+kit_test_clone_db() {
+  local remote_snapshot="/tmp/tv-kit-test-${USER}-$$.sqlite"
+  local local_snapshot="$test_db.tmp.$$"
+  mkdir -p "$test_home/data"
+  chmod 0700 "$test_home" "$test_home/data"
+  echo "== online backup TV database -> Titan test clone"
+  if ! remote_argv sqlite3 "/home/$user/$kit_home/data/tv-kit.sqlite" \
+    ".timeout 30000" ".backup '$remote_snapshot'"; then
+    remote_argv rm -f "$remote_snapshot" >/dev/null 2>&1 || true
+    return 1
+  fi
+  if ! timeout 120 scp -q "${batch_opts[@]}" "$target:$remote_snapshot" "$local_snapshot"; then
+    remote_argv rm -f "$remote_snapshot" >/dev/null 2>&1 || true
+    rm -f "$local_snapshot"
+    return 1
+  fi
+  remote_argv rm -f "$remote_snapshot" >/dev/null
+  [[ $(sqlite3 "$local_snapshot" 'PRAGMA integrity_check;') == ok ]] || {
+    echo 'tvctl: cloned database failed SQLite integrity_check' >&2
+    rm -f "$local_snapshot"
+    return 74
+  }
+  chmod 0600 "$local_snapshot"
+  mv -f "$local_snapshot" "$test_db"
+}
+
+kit_test_stop() {
+  (($# == 0)) || { echo 'tvctl: kit test stop accepts no arguments' >&2; return 64; }
+  systemctl --user stop "$test_server_unit" "$test_remote_unit" >/dev/null 2>&1 || true
+  systemctl --user reset-failed "$test_server_unit" "$test_remote_unit" >/dev/null 2>&1 || true
+  echo "Titan test services stopped"
+}
+
+kit_test_start_unit() {
+  local unit=$1 description=$2
+  shift 2
+  systemd-run --user --unit="$unit" --collect \
+    --description="$description" \
+    --working-directory="$kit_dir" \
+    --property=Restart=on-failure \
+    --property=RestartSec=2 \
+    --property=TimeoutStopSec=5 \
+    --property=KillMode=control-group \
+    --property=SendSIGKILL=true \
+    --property="EnvironmentFile=$test_env" \
+    --property=UMask=0077 \
+    --property=NoNewPrivileges=true \
+    "$@"
+}
+
+kit_test_wait_http() {
+  local url=$1 tries=0
+  until curl -fsS --max-time 3 "$url" >/dev/null 2>&1; do
+    ((++tries >= 30)) && { echo "tvctl: health timeout: $url" >&2; return 1; }
+    sleep 1
+  done
+  echo "health ok $url"
+}
+
+kit_test_verify() {
+  (($# == 0)) || { echo 'tvctl: kit test verify accepts no arguments' >&2; return 64; }
+  kit_test_validate
+  systemctl --user is-active --quiet "$test_server_unit" "$test_remote_unit"
+  kit_test_wait_http "http://$test_host:$test_server_port/health"
+  kit_test_wait_http "http://$test_host:$test_remote_port/"
+  [[ -f $test_db ]] || { echo "tvctl: test database missing: $test_db" >&2; return 66; }
+  [[ $(sqlite3 "$test_db" 'PRAGMA integrity_check;') == ok ]] || {
+    echo 'tvctl: Titan test database integrity check failed' >&2
+    return 74
+  }
+  sqlite3 -json "$test_db" \
+    "SELECT
+       (SELECT max(version) FROM schema_migrations) AS schema_version,
+       (SELECT count(*) FROM deildu_items) AS deildu_items,
+       (SELECT count(*) FROM ruv_programs) AS ruv_programs,
+       (SELECT count(*) FROM radio_stations) AS radio_stations,
+       (SELECT count(*) FROM public_torrents) AS public_torrents,
+       'ok' AS integrity;"
+}
+
+kit_test_deploy() {
+  (($# == 0)) || { echo 'tvctl: kit test deploy accepts no arguments' >&2; return 64; }
+  kit_test_validate
+  local bun_bin
+  bun_bin=${BUN_BIN:-$(command -v bun)}
+  [[ -x $bun_bin ]] || { echo 'tvctl: Bun is required on Titan' >&2; return 69; }
+  command -v sqlite3 >/dev/null || { echo 'tvctl: sqlite3 is required on Titan' >&2; return 69; }
+  command -v systemd-run >/dev/null || { echo 'tvctl: systemd-run is required on Titan' >&2; return 69; }
+  command -v scp >/dev/null || { echo 'tvctl: scp is required on Titan' >&2; return 69; }
+  kit_test_stop
+  kit_test_ports_free
+  kit_test_clone_db
+  kit_test_write_env
+  if [[ ! -d $kit_dir/node_modules ]]; then
+    echo '== install Titan dependencies'
+    (cd "$kit_dir" && "$bun_bin" install --frozen-lockfile)
+  fi
+  echo '== start isolated Titan services'
+  kit_test_start_unit "$test_server_unit" 'TV Kit Titan test server' \
+    "$bun_bin" --watch apps/server/src/index.ts
+  kit_test_start_unit "$test_remote_unit" 'TV Kit Titan test remote' \
+    "$bun_bin" --cwd apps/remote dev --host 0.0.0.0 --port "$test_remote_port"
+  kit_test_verify
+}
+
+kit_test_status() {
+  (($# == 0)) || { echo 'tvctl: kit test status accepts no arguments' >&2; return 64; }
+  printf 'server=%s\n' "$(systemctl --user is-active "$test_server_unit" 2>/dev/null || true)"
+  printf 'remote=%s\n' "$(systemctl --user is-active "$test_remote_unit" 2>/dev/null || true)"
+  curl -fsS --max-time 3 "http://$test_host:$test_server_port/health" >/dev/null 2>&1 &&
+    echo "server_url=http://$test_host:$test_server_port/health ok" ||
+    echo "server_url=http://$test_host:$test_server_port/health unavailable"
+  curl -fsS --max-time 3 "http://$test_host:$test_remote_port/" >/dev/null 2>&1 &&
+    echo "remote_url=http://$test_host:$test_remote_port/ ok" ||
+    echo "remote_url=http://$test_host:$test_remote_port/ unavailable"
+  if [[ -f $test_db ]]; then
+    sqlite3 -json "$test_db" \
+      "SELECT
+         (SELECT max(version) FROM schema_migrations) AS schema_version,
+         (SELECT count(*) FROM deildu_items) AS deildu_items,
+         (SELECT count(*) FROM public_torrents) AS public_torrents,
+         (SELECT status FROM public_torrent_scrape_runs ORDER BY id DESC LIMIT 1) AS public_torrent_status;"
+  else
+    echo "database=missing path=$test_db"
+  fi
+}
+
+kit_test_logs() {
+  local target_unit=${1:-server} lines=${2:-50} unit
+  (($# <= 2)) || { echo 'tvctl: kit test logs accepts service and line count' >&2; return 64; }
+  [[ $lines =~ ^[1-9][0-9]*$ ]] && ((lines <= 1000)) || {
+    echo 'tvctl: log line count must be 1..1000' >&2
+    return 64
+  }
+  case $target_unit in
+    server) unit=$test_server_unit ;;
+    remote) unit=$test_remote_unit ;;
+    *) echo 'tvctl: kit test logs service must be server or remote' >&2; return 64 ;;
+  esac
+  journalctl --user -u "$unit" -n "$lines" --no-pager
+}
+
+kit_test() {
+  local action=${1:-status}
+  shift || true
+  case $action in
+    deploy|refresh) kit_test_deploy "$@" ;;
+    status) kit_test_status "$@" ;;
+    verify) kit_test_verify "$@" ;;
+    logs) kit_test_logs "$@" ;;
+    stop) kit_test_stop "$@" ;;
+    *) echo 'tvctl: kit test accepts deploy, refresh, status, verify, logs, or stop' >&2; return 64 ;;
+  esac
 }
 
 kit_frame_build_dir="$HOME/.cache/tv-kit/frame-build"
@@ -642,6 +864,7 @@ case ${1:-help} in
       status) kit_status ;;
       verify) (($# == 0)) || { echo 'tvctl: kit verify accepts no arguments' >&2; exit 64; }; kit_verify ;;
       check) (($# <= 1)) || { echo 'tvctl: kit check accepts warnings only' >&2; exit 64; }; kit_check "${1:-}" ;;
+      test) kit_test "$@" ;;
       frame)
         frame_action=${1:-health}; shift || true
         case $frame_action in

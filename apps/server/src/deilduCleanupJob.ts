@@ -5,14 +5,18 @@ import {
 	validateDeilduTitleCleanup,
 } from "./deilduTitleCleanup";
 
-type Row = {
-	id: number;
+export type ReleaseId = string | number;
+export type ReleaseRow<Id extends ReleaseId = ReleaseId> = {
+	id: Id;
 	original_title: string;
 	media_kind: "movie" | "tv" | "audio" | "other";
 };
-type Candidate = CleanedDeilduTitle & { id: number };
+export type ReleaseCandidate<Id extends ReleaseId = ReleaseId> =
+	CleanedDeilduTitle & { id: Id };
 
-export function cleanupCandidateFromRelease(row: Row): Candidate | null {
+export function cleanupCandidateFromRelease<Id extends ReleaseId>(
+	row: ReleaseRow<Id>,
+): ReleaseCandidate<Id> | null {
 	const source = row.original_title.trim();
 	const marker = /s\d{1,3}e\d{1,5}\b|\bseason[._\s-]*\d{1,3}\b|[([._\s-](?:19|20)\d{2}(?=$|[)\]_.\s-])|[([._\s-](?:480p|720p|1080p|2160p|web(?:[._ -]?dl)?|webrip|bluray|brrip|hdtv|dvdrip|x264|x265|h\.?(?:264|265)|hevc|av1|isl[._\s-]*(?:tal(?:texti)?|texti)|ens[._\s-]*(?:tal|texti))\b/i;
 	const match = marker.exec(source);
@@ -33,7 +37,7 @@ export function cleanupCandidateFromRelease(row: Row): Candidate | null {
 		year: year ? Number(year[1]) : undefined,
 		season: seasonEpisode ? Number(seasonEpisode[1]) : undefined,
 		episode: seasonEpisode ? Number(seasonEpisode[2]) : undefined,
-		resolution: resolution?.[1].toLowerCase() as Candidate["resolution"],
+		resolution: resolution?.[1].toLowerCase() as ReleaseCandidate<Id>["resolution"],
 	};
 }
 
@@ -69,7 +73,10 @@ function jsonArray(text: string): unknown[] {
 	}
 }
 
-async function cleanBatch(rows: Row[]): Promise<Candidate[]> {
+export async function cleanReleaseCandidatesWithLlm<Id extends ReleaseId>(
+	rows: ReleaseRow<Id>[],
+): Promise<ReleaseCandidate<Id>[]> {
+	const ids = new Set(rows.map((row) => String(row.id)));
 	const response = await fetch(`${config.localLlmBaseUrl}/chat/completions`, {
 		method: "POST",
 		headers: {
@@ -105,17 +112,23 @@ async function cleanBatch(rows: Row[]): Promise<Candidate[]> {
 		choices?: { message?: { content?: string } }[];
 	};
 	return jsonArray(payload.choices?.[0]?.message?.content ?? "").filter(
-		(value): value is Candidate =>
-			Boolean(
-				value &&
-					typeof value === "object" &&
-					Number.isSafeInteger((value as Candidate).id) &&
-					typeof (value as Candidate).title === "string",
-			),
+		(value): value is ReleaseCandidate<Id> => {
+			if (!value || typeof value !== "object") return false;
+			const candidate = value as ReleaseCandidate<Id>;
+			return (
+				(typeof candidate.id === "string" ||
+					Number.isSafeInteger(candidate.id)) &&
+				ids.has(String(candidate.id)) &&
+				typeof candidate.title === "string"
+			);
+		},
 	);
 }
 
-async function tmdb(candidate: Candidate, kind: Row["media_kind"]) {
+export async function findTmdbReleaseMatch<Id extends ReleaseId>(
+	candidate: ReleaseCandidate<Id>,
+	kind: ReleaseRow<Id>["media_kind"],
+) {
 	if (
 		!config.tmdbApiKey ||
 		!config.tmdbApiBase ||
@@ -151,7 +164,7 @@ export async function cleanImportedDeildu(
 	if (deilduCleanupState.running) return deilduCleanupState;
 	const rows = statement(
 		`SELECT i.id,i.original_title,c.media_kind FROM deildu_items i JOIN deildu_categories c ON c.id=i.category_id WHERE i.ai_cleaned=0 OR lower(i.title) LIKE '%1080p%' OR lower(i.title) LIKE '%2160p%' OR lower(i.title) LIKE '%720p%' OR lower(i.title) LIKE '%480p%' OR lower(i.title) LIKE '%web-dl%' OR lower(i.title) LIKE '%webrip%' OR lower(i.title) LIKE '%bluray%' OR lower(i.title) LIKE '%x264%' OR lower(i.title) LIKE '%x265%' OR lower(i.title) LIKE '%hevc%' OR i.title LIKE '%(...)' ORDER BY i.id`,
-	).all() as Row[];
+	).all() as ReleaseRow<number>[];
 	Object.assign(deilduCleanupState, {
 		running: true,
 		phase: "cleanup",
@@ -180,7 +193,7 @@ export async function cleanImportedDeildu(
 			const unresolved = batch.filter((row) => !deterministic.has(row.id));
 			let candidates = [...deterministic.values()];
 			if (unresolved.length && !llmUnavailable) try {
-				candidates = [...candidates, ...await cleanBatch(unresolved)];
+				candidates = [...candidates, ...await cleanReleaseCandidatesWithLlm(unresolved)];
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.error(
@@ -202,7 +215,7 @@ export async function cleanImportedDeildu(
 						return [
 							row.id,
 							candidate && validation?.status === "accept"
-								? await tmdb(candidate, row.media_kind)
+								? await findTmdbReleaseMatch(candidate, row.media_kind)
 								: null,
 						] as const;
 					}),

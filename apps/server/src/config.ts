@@ -45,6 +45,20 @@ function optionalNumber(
 	return value;
 }
 
+function optionalIntegerList(name: string, fallback: number[]) {
+	const raw = optional(name);
+	if (!raw) return fallback;
+	const values = raw.split(",").map((value) => Number(value.trim()));
+	if (
+		!values.length ||
+		values.some((value) => !Number.isSafeInteger(value) || value <= 0)
+	)
+		throw new Error(
+			`Environment variable ${name} must be a comma-separated list of positive integers`,
+		);
+	return values;
+}
+
 export const config = Object.freeze({
 	port: number("PORT", 1, 65_535),
 	serverUrl: required("VITE_TVSERVER_URL").replace(/\/$/, ""),
@@ -83,6 +97,62 @@ export const config = Object.freeze({
 		16_777_216,
 		1_048_576,
 		268_435_456,
+	),
+	publicTorrentApiUrl:
+		optional("PUBLIC_TORRENT_API_URL").replace(/\/$/, "") ||
+		"https://api.knaben.org/v1",
+	publicTorrentUserAgent:
+		optional("PUBLIC_TORRENT_USER_AGENT") || "tvserverd-public-torrents/1.0",
+	publicTorrentSyncIntervalMs: optionalNumber(
+		"PUBLIC_TORRENT_SYNC_INTERVAL_MS",
+		21_600_000,
+		60_000,
+	),
+	publicTorrentSchedulerStartDelayMs: optionalNumber(
+		"PUBLIC_TORRENT_SCHEDULER_START_DELAY_MS",
+		30_000,
+		1_000,
+		3_600_000,
+	),
+	publicTorrentFetchTimeoutMs: optionalNumber(
+		"PUBLIC_TORRENT_FETCH_TIMEOUT_MS",
+		30_000,
+		1_000,
+		120_000,
+	),
+	publicTorrentPageSize: optionalNumber(
+		"PUBLIC_TORRENT_PAGE_SIZE",
+		300,
+		1,
+		300,
+	),
+	publicTorrentMaxPages: optionalNumber(
+		"PUBLIC_TORRENT_MAX_PAGES",
+		40,
+		1,
+		100,
+	),
+	publicTorrentLookbackSeconds: optionalNumber(
+		"PUBLIC_TORRENT_LOOKBACK_SECONDS",
+		86_400,
+		60,
+		604_800,
+	),
+	publicTorrentScrapePacingMs: optionalNumber(
+		"PUBLIC_TORRENT_SCRAPE_PACING_MS",
+		250,
+		0,
+		60_000,
+	),
+	publicTorrentCleanupLimit: optionalNumber(
+		"PUBLIC_TORRENT_CLEANUP_LIMIT",
+		500,
+		1,
+		10_000,
+	),
+	publicTorrentCategories: optionalIntegerList(
+		"PUBLIC_TORRENT_CATEGORIES",
+		[2001000, 2002000, 2003000, 2005000, 3001000, 3002000, 3003000, 3005000],
 	),
 	radioSourceUrl: required("RADIO_SOURCE_URL"),
 	radioSourceName: required("RADIO_SOURCE_NAME"),

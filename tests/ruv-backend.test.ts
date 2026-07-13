@@ -54,6 +54,21 @@ Object.assign(Bun.env, {
 	DEILDU_STREAM_START_TIMEOUT_MS: "5000",
 	DEILDU_STREAM_RANGE_WAIT_MS: "5000",
 	DEILDU_STREAM_BUFFER_BYTES: "1048576",
+	PUBLIC_TORRENT_API_URL: "https://example.invalid/public-torrents",
+	PUBLIC_TORRENT_USER_AGENT: "tv-kit-test",
+	PUBLIC_TORRENT_SYNC_INTERVAL_MS: "60000",
+	PUBLIC_TORRENT_SCHEDULER_START_DELAY_MS: "1000",
+	PUBLIC_TORRENT_FETCH_TIMEOUT_MS: "5000",
+	PUBLIC_TORRENT_PAGE_SIZE: "2",
+	PUBLIC_TORRENT_MAX_PAGES: "2",
+	PUBLIC_TORRENT_LOOKBACK_SECONDS: "86400",
+	PUBLIC_TORRENT_SCRAPE_PACING_MS: "0",
+	PUBLIC_TORRENT_CLEANUP_LIMIT: "10",
+	PUBLIC_TORRENT_CATEGORIES: "2001000,3001000",
+	LOCAL_LLM_BASE_URL: "",
+	LOCAL_LLM_API_KEY: "",
+	TMDB_API_KEY: "",
+	TMDB_API_BASE: "",
 	RADIO_SOURCE_URL: "https://example.invalid/radio",
 	RADIO_SOURCE_NAME: "test",
 	RADIO_SYNC_INTERVAL_MS: "86400000",
@@ -111,6 +126,8 @@ const scraper = await import("../apps/server/src/ruvscraper");
 const torrent = await import("../apps/server/src/torrentMedia");
 const deildu = await import("../apps/server/src/deilduScraper");
 const deilduStream = await import("../apps/server/src/deilduStream");
+// Runtime import is required because server config snapshots the test Bun.env above.
+const publicTorrents = await import("../apps/server/src/publicTorrentScraper");
 const { db } = database;
 
 const media = {
@@ -212,6 +229,8 @@ beforeEach(() => {
     DELETE FROM ruv_channels;
     DELETE FROM ruv_news_articles;
     DELETE FROM ruv_scrape_runs;
+    DELETE FROM public_torrents;
+    DELETE FROM public_torrent_scrape_runs;
     DELETE FROM agent_chat_messages;
     DELETE FROM api_cache;
     DELETE FROM app_state WHERE key NOT LIKE 'golf%';
@@ -286,7 +305,7 @@ test("scheduled GolfBox task runs the script and persists validated bookings", a
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
 	expect(database.schemaVersions()).toEqual([
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
 	]);
 	expect(
 		(
@@ -307,6 +326,180 @@ test("empty database applies ordered migrations and idempotent state seed", () =
 	database.seedStateIfMissing(state("fyrsta"));
 	database.seedStateIfMissing(state("annað"));
 	expect(database.loadState()?.lastAction).toBe("fyrsta");
+});
+
+test("public torrent scraper normalizes, deduplicates, cleans, and records its run", async () => {
+	const hashes = {
+		deadCalm: "A".repeat(40),
+		show: "B".repeat(40),
+	};
+	const pages = [
+		[
+			{
+				id: "tpb-dead-calm",
+				hash: hashes.deadCalm,
+				title: "Dead.Calm.1989.1080p.BluRay.x264",
+				category: "Movies / HD",
+				categoryId: [3001000],
+				tracker: "The Pirate Bay",
+				seeders: 12,
+				peers: 2,
+				bytes: 3_600_000_000,
+				date: "2026-07-13T10:00:00Z",
+				lastSeen: "2026-07-13T11:00:00Z",
+			},
+			{
+				id: "yts-dead-calm",
+				hash: hashes.deadCalm.toLowerCase(),
+				title: "Dead.Calm.1989.1080p.BluRay.x264",
+				category: "Movies / HD",
+				categoryId: [3001000],
+				tracker: "YTS",
+				seeders: 4,
+				peers: 1,
+				bytes: 3_600_000_000,
+				link: "https://knaben.example/dead-calm.torrent",
+				date: "2026-07-13T10:00:00Z",
+				lastSeen: "2026-07-13T11:01:00Z",
+			},
+		],
+		[
+			{
+				id: "show-1",
+				hash: hashes.show,
+				title: "The.Show.S01E01.1080p.WEB-DL.x264",
+				category: "TV / HD",
+				categoryId: [2001000],
+				tracker: "1337x",
+				seeders: 8,
+				peers: 3,
+				bytes: 1_500_000_000,
+				date: "2026-07-13T09:00:00Z",
+				lastSeen: "2026-07-13T11:02:00Z",
+			},
+		],
+	];
+	const requests: RequestInit[] = [];
+	let page = 0;
+	const fakeFetch = async (_input: URL | RequestInfo, init?: RequestInit) => {
+		requests.push(init ?? {});
+		return Response.json({ hits: pages[page++] ?? [] });
+	};
+	const result = await publicTorrents.scrapePublicTorrents(
+		undefined,
+		undefined,
+		fakeFetch,
+	);
+	expect(result).toMatchObject({
+		status: "complete",
+		inserted: 2,
+		updated: 0,
+		itemCount: 2,
+		cleaned: 2,
+	});
+	expect(requests).toHaveLength(2);
+	expect(JSON.parse(String(requests[0].body))).toMatchObject({
+		from: 0,
+		size: 2,
+		hide_unsafe: true,
+		hide_xxx: true,
+		categories: [2001000, 3001000],
+	});
+	type PublicDbRow = {
+		info_hash: string;
+		source: string;
+		torrent_uri: string | null;
+		original_title: string;
+		title: string;
+		media_kind: string;
+		cleanup_status: string;
+	};
+	const rows = database
+		.statement(
+			`SELECT info_hash,source,torrent_uri,original_title,title,media_kind,cleanup_status
+			 FROM public_torrents ORDER BY info_hash`,
+		)
+		.all() as PublicDbRow[];
+	expect(rows).toEqual([
+		{
+			info_hash: hashes.deadCalm,
+			source: "YTS",
+			torrent_uri: "https://knaben.example/dead-calm.torrent",
+			original_title: "Dead.Calm.1989.1080p.BluRay.x264",
+			title: "Dead Calm",
+			media_kind: "movie",
+			cleanup_status: "clean",
+		},
+		{
+			info_hash: hashes.show,
+			source: "1337x",
+			torrent_uri: null,
+			original_title: "The.Show.S01E01.1080p.WEB-DL.x264",
+			title: "The Show",
+			media_kind: "tv",
+			cleanup_status: "clean",
+		},
+	]);
+	type PublicRunRow = {
+		status: string;
+		item_count: number;
+		added_count: number;
+		cleaned_count: number;
+		source_count: number;
+		error: string | null;
+	};
+	const run = database
+		.statement(
+			`SELECT status,item_count,added_count,cleaned_count,source_count,error
+			 FROM public_torrent_scrape_runs ORDER BY id DESC LIMIT 1`,
+		)
+		.get() as PublicRunRow;
+	expect(run).toEqual({
+		status: "complete",
+		item_count: 2,
+		added_count: 2,
+		cleaned_count: 2,
+		source_count: 2,
+		error: null,
+	});
+});
+
+test("public torrent scraper preserves healthy rows when the upstream fails", async () => {
+	database.statement(
+		`INSERT INTO public_torrents (
+			info_hash,source_id,source,original_title,media_kind,last_seen_at,first_seen_at,updated_at
+		) VALUES (?,?,?,?,?,?,?,?)`,
+	).run(
+		"C".repeat(40),
+		"existing",
+		"Knaben",
+		"Existing.Movie.2025.1080p",
+		"movie",
+		1,
+		1,
+		1,
+	);
+	const failedFetch = async () =>
+		new Response("unavailable", { status: 503 });
+	const result = await publicTorrents.scrapePublicTorrents(
+		undefined,
+		undefined,
+		failedFetch,
+	);
+	expect(result.status).toBe("error");
+	expect(
+		database.statement("SELECT count(*) AS count FROM public_torrents").get(),
+	).toEqual({ count: 1 });
+	expect(
+		database
+			.statement(
+				"SELECT status,error FROM public_torrent_scrape_runs ORDER BY id DESC LIMIT 1",
+			)
+			.get(),
+	).toEqual({
+		status: "error",
+		error: "Opinber torrent-vísir svaraði HTTP 503",
+	});
 });
 
 test("RÚV rows serialize as typed camelCase DTOs with parsed values", () => {

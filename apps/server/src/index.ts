@@ -15,6 +15,11 @@ import { parseCommandMessage } from "./commands";
 import { chatWithLocalAgent, parseAgentReply } from "./agent";
 import { config } from "./config";
 import { deilduCleanupState } from "./deilduCleanupJob";
+import { publicTorrentCleanupState } from "./publicTorrentCleanupJob";
+import {
+  publicTorrentScrapeState,
+  scrapePublicTorrents,
+} from "./publicTorrentScraper";
 import {
   cachedGolfBoxBookings,
   cachedGolfBoxFriends,
@@ -914,6 +919,40 @@ const server = Bun.serve<WebSocketData>({
         202,
       );
     }
+    if (url.pathname === "/agent/tasks/public-torrent-import") {
+      if (req.method === "GET")
+        return corsJson(
+          req,
+          {
+            task: publicTorrentCleanupState,
+            scrape: publicTorrentScrapeState,
+          },
+          0,
+        );
+      if (req.method !== "POST")
+        return errorResponse(req, "method not allowed", 405);
+      if (
+        !publicTorrentScrapeState.running &&
+        !publicTorrentCleanupState.running
+      )
+        void scrapePublicTorrents(
+          () => {
+            state.lastAction = publicTorrentScrapeState.message;
+            broadcast();
+          },
+          broadcast,
+        );
+      return corsJson(
+        req,
+        {
+          accepted: true,
+          task: publicTorrentCleanupState,
+          scrape: publicTorrentScrapeState,
+        },
+        0,
+        202,
+      );
+    }
     if (url.pathname === "/agent/tasks/golfbox-sync") {
       if (req.method === "GET")
         return corsJson(
@@ -1623,6 +1662,33 @@ const deilduSyncTimer = setInterval(
 );
 deilduSyncTimer.unref();
 
+const runPublicTorrentsIfDue = () => {
+  if (
+    publicTorrentScrapeState.running ||
+    (publicTorrentScrapeState.lastRun &&
+      Date.now() - publicTorrentScrapeState.lastRun <
+        config.publicTorrentSyncIntervalMs)
+  )
+    return;
+  void scrapePublicTorrents(
+    () => {
+      state.lastAction = publicTorrentScrapeState.message;
+      broadcast();
+    },
+    broadcast,
+  );
+};
+const publicTorrentStartTimer = setTimeout(
+  runPublicTorrentsIfDue,
+  config.publicTorrentSchedulerStartDelayMs,
+);
+publicTorrentStartTimer.unref();
+const publicTorrentSyncTimer = setInterval(
+  runPublicTorrentsIfDue,
+  config.publicTorrentSyncIntervalMs,
+);
+publicTorrentSyncTimer.unref();
+
 const runGolfBoxIfDue = () => {
   if (!golfboxTaskState.running) void runGolfBoxTask(broadcast);
 };
@@ -1641,6 +1707,8 @@ function shutdown() {
   shuttingDown = true;
   clearTimeout(deilduStartTimer);
   clearInterval(deilduSyncTimer);
+  clearTimeout(publicTorrentStartTimer);
+  clearInterval(publicTorrentSyncTimer);
   clearInterval(staleClientTimer);
   if (golfboxStartTimer) clearTimeout(golfboxStartTimer);
   if (golfboxSyncTimer) clearInterval(golfboxSyncTimer);

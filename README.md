@@ -48,6 +48,26 @@ The link/file commands redact passkey-bearing download, announce, and magnet val
 
 `tvctl kit sync` intentionally stops the kiosk and cleans Chrome, mpv, aria2, and playback verifiers. Never deploy while uninterrupted viewing is requested. Patch and test locally, leave the task pending deployment, and sync only after explicit permission.
 
+## Titan test environment
+
+Use the isolated Titan deployment for real-data server and tablet-remote tests
+that must not interrupt the TV:
+
+```bash
+tvctl kit test deploy
+tvctl kit test status
+tvctl kit test verify
+tvctl kit test logs server 100
+tvctl kit test refresh
+tvctl kit test stop
+```
+
+`deploy` and `refresh` take a consistent SQLite online backup from the TV,
+store the disposable clone under `~/.tv-kit-test/`, and run transient
+`tvserverd-test.service` and `tv-remote-test.service` units on
+`http://192.168.1.10:3220` and `http://192.168.1.10:3222`. The clone never
+writes back to the TV. Production remains TV-local and authoritative.
+
 ## Development
 
 ```bash

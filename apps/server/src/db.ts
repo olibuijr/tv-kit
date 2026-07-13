@@ -492,6 +492,63 @@ const migrations = [
     ALTER TABLE deildu_items ADD COLUMN playback_updated_at INTEGER;
   `,
 	},
+	{
+		version: 17,
+		sql: `
+    CREATE TABLE public_torrents (
+      info_hash TEXT PRIMARY KEY CHECK(length(info_hash)=40),
+      source_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      source_url TEXT NOT NULL DEFAULT '',
+      tracker TEXT NOT NULL DEFAULT '',
+      tracker_id TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
+      category_ids TEXT NOT NULL DEFAULT '[]',
+      torrent_uri TEXT,
+      magnet_uri TEXT NOT NULL DEFAULT '',
+      original_title TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      media_kind TEXT NOT NULL CHECK(media_kind IN ('movie','tv')),
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      seeders INTEGER NOT NULL DEFAULT 0,
+      leechers INTEGER NOT NULL DEFAULT 0,
+      grabs INTEGER,
+      virus_score REAL,
+      published_at INTEGER,
+      last_seen_at INTEGER NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      tmdb_id INTEGER,
+      cleanup_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(cleanup_status IN ('pending','clean','review')),
+      cleanup_error TEXT NOT NULL DEFAULT '',
+      cleaned_at INTEGER,
+      first_seen_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX public_torrents_recent
+      ON public_torrents(last_seen_at DESC);
+    CREATE INDEX public_torrents_media
+      ON public_torrents(media_kind,cleanup_status,seeders DESC);
+    CREATE INDEX public_torrents_tmdb
+      ON public_torrents(tmdb_id);
+    CREATE TABLE public_torrent_scrape_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      status TEXT NOT NULL CHECK(status IN ('running','complete','partial','error')),
+      source_count INTEGER NOT NULL DEFAULT 0,
+      item_count INTEGER NOT NULL DEFAULT 0,
+      added_count INTEGER NOT NULL DEFAULT 0,
+      updated_count INTEGER NOT NULL DEFAULT 0,
+      cleaned_count INTEGER NOT NULL DEFAULT 0,
+      enriched_count INTEGER NOT NULL DEFAULT 0,
+      review_count INTEGER NOT NULL DEFAULT 0,
+      error TEXT
+    );
+    CREATE INDEX public_torrent_scrape_runs_started
+      ON public_torrent_scrape_runs(started_at DESC);
+  `,
+	},
 ];
 
 db.exec(
