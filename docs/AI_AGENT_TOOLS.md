@@ -53,6 +53,19 @@ Never infer success from the tablet UI alone.
 
 Code hot-reloads. Restart only when a service/unit/dependency change requires it.
 
+### Native TV Frame (Qt/QML)
+
+NEVER build on the TV. Build on Titan and ship the binary:
+
+```bash
+/home/olafurbui/.local/bin/tvctl kit frame build    # cmake+ninja on Titan -> ~/.cache/tv-kit/frame-build
+/home/olafurbui/.local/bin/tvctl kit frame test     # build + ctest on Titan
+/home/olafurbui/.local/bin/tvctl kit frame deploy   # sync, build on Titan, push binary, restart tv-frame.service
+/home/olafurbui/.local/bin/tvctl kit frame verify   # health + physical screenshot
+```
+
+The TV carries only Qt runtime libraries (`qt6-declarative`, `qt6-websockets`); Titan and the TV share identical Arch package versions, so the binary is directly compatible.
+
 ### Control playback
 
 ```bash

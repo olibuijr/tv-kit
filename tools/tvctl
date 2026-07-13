@@ -58,9 +58,9 @@ TV Kit (no-build hot-reload deployment; source of truth: ~/Projects/tv-kit):
   kit verify             Require enabled+active services, HTTP health, and WS ping/pong
   kit check [warnings]   Run TV-local tests and TypeScript/Svelte checks;
                          warnings shows all Svelte diagnostics
-  kit frame build        Configure and build the native Qt/QML TV Frame on TV
-  kit frame test         Run the TV Frame test suite on TV
-  kit frame deploy       Sync, build, switch from Chrome, then verify TV Frame
+  kit frame build        Build the native Qt/QML TV Frame locally on Titan
+  kit frame test         Build and run the TV Frame test suite on Titan
+  kit frame deploy       Sync, build on Titan, push binary, switch from Chrome, verify
   kit frame health       Require an active, connected TV Frame service
   kit frame verify       Health check plus one saved physical TV screenshot
   kit fullscreen [MODE]  Show ruv (default), ruv2, or off in fullscreen
@@ -85,7 +85,7 @@ Deildu catalog (read-only, secret-safe):
   deildu files ID        List files in cached torrent metadata
 
 Environment: TV_HOST, TV_USER, TV_IDENTITY, TV_CONNECT_TIMEOUT, TV_CMD_TIMEOUT,
-             TV_KIT_DIR, TITAN_HOST, TV_FRAME_BUILD_JOBS (1..4, default 2)
+             TV_KIT_DIR, TITAN_HOST, TV_FRAME_BUILD_JOBS (default: nproc)
 EOF
 }
 
@@ -204,8 +204,8 @@ kit_sync() {
 kit_setup() {
   echo "== bun runtime"
   remote_long 180 'command -v ~/.bun/bin/bun >/dev/null || curl -fsSL https://bun.sh/install | bash >/dev/null; ~/.bun/bin/bun --version'
-  echo "== runtime + native-frame tools on the TV"
-  remote_long 180 'command -v rsync >/dev/null || sudo -n pacman -S --needed --noconfirm rsync >/dev/null; command -v aria2c >/dev/null || sudo -n pacman -S --needed --noconfirm aria2 >/dev/null; command -v mpv >/dev/null || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; command -v cmake >/dev/null || sudo -n pacman -S --needed --noconfirm cmake ninja qt6-declarative qt6-websockets >/dev/null; test -f /usr/include/mpv/client.h || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; echo runtime-tools-present'
+  echo "== runtime tools + Qt runtime libs on the TV (build tools stay on Titan)"
+  remote_long 180 'command -v rsync >/dev/null || sudo -n pacman -S --needed --noconfirm rsync >/dev/null; command -v aria2c >/dev/null || sudo -n pacman -S --needed --noconfirm aria2 >/dev/null; command -v mpv >/dev/null || sudo -n pacman -S --needed --noconfirm mpv >/dev/null; pacman -Q qt6-declarative qt6-websockets >/dev/null 2>&1 || sudo -n pacman -S --needed --noconfirm qt6-declarative qt6-websockets >/dev/null; sudo -n pacman -Rns --noconfirm cmake ninja >/dev/null 2>&1 || true; echo runtime-tools-present'
   echo "== retire dead NFS automount at ~/Projects (replaced by tvctl rsync)"
   remote 'if grep -q "^100.88.0.9:/home/olafurbui/Projects" /etc/fstab; then \
       sudo -n cp /etc/fstab /etc/fstab.bak-tvkit; \
@@ -302,21 +302,32 @@ kit_check() {
     $svelte_check"
 }
 
+kit_frame_build_dir="$HOME/.cache/tv-kit/frame-build"
+
 kit_frame_build() {
   (($# == 0)) || { echo 'tvctl: kit frame build accepts no arguments' >&2; return 64; }
-  local jobs=${TV_FRAME_BUILD_JOBS:-2}
-  [[ $jobs =~ ^[1-4]$ ]] || { echo 'tvctl: TV_FRAME_BUILD_JOBS must be 1..4' >&2; return 64; }
-  remote_long 300 "test -f $kit_remote_dir/apps/tv-frame/CMakeLists.txt || { echo 'tvctl: native frame source is missing' >&2; exit 66; }; \\
-    command -v cmake >/dev/null || { echo 'tvctl: cmake is missing; run tvctl kit setup' >&2; exit 69; }; \\
-    command -v ninja >/dev/null || { echo 'tvctl: ninja is missing; run tvctl kit setup' >&2; exit 69; }; \\
-    cmake -S $kit_remote_dir/apps/tv-frame -B ~/$kit_home/frame-build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && \\
-    cmake --build ~/$kit_home/frame-build --parallel $jobs"
+  local jobs=${TV_FRAME_BUILD_JOBS:-$(nproc)}
+  [[ $jobs =~ ^[0-9]+$ && $jobs -ge 1 ]] || { echo 'tvctl: TV_FRAME_BUILD_JOBS must be a positive integer' >&2; return 64; }
+  [[ -f $kit_dir/apps/tv-frame/CMakeLists.txt ]] || { echo 'tvctl: native frame source is missing' >&2; return 66; }
+  local tool
+  for tool in cmake ninja g++; do
+    command -v "$tool" >/dev/null || { echo "tvctl: $tool is missing on Titan; install it locally (never build on the TV)" >&2; return 69; }
+  done
+  cmake -S "$kit_dir/apps/tv-frame" -B "$kit_frame_build_dir" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  cmake --build "$kit_frame_build_dir" --parallel "$jobs"
+}
+
+kit_frame_push() {
+  [[ -x $kit_frame_build_dir/tv-frame ]] || { echo 'tvctl: no built tv-frame binary; run tvctl kit frame build' >&2; return 66; }
+  remote "mkdir -p ~/$kit_home/frame-build"
+  kit_systemctl 'stop tv-frame.service' || true
+  timeout 120 rsync -e "ssh $(printf '%q ' "${batch_opts[@]}")" -a "$kit_frame_build_dir/tv-frame" "$target:$kit_home/frame-build/tv-frame"
 }
 
 kit_frame_test() {
   (($# == 0)) || { echo 'tvctl: kit frame test accepts no arguments' >&2; return 64; }
   kit_frame_build
-  remote_long 300 "ctest --test-dir ~/$kit_home/frame-build --output-on-failure"
+  ctest --test-dir "$kit_frame_build_dir" --output-on-failure
 }
 
 kit_frame_health() {
@@ -344,8 +355,10 @@ kit_frame_deploy() {
   kit_deps
   echo '== install user units'
   kit_units_install
-  echo '== build native frame'
+  echo '== build native frame on Titan'
   kit_frame_build
+  echo '== push binary to TV'
+  kit_frame_push
   echo '== switch display client'
   kit_systemctl 'daemon-reload'
   kit_systemctl 'disable --now tv-kiosk.service tv-dashboard.service' || true
