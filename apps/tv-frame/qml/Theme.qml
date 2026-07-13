@@ -47,4 +47,10 @@ QtObject {
         if (span <= 0) return 0
         return Math.max(0, Math.min(100, ((now - event.startTime) / span) * 100))
     }
+
+    // True only when a real endTime has passed; missing endTime (live/synthetic
+    // placeholder entries) is never treated as ended.
+    function eventEnded(event, now) {
+        return Boolean(event && event.endTime && event.endTime <= now)
+    }
 }

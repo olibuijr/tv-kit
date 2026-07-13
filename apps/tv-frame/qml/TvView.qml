@@ -96,7 +96,7 @@ Item {
 
                     Text { text: "Næst"; color: Theme.accent; font.pixelSize: 17; font.bold: true; topPadding: 8 }
                     Repeater {
-                        model: (card.modelData.upcoming || []).slice(0, 5)
+                        model: (card.modelData.upcoming || []).filter(event => !Theme.eventEnded(event, view.now)).slice(0, 5)
                         delegate: Row {
                             required property var modelData
                             width: parent.width

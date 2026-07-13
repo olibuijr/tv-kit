@@ -391,6 +391,8 @@ function tuneTvSlug(slug: string) {
     .filter(Boolean)
     .map((event, itemIndex) => ({
       start: time(event!.startTime),
+      startTime: event!.startTime,
+      endTime: event!.endTime,
       title: event!.title,
       detail: eventDetail(event!),
       current: itemIndex === 0 && Boolean(current),

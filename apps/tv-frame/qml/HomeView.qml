@@ -148,6 +148,7 @@ Item {
                             required property var modelData
                             width: parent.width
                             spacing: 6
+                            readonly property var futureUpcoming: (modelData.upcoming || []).filter(event => !Theme.eventEnded(event, view.now))
                             Row {
                                 width: parent.width
                                 spacing: 12
@@ -173,9 +174,9 @@ Item {
                                 }
                             }
                             Text {
-                                visible: (modelData.upcoming || []).length > 0
-                                text: modelData.upcoming.length
-                                    ? "Næst " + Theme.scheduleTime(modelData.upcoming[0].startTime) + " · " + modelData.upcoming[0].title
+                                visible: futureUpcoming.length > 0
+                                text: futureUpcoming.length
+                                    ? "Næst " + Theme.scheduleTime(futureUpcoming[0].startTime) + " · " + futureUpcoming[0].title
                                     : ""
                                 color: Theme.faint
                                 font.pixelSize: 14

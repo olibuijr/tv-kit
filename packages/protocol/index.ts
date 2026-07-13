@@ -10,6 +10,8 @@ export type PlayerPanel = "epg" | "queue" | "subtitles" | "audio" | null;
 
 export type Programme = {
 	start: string;
+	startTime?: number;
+	endTime?: number | null;
 	title: string;
 	detail: string;
 	current?: boolean;
