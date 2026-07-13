@@ -31,6 +31,7 @@ ApplicationWindow {
     // Auto-hide HUD and cursor after 5s of no media changes.
     property int hudAutoToken: 0
     property bool hudAutoVisible: false
+    property bool cursorHidden: false
     property string _prevView: ""
     property string _prevMediaId: ""
     property string _prevMediaStatus: ""
@@ -40,7 +41,7 @@ ApplicationWindow {
         root.hudAutoToken += 1
         root.hudAutoVisible = true
         hudHideTimer.restart()
-        root.cursorShape = Qt.ArrowCursor
+        root.cursorHidden = false
         cursorHideTimer.restart()
     }
 
@@ -53,7 +54,7 @@ ApplicationWindow {
     Timer {
         id: cursorHideTimer
         interval: 5000
-        onTriggered: root.cursorShape = Qt.BlankCursor
+        onTriggered: root.cursorHidden = true
     }
 
     // Playback-sync bookkeeping (mirrors what tvserverd's mpvPlayer.ts used
@@ -275,5 +276,18 @@ ApplicationWindow {
             && root.media.status === "loading"
             && (root.media.id || "").match(/^(deildu|torrent)-/) !== null
         media: root.media
+    }
+
+    // The frame is display-only; this passive overlay only controls the cursor.
+    MouseArea {
+        anchors.fill: parent
+        z: 100
+        acceptedButtons: Qt.NoButton
+        hoverEnabled: true
+        cursorShape: root.cursorHidden ? Qt.BlankCursor : Qt.ArrowCursor
+        onPositionChanged: {
+            root.cursorHidden = false
+            cursorHideTimer.restart()
+        }
     }
 }
