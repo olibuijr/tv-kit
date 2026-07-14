@@ -199,7 +199,6 @@ ApplicationWindow {
                 anchors.leftMargin: Theme.marginX
                 anchors.rightMargin: Theme.marginX
                 spacing: 26
-                Text { text: "TV KIT"; color: Theme.primary; font.pixelSize: 26; font.bold: true; font.letterSpacing: 3 }
                 Text {
                     text: ({home:"Heim", tv:"Sjónvarp", radio:"Útvarp", podcasts:"Hlaðvörp", media:"Sarpurinn", deildu:"Deildu", news:"Fréttir"})[root.view] || "TV Kit"
                     color: Theme.ink; font.pixelSize: 34; font.bold: true
