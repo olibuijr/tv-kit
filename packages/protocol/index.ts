@@ -440,6 +440,7 @@ export type Command =
 				| "ruv-channel"
 				| "ruv-episode"
 				| "torrent-media"
+				| "public-torrent-play"
 				| "tv-favorite";
 			value: string;
 	  }

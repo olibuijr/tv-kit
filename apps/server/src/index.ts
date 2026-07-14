@@ -89,6 +89,11 @@ import {
   startTorrentMediaPlayback,
 } from "./torrentMedia";
 import {
+  getPublicTorrentMeta,
+  servePublicTorrentStream,
+  startPublicTorrentPlayback,
+} from "./publicTorrentStream";
+import {
   deilduPlaybackLabels,
   getDeilduItem,
 	getDeilduShow,
@@ -484,6 +489,71 @@ async function playTorrentMedia(id: string) {
       ...state.media,
       kind: playback.kind,
       subtitle: item.license,
+      src: playback.mpvSrc,
+      engine: "mpv",
+      status: "loading",
+    };
+    state.playing = true;
+    state.lastAction = `Spila torrent: ${playback.title}`;
+    upsertMedia(state.media);
+    recordPlayback(state.media);
+    broadcast();
+    return true;
+  } catch (error) {
+    await stopDeilduStream();
+    const message =
+      error instanceof Error ? error.message : "Torrent-spilun mistókst";
+    state.playing = false;
+    state.media.status = "error";
+    state.media.subtitle = message;
+    state.lastAction = message;
+    broadcast();
+    return false;
+  }
+}
+
+async function playPublicTorrent(infoHash: string) {
+  const meta = getPublicTorrentMeta(infoHash);
+  if (!meta) return false;
+  const mediaId = `public-${infoHash}`;
+  state.previousView = state.view;
+  state.view = "media";
+  state.playing = false;
+  state.media = {
+    id: mediaId,
+    kind: meta.mediaKind === "tv" ? "tv" : "movie",
+    title: meta.title,
+    subtitle: "Undirbý torrent-straum…",
+    source: "Opinber torrent",
+    src: "",
+    artwork: "",
+    live: false,
+    currentTime: 0,
+    duration: 0,
+    playbackRate: 1,
+    subtitleTrack: "Slökkt",
+    audioTrack: "Aðalhljóð",
+    subtitles: ["Slökkt"],
+    textTracks: [],
+    audioTracks: ["Aðalhljóð"],
+    epg: [],
+    panel: null,
+    fullscreen: true,
+    favorite: false,
+    status: "loading",
+  };
+  state.lastAction = `Undirbý torrent: ${meta.title}`;
+  broadcast();
+  try {
+    const playback = await startPublicTorrentPlayback(
+      infoHash,
+      torrentProgressBroadcast(mediaId),
+    );
+    console.log(`public torrent playback ${infoHash} engine=mpv`);
+    state.media = {
+      ...state.media,
+      kind: playback.kind,
+      subtitle: "",
       src: playback.mpvSrc,
       engine: "mpv",
       status: "loading",
@@ -1079,6 +1149,17 @@ const server = Bun.serve<WebSocketData>({
         return errorResponse(req, "method not allowed", 405);
       return serveTorrentMediaStream(req, torrentStreamMatch[1]);
     }
+    const publicTorrentStreamMatch = url.pathname.match(
+      /^\/public-torrents\/stream\/([A-Fa-f0-9]{40})$/,
+    );
+    if (publicTorrentStreamMatch) {
+      if (req.method !== "GET" && req.method !== "HEAD")
+        return errorResponse(req, "method not allowed", 405);
+      return servePublicTorrentStream(
+        req,
+        publicTorrentStreamMatch[1].toUpperCase(),
+      );
+    }
     const deilduStreamMatch = url.pathname.match(
       /^\/deildu\/stream\/(\d{1,12})$/,
     );
@@ -1392,6 +1473,10 @@ const server = Bun.serve<WebSocketData>({
       }
       if (message.action === "torrent-media") {
         void playTorrentMedia(message.value);
+        return;
+      }
+      if (message.action === "public-torrent-play") {
+        void playPublicTorrent(message.value.toUpperCase());
         return;
       }
       if (message.action === "deildu-scrape") {
