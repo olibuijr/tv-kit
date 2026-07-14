@@ -77,6 +77,11 @@ import {
 } from "./httpAccess";
 import { RuvScheduler, type RuvJob } from "./ruvScheduler";
 import {
+  getPodcastEpisode,
+  listPodcasts,
+  syncPodcastsIfDue,
+} from "./podcasts";
+import {
   createDefaultState,
   normalizeHomeState,
   stopTransientPlaybackOnStartup,
@@ -176,6 +181,13 @@ const broadcastDeilduContentRefresh = () => {
     resource: "deildu",
   });
   log.debug({ clients: clients.size }, "deildu content refresh broadcast");
+  for (const client of clients) client.send(payload);
+};
+const broadcastPodcastContentRefresh = () => {
+  const payload = JSON.stringify({
+    type: "content-refresh",
+    resource: "podcasts",
+  });
   for (const client of clients) client.send(payload);
 };
 
@@ -430,6 +442,45 @@ function playRuvEpisode(id: string) {
     resumeAt > 0
       ? `Halda áfram: ${episode.programTitle}`
       : `Spila ${episode.programTitle}`;
+  broadcast();
+  return true;
+}
+
+function playPodcastEpisode(id: string) {
+  const episode = getPodcastEpisode(id);
+  if (!episode) return false;
+  const podcast = listPodcasts().find((item) => item.id === episode.podcastId);
+  if (!podcast) return false;
+  state.previousView = state.view;
+  state.view = "podcasts";
+  state.playing = true;
+  state.media = {
+    id: `podcast-${episode.id}`,
+    kind: "podcast",
+    title: episode.title,
+    subtitle: podcast.title,
+    source: podcast.author || "Hlaðvarp",
+    src: episode.audioUrl,
+    artwork: episode.artworkUrl || podcast.imageUrl,
+    live: false,
+    currentTime: 0,
+    duration: episode.duration,
+    playbackRate: 1,
+    subtitleTrack: "Slökkt",
+    audioTrack: "Aðalhljóð",
+    subtitles: [],
+    textTracks: [],
+    audioTracks: ["Aðalhljóð"],
+    epg: [],
+    panel: null,
+    fullscreen: false,
+    favorite: false,
+    status: "loading",
+    engine: "mpv",
+  };
+  upsertMedia(state.media);
+  recordPlayback(state.media);
+  state.lastAction = `Spila ${episode.title}`;
   broadcast();
   return true;
 }
@@ -1292,6 +1343,7 @@ const server = Bun.serve<WebSocketData>({
           golfPerson: golfbox?.person ?? "",
           golfBookings: golfbox?.bookings ?? [],
           torrentMovies: listTorrentMedia(),
+          podcasts: listPodcasts(),
           deilduCategories,
           deilduItems: deildu.items,
 			deilduShows,
@@ -1469,6 +1521,10 @@ const server = Bun.serve<WebSocketData>({
       }
       if (message.action === "ruv-episode") {
         playRuvEpisode(message.value);
+        return;
+      }
+      if (message.action === "podcast-play") {
+        playPodcastEpisode(message.value);
         return;
       }
       if (message.action === "torrent-media") {
@@ -1744,6 +1800,18 @@ reconcileStreams();
 // station/channel (torrents are intentionally cleared on startup instead).
 if (state.playing && state.media.live && state.media.src) state.media.engine = "mpv";
 
+const runPodcastsIfDue = () => {
+  void syncPodcastsIfDue().then((changed) => {
+    if (changed) broadcastPodcastContentRefresh();
+  });
+};
+runPodcastsIfDue();
+const podcastSyncTimer = setInterval(
+  runPodcastsIfDue,
+  config.podcastSyncIntervalMs,
+);
+podcastSyncTimer.unref();
+
 const runDeilduIfDue = () => {
   if (
     scrapeState.running ||
@@ -1819,6 +1887,7 @@ function shutdown() {
   clearTimeout(publicTorrentStartTimer);
   clearInterval(publicTorrentSyncTimer);
   clearInterval(staleClientTimer);
+  clearInterval(podcastSyncTimer);
   if (golfboxStartTimer) clearTimeout(golfboxStartTimer);
   if (golfboxSyncTimer) clearInterval(golfboxSyncTimer);
   ruvScheduler.stop();

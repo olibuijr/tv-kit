@@ -793,6 +793,7 @@ export function dashboardContent(): Omit<
 	| "deilduShow"
 	| "deilduPagination"
 	| "deilduScrape"
+	| "podcasts"
 	| "golfTeeTimes"
 	| "golfPerson"
 	| "golfBookings"

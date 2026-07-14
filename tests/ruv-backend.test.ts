@@ -307,7 +307,7 @@ test("scheduled GolfBox task runs the script and persists validated bookings", a
 
 test("empty database applies ordered migrations and idempotent state seed", () => {
 	expect(database.schemaVersions()).toEqual([
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
 	]);
 	expect(
 		(
@@ -1292,6 +1292,27 @@ test("program-favorite command parses like other integer commands", () => {
 	).toMatchObject({ action: "torrent-media", value: "big-buck-bunny" });
 });
 
+test("podcast commands accept episode ids and reject inherited view keys", () => {
+	expect(
+		parseCommandMessage({
+			type: "command",
+			action: "podcast-play",
+			value: "i-ljosi-sogunnar-357",
+		}),
+	).toMatchObject({
+		action: "podcast-play",
+		value: "i-ljosi-sogunnar-357",
+	});
+	expect(
+		parseCommandMessage({
+			type: "command",
+			action: "view",
+			value: "toString",
+		}),
+	).toBeNull();
+});
+
+
 test("news reader commands validate article ids and scroll progress", () => {
 	for (const value of [0, 0.5, 1])
 		expect(
@@ -1331,6 +1352,12 @@ test("shared state normalization carries program favourites", () => {
 	expect(normalized.tvFavorites).toEqual(["ruv"]);
 	expect(normalized.deilduCategoryId).toBe(0);
 	expect(normalized.newsArticleId).toBe(0);
+	const inheritedView = normalizeHomeState(
+		{ view: "toString", previousView: "constructor" },
+		{ radio: [], tv: [], programs: [] },
+	);
+	expect(inheritedView.view).toBe("home");
+	expect(inheritedView.previousView).toBe("home");
 });
 
 test("torrent playback cannot autoplay a stale source after startup", () => {

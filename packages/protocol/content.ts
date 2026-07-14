@@ -42,6 +42,7 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 		completedPages: 0,
 		totalPages: 0,
 	},
+	podcasts: [],
 	news: [],
 	continueWatching: [],
 	myList: [],
@@ -81,6 +82,7 @@ export async function fetchDashboardContent(
 		deilduPagination:
 			content.deilduPagination ?? EMPTY_DASHBOARD_CONTENT.deilduPagination,
 		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,
+		podcasts: content.podcasts ?? [],
 	};
 }
 

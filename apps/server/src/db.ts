@@ -549,6 +549,48 @@ const migrations = [
       ON public_torrent_scrape_runs(started_at DESC);
   `,
 	},
+	{
+		version: 18,
+		sql: `
+    CREATE TABLE podcast_feeds (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      author TEXT NOT NULL DEFAULT '',
+      image_url TEXT NOT NULL DEFAULT '',
+      feed_url TEXT NOT NULL UNIQUE,
+      position INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      last_synced_at INTEGER,
+      sync_error TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE podcast_episodes (
+      id TEXT PRIMARY KEY,
+      podcast_id TEXT NOT NULL REFERENCES podcast_feeds(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      audio_url TEXT NOT NULL,
+      published_at INTEGER NOT NULL,
+      duration INTEGER NOT NULL DEFAULT 0,
+      episode_number INTEGER,
+      artwork_url TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX podcast_episodes_recent
+      ON podcast_episodes(podcast_id, published_at DESC);
+    INSERT INTO podcast_feeds (
+      id, title, description, author, image_url, feed_url, position
+    ) VALUES (
+      'i-ljosi-sogunnar',
+      'Í ljósi sögunnar',
+      'Atburðir og málefni líðandi stundar skoðuð í ljósi sögunnar.',
+      'RÚV',
+      '',
+      'https://www.ruv.is/rss/hladvarp/i-ljosi-sogunnar',
+      0
+    );
+  `,
+	},
 ];
 
 db.exec(

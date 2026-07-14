@@ -23,6 +23,7 @@
   import Plus from "lucide-svelte/icons/plus";
   import Power from "lucide-svelte/icons/power";
   import Radio from "lucide-svelte/icons/radio";
+  import Podcast from "lucide-svelte/icons/podcast";
   import RadioTower from "lucide-svelte/icons/radio-tower";
   import RotateCcw from "lucide-svelte/icons/rotate-ccw";
   import Search from "lucide-svelte/icons/search";
@@ -40,8 +41,9 @@
   import { articleImages, articleParagraphs, deriveRuvNow, EMPTY_DASHBOARD_CONTENT, eventProgress, fetchDashboardContent, fetchNewsArticle, formatClock, formatDate, formatDuration, formatTime, interpolateMediaTime, relativeTime } from "../../../packages/protocol/content";
   import DeilduPage from "./DeilduPage.svelte";
   import AgentChatPage from "./AgentChatPage.svelte";
+  import PodcastPage from "./PodcastPage.svelte";
 
-  type Tab = "Heim" | "Útvarp" | "Deildu" | "Sarpur" | "Fréttir" | "Spjall";
+  type Tab = "Heim" | "Útvarp" | "Hlaðvörp" | "Deildu" | "Sarpur" | "Fréttir" | "Spjall";
   let state: HomeState | undefined;
   let connected = false;
   let socket: WebSocket;
@@ -102,7 +104,7 @@
       log.debug({ action, readyState: socket.readyState }, "ws command sent");
       socket.send(JSON.stringify({ type: "command", action, value, label }));
     } else log.warn({ action, readyState: socket?.readyState }, "ws command skipped while disconnected");
-    if (label) { feedback = label; window.setTimeout(() => feedback = "", 1_100); }
+    if (label) { feedback = label; window.setTimeout(() => feedback = "", 3_000); }
   }
   async function fetchPersonDetail() {
     if (personDetail) return;
@@ -134,7 +136,7 @@
     activeTab = tab;
     void loadNewsArticle(0);
     window.scrollTo(0, 0);
-    const view = tab === "Útvarp" ? "radio" : tab === "Deildu" ? "deildu" : tab === "Sarpur" ? "media" : tab === "Fréttir" ? "news" : tab === "Heim" ? "home" : "tv";
+    const view = tab === "Útvarp" ? "radio" : tab === "Hlaðvörp" ? "podcasts" : tab === "Deildu" ? "deildu" : tab === "Sarpur" ? "media" : tab === "Fréttir" ? "news" : tab === "Heim" ? "home" : "tv";
     if (tab !== "Spjall") command("view", view, tab);
     if (tab === "Fréttir") command("news-scroll", 0);
     if (tab === "Deildu") void refreshContent();
@@ -267,8 +269,8 @@
           state = message.state;
 			if (activeTab === "Deildu" && (changedAction || state.deilduCategoryId !== previousCategoryId || state.deilduShowId !== previousShowId)) void refreshContent();
           if (activeTab === "Fréttir" && state.newsArticleId !== selectedNewsArticleId) void loadNewsArticle(state.newsArticleId);
-        } else if (message.type === "content-refresh" && message.resource === "deildu") {
-          log.debug("deildu scan completed; refreshing content");
+        } else if (message.type === "content-refresh" && (message.resource === "deildu" || message.resource === "podcasts")) {
+          log.debug({ resource: message.resource }, "catalog refreshed");
           void refreshContent();
         }
       };
@@ -332,6 +334,8 @@
       <section class="home-facts"><article><Clock size={20}/><div><span>Klukkan</span><strong>{formatClock(now)}</strong><small>{formatDate(now)}</small></div></article>{#if solar}<article><Sunrise size={20}/><div><span>Dagsbirta</span><strong>{new Date(solar.sunrise*1000).toLocaleTimeString("is-IS",{hour:"2-digit",minute:"2-digit"})} → {new Date(solar.sunset*1000).toLocaleTimeString("is-IS",{hour:"2-digit",minute:"2-digit"})}</strong><small>{solar.location}</small></div></article>{/if}<article><RadioTower size={20}/><div><span>Útvarp</span><strong>{stations.length} stöðvar</strong><small>Veldu í fjarstýringunni</small></div></article></section>
     {:else if activeTab === "Útvarp"}
       <section class="radio-browser panel"><div class="panel-heading"><div><RadioTower size={20}/><h2>Íslenskt útvarp</h2></div><span>{stations.length} stöðvar</span></div>{#if favouriteStations.length}<h3><Heart size={15} fill="currentColor"/> Uppáhaldsstöðvar</h3><div class="radio-grid">{#each favouriteStations as station (station.id)}<article in:receive={{key:station.id}} out:send={{key:station.id}} animate:flip={{duration:320}}><button class="tune" on:click={() => selectStation(station)}>{#if station.logoUrl}<img src={station.logoUrl} alt=""/>{/if}<span><strong>{station.name}</strong><small>{station.terrestrial?`${station.frequency.toFixed(1)} FM`:"Á netinu"}</small></span></button><button class="heart" aria-label={`Fjarlægja ${station.name} úr uppáhaldi`} on:click={() => toggleStation(station)}><Heart size={17} fill="currentColor"/></button></article>{/each}</div>{/if}<h3><RadioTower size={15}/> Allar stöðvar</h3><div class="radio-grid">{#each otherStations as station (station.id)}<article in:receive={{key:station.id}} out:send={{key:station.id}} animate:flip={{duration:320}}><button class="tune" on:click={() => selectStation(station)}>{#if station.logoUrl}<img src={station.logoUrl} alt=""/>{/if}<span><strong>{station.name}</strong><small>{station.terrestrial?`${station.frequency.toFixed(1)} FM`:"Á netinu"}</small></span></button><button class="heart" aria-label={`Setja ${station.name} í uppáhald`} on:click={() => toggleStation(station)}><Heart size={17}/></button></article>{/each}</div></section>
+    {:else if activeTab === "Hlaðvörp"}
+      <PodcastPage podcasts={content.podcasts} activeMediaId={state.media.id} {command}/>
     {:else if activeTab === "Deildu"}
 		<DeilduPage categories={content.deilduCategories} items={content.deilduItems} shows={content.deilduShows} show={content.deilduShow} pagination={content.deilduPagination} scrape={content.deilduScrape} selectedCategoryId={state.deilduCategoryId} loading={deilduLoading} loadPage={(page) => void refreshContent(page, true)} {command}/>
     {:else if activeTab === "Spjall"}
@@ -352,9 +356,9 @@
     {/if}
   </main>
 
-  <nav aria-label="Aðalvalmynd">{#each [{name:"Heim",icon:Home},{name:"Útvarp",icon:RadioTower},{name:"Deildu",icon:Film},{name:"Sarpur",icon:Tv},{name:"Fréttir",icon:Newspaper},{name:"Spjall",icon:MessageCircle}] as tab}<button class:active={activeTab===tab.name} on:click={() => openTab(tab.name as Tab)}><svelte:component this={tab.icon} size={20}/><span>{tab.name}</span></button>{/each}</nav>
+  <nav aria-label="Aðalvalmynd">{#each [{name:"Heim",icon:Home},{name:"Útvarp",icon:RadioTower},{name:"Hlaðvörp",icon:Podcast},{name:"Deildu",icon:Film},{name:"Sarpur",icon:Tv},{name:"Fréttir",icon:Newspaper},{name:"Spjall",icon:MessageCircle}] as tab}<button class:active={activeTab===tab.name} on:click={() => openTab(tab.name as Tab)}><svelte:component this={tab.icon} size={20}/><span>{tab.name}</span></button>{/each}</nav>
   <ScheduledTaskNotice />
-  {#if feedback}<div class="toast" aria-live="polite">{feedback}</div>{/if}
+  {#if feedback}<div class="toast" role="status" aria-live="polite"><span>{feedback}</span><button aria-label="Loka tilkynningu" on:click={() => feedback = ""}>×</button></div>{/if}
 </div>
 {:else}<div class="loading"><Home size={34}/><strong>Tengist tvserverd…</strong></div>{/if}
 
@@ -374,7 +378,7 @@
   .rail-title{padding:12px 14px 0;margin:0;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--primary)}.rail{padding:10px;display:flex;gap:9px;overflow-x:auto;scrollbar-width:thin}.rail>button{flex:0 0 auto;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--raised);text-align:left;padding:0}.continue-card{position:relative;width:196px;min-height:118px;display:flex;flex-direction:column}.continue-card img{width:100%;height:70px;object-fit:cover}.continue-card > :global(svg){width:100%;height:70px;padding:22px}.continue-card span{padding:7px 8px 10px;display:flex;min-width:0;flex-direction:column}.continue-card strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.continue-card small{font-size:8px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.continue-card i{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--border)}.continue-card i b{display:block;height:100%;background:var(--primary)}.list-card{width:120px;min-height:112px;display:flex;flex-direction:column}.list-card img{width:100%;height:76px;object-fit:cover}.list-card > :global(svg){width:100%;height:76px;padding:24px}.list-card span{padding:7px 8px;display:flex;min-width:0;flex-direction:column;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.list-card small{font-size:8px;color:var(--muted);margin-top:2px}.list-card:disabled{opacity:.5;cursor:not-allowed}.detail-head{display:flex;align-items:center;justify-content:space-between}.list-toggle{height:42px;padding:0 13px;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:9px;background:var(--raised);font-size:10px}.list-toggle.active{border-color:var(--primary);color:var(--primary)}.ep-progress{display:block;width:130px;height:3px;background:var(--border);margin-top:5px}.ep-progress b{display:block;height:100%;background:var(--primary)}
   .program-browser .panel-heading label{height:36px;padding:0 9px;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:8px;background:var(--raised)}.program-browser input{width:170px;border:0;outline:0;background:none;font-size:10px}.program-grid{padding:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.program-grid>button{min-height:142px;padding:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--raised);text-align:left}.program-grid img{width:100%;height:90px;object-fit:cover}.program-grid>button > :global(svg){width:100%;height:90px;padding:30px}.program-grid button span{padding:8px;display:flex;flex-direction:column}.program-grid strong{font-size:11px}.program-grid small{font-size:8px;color:var(--muted);margin-top:3px}.program-detail{padding:14px}.program-detail .back{height:42px;border:0;background:none;color:var(--primary);display:flex;align-items:center}.program-detail h2{font-size:24px}.program-detail>p{font-size:11px;color:var(--muted);line-height:1.5}.episode-list article{min-height:70px;display:grid;grid-template-columns:90px 1fr 46px;align-items:center;gap:10px;border-top:1px solid var(--border)}.episode-list img{width:90px;height:58px;object-fit:cover}.episode-list article div{display:flex;flex-direction:column}.episode-list strong{font-size:11px}.episode-list span{font-size:9px;color:var(--muted)}.episode-list button{width:44px;height:44px;border:0;border-radius:9px;background:var(--raised);display:grid;place-items:center}
   .section-head{height:58px;display:flex;align-items:center;justify-content:space-between}.section-head>div{display:flex;align-items:center;gap:8px}.section-head h2{margin:0}.section-head span{font-size:10px;color:var(--muted)}.news-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.news-card{width:100%;padding:0;color:inherit;text-align:left}.news-card>img,.news-placeholder{width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;background:var(--raised)}.news-placeholder{display:grid;place-items:center}.news-card>div:last-child{padding:11px;display:flex;flex-direction:column}.news-grid span,.news-grid time{font-size:var(--type-body);color:var(--primary)}.news-grid strong{font-size:var(--type-title);line-height:1.3;margin:4px 0}.news-grid p{font-size:var(--type-section);color:var(--muted);line-height:1.4}.reader-toolbar{height:58px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}.reader-toolbar button{height:44px;padding:0;border:0;background:none;display:flex;align-items:center;gap:5px;color:var(--primary)}.reader-toolbar span,.reader-meta{font-size:var(--type-body);color:var(--primary)}.reader-copy,.reader-body{padding:18px}.reader-meta{display:flex;justify-content:space-between;gap:12px}.reader-copy h2{font-size:var(--type-title);line-height:1.15;margin:10px 0}.reader-lead{font-size:var(--type-section);line-height:1.45;color:var(--muted)}.news-reader article>img{width:100%;max-height:60vh;aspect-ratio:16/9;object-fit:contain;background:var(--raised)}.reader-body{max-width:850px;margin:auto}.reader-body p{font-size:var(--type-reading);line-height:1.65;margin:0 0 1.15em}.reader-body img{display:block;width:100%;height:auto;margin:24px 0;border-radius:12px;background:var(--raised);object-fit:contain}.news-reader footer{padding:0 18px 24px;color:var(--muted);font-size:var(--type-body)}.empty,.loading{min-height:170px;display:grid;place-items:center;color:var(--muted)}
-  nav{height:76px;padding-bottom:env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;justify-content:center;background:var(--header);border-top:1px solid var(--border);box-shadow:0 -8px 22px oklch(0 0 0/.22)}nav button{width:120px;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:9px}nav button.active{color:var(--primary)}.toast{position:fixed;bottom:88px;left:50%;z-index:40;transform:translateX(-50%);padding:10px 15px;border-radius:99px;background:oklch(.92 0 0);color:oklch(.16 0 0);font-size:11px;font-weight:700}.loading{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;gap:8px}button:focus-visible,input:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+  nav{height:76px;padding-bottom:env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;justify-content:center;background:var(--header);border-top:1px solid var(--border);box-shadow:0 -8px 22px oklch(0 0 0/.22)}nav button{width:120px;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:9px}nav button.active{color:var(--primary)}.toast{position:fixed;right:16px;bottom:88px;z-index:40;max-width:min(360px,calc(100vw - 32px));padding:10px 10px 10px 15px;border-radius:12px;background:oklch(.92 0 0);color:oklch(.16 0 0);font-size:11px;font-weight:700;display:flex;align-items:center;gap:10px;box-shadow:var(--shadow-card)}.toast button{width:28px;height:28px;border:0;border-radius:8px;background:oklch(.82 0 0);color:inherit}.loading{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;gap:8px}button:focus-visible,input:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
   @media(max-width:760px){header{padding-inline:12px;grid-template-columns:1fr auto 46px}header time{display:none}.connection{font-size:0}.connection :global(svg){display:block}.now-playing{left:8px;right:8px;padding:7px 9px;grid-template-columns:54px minmax(0,1fr) auto;gap:8px}.poster{width:54px;height:46px}.track h1{font-size:14px}.track p,.timeline,.times,.track>span{display:none}.transport{gap:3px}.transport button{width:36px;height:36px}.transport .primary{width:40px;height:40px}.transport button:first-child,.transport button:nth-child(3){display:none}.media-tools{grid-template-columns:repeat(3,1fr)}.player-details{bottom:calc(144px + env(safe-area-inset-bottom))}.live-grid,.remote-grid,.news-grid,.home-facts{grid-template-columns:1fr}.tee-grid{grid-template-columns:repeat(3,1fr)}.radio-grid,.program-grid,.home-program-grid{grid-template-columns:repeat(2,1fr)}nav button{width:auto;flex:1}.controls{grid-template-columns:62px 1fr 62px}.rocker{height:170px}}
   @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>

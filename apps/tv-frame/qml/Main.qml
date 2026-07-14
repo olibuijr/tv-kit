@@ -23,9 +23,9 @@ ApplicationWindow {
     // mpv is embedded as a normal QML item (video) — no separate window, no
     // window-manager stacking. "Video active" just means the menu chrome
     // (declared below, later = on top) should hide so the video shows.
-    readonly property bool videoActive: media.engine === "mpv"
-        && media.kind !== "radio" && media.kind !== "music"
-        && Boolean(media.src)
+    readonly property bool mpvActive: media.engine === "mpv" && Boolean(media.src)
+    readonly property bool videoActive: mpvActive
+        && media.kind !== "radio" && media.kind !== "music" && media.kind !== "podcast"
     property real now: Date.now()
 
     // Auto-hide HUD and cursor after 5s of no media changes.
@@ -120,7 +120,7 @@ ApplicationWindow {
             root._prevPlaying = curPlaying
 
             const src = root.media.src || ""
-            if (root.videoActive) {
+            if (root.mpvActive) {
                 if (src !== root.lastLoadedSrc) {
                     root.lastLoadedSrc = src
                     video.loadSource(src)
@@ -201,7 +201,7 @@ ApplicationWindow {
                 spacing: 26
                 Text { text: "TV KIT"; color: Theme.primary; font.pixelSize: 26; font.bold: true; font.letterSpacing: 3 }
                 Text {
-                    text: ({home:"Heim", tv:"Sjónvarp", radio:"Útvarp", media:"Sarpurinn", deildu:"Deildu", news:"Fréttir"})[root.view] || "TV Kit"
+                    text: ({home:"Heim", tv:"Sjónvarp", radio:"Útvarp", podcasts:"Hlaðvörp", media:"Sarpurinn", deildu:"Deildu", news:"Fréttir"})[root.view] || "TV Kit"
                     color: Theme.ink; font.pixelSize: 34; font.bold: true
                     Layout.fillWidth: true
                 }
@@ -237,11 +237,12 @@ ApplicationWindow {
             Layout.rightMargin: Theme.marginX
             Layout.topMargin: 18
             Layout.bottomMargin: 12
-            currentIndex: Math.max(0, ["home", "tv", "radio", "media", "deildu", "news"].indexOf(root.view))
+            currentIndex: Math.max(0, ["home", "tv", "radio", "podcasts", "media", "deildu", "news"].indexOf(root.view))
 
             HomeView { state: root.state; content: root.content; now: root.now }
             TvView { state: root.state; content: root.content; now: root.now }
             RadioView { state: root.state; stations: frame.stations }
+            PodcastView { state: root.state; content: root.content }
             MediaView { state: root.state; content: root.content }
             DeilduView { state: root.state; content: root.content }
             NewsView { state: root.state; content: root.content; article: frame.article; now: root.now }

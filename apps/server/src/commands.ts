@@ -2,7 +2,7 @@ import type { Command, View } from "../../../packages/protocol";
 
 export type ParsedCommand = Command & { label?: string };
 
-const views = new Set<View>(["home", "tv", "radio", "media", "deildu", "news"]);
+const views: Record<View, true> = { home: true, tv: true, radio: true, podcasts: true, media: true, deildu: true, news: true };
 const noValueActions = new Set([
 	"toggle-play",
 	"stop-playback",
@@ -157,7 +157,7 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 	if (
 		action === "view" &&
 		typeof candidate.value === "string" &&
-		views.has(candidate.value as View)
+		Object.hasOwn(views, candidate.value)
 	) {
 		return {
 			type: "command",
@@ -235,7 +235,8 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 	if (
 		(action === "ruv-episode" ||
 			action === "torrent-media" ||
-			action === "public-torrent-play") &&
+			action === "public-torrent-play" ||
+			action === "podcast-play") &&
 		typeof candidate.value === "string" &&
 		/^[a-zA-Z0-9_-]{1,64}$/.test(candidate.value)
 	) {

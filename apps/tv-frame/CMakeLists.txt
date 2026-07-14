@@ -34,6 +34,7 @@ qt_add_qml_module(tv-frame
         qml/HomeView.qml
         qml/TvView.qml
         qml/RadioView.qml
+        qml/PodcastView.qml
         qml/MediaView.qml
         qml/DeilduView.qml
         qml/NewsView.qml

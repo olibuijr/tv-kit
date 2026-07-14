@@ -1,4 +1,4 @@
-export type View = "home" | "tv" | "radio" | "media" | "deildu" | "news";
+export type View = "home" | "tv" | "radio" | "podcasts" | "media" | "deildu" | "news";
 export type MediaKind =
 	| "radio"
 	| "music"
@@ -300,6 +300,29 @@ export type DeilduPagination = {
 	totalPages: number;
 };
 
+export type PodcastEpisode = {
+	id: string;
+	podcastId: string;
+	title: string;
+	description: string;
+	audioUrl: string;
+	publishedAt: number;
+	duration: number;
+	episodeNumber: number | null;
+	artworkUrl: string;
+};
+
+export type PodcastSeries = {
+	id: string;
+	title: string;
+	description: string;
+	author: string;
+	imageUrl: string;
+	feedUrl: string;
+	position: number;
+	episodes: PodcastEpisode[];
+};
+
 export type GolfBooking = { date: string; time: string; name: string };
 
 export type GolfRound = {
@@ -358,6 +381,7 @@ export type DashboardContent = {
 	deilduShow: DeilduShow | null;
 	deilduPagination: DeilduPagination;
 	deilduScrape: DeilduScrapeState;
+	podcasts: PodcastSeries[];
 	news: RuvNewsArticle[];
 	continueWatching: ContinueWatchingItem[];
 	myList: RuvProgram[];
@@ -441,7 +465,8 @@ export type Command =
 				| "ruv-episode"
 				| "torrent-media"
 				| "public-torrent-play"
-				| "tv-favorite";
+				| "tv-favorite"
+				| "podcast-play";
 			value: string;
 	  }
 	| { type: "command"; action: "deildu-show"; value: string }

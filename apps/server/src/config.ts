@@ -159,6 +159,23 @@ export const config = Object.freeze({
 	radioSyncIntervalMs: number("RADIO_SYNC_INTERVAL_MS"),
 	radioStreamTimeoutMs: number("RADIO_STREAM_TIMEOUT_MS", 1_000, 120_000),
 	radioScrapeConcurrency: number("RADIO_SCRAPE_CONCURRENCY", 1, 32),
+	podcastSyncIntervalMs: optionalNumber(
+		"PODCAST_SYNC_INTERVAL_MS",
+		3_600_000,
+		60_000,
+	),
+	podcastFetchTimeoutMs: optionalNumber(
+		"PODCAST_FETCH_TIMEOUT_MS",
+		20_000,
+		1_000,
+		120_000,
+	),
+	podcastEpisodeLimit: optionalNumber(
+		"PODCAST_EPISODE_LIMIT",
+		50,
+		1,
+		500,
+	),
 	solarApiUrl: required("SOLAR_API_URL"),
 	solarCacheMs: number("SOLAR_CACHE_MS"),
 	golfCoursesUrl: required("GOLF_TEE_TIMES_URL"),

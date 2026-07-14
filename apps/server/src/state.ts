@@ -7,7 +7,15 @@ import type {
 	View,
 } from "../../../packages/protocol";
 
-const views = new Set<View>(["home", "tv", "radio", "media", "deildu", "news"]);
+const views: Record<View, true> = {
+	home: true,
+	tv: true,
+	radio: true,
+	podcasts: true,
+	media: true,
+	deildu: true,
+	news: true,
+};
 const kinds = new Set<MediaKind>([
 	"radio",
 	"music",
@@ -247,12 +255,12 @@ export function normalizeHomeState(
 			: {}),
 	};
 	const view =
-		typeof source.view === "string" && views.has(source.view as View)
+		typeof source.view === "string" && Object.hasOwn(views, source.view)
 			? (source.view as View)
 			: fallback.view;
 	const previousView =
 		typeof source.previousView === "string" &&
-		views.has(source.previousView as View)
+		Object.hasOwn(views, source.previousView)
 			? (source.previousView as View)
 			: fallback.previousView;
 	const rawCast =
