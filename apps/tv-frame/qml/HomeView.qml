@@ -36,12 +36,6 @@ Item {
                 color: view.media.ambient ? "transparent" : Theme.surface
                 border { color: view.media.ambient ? "transparent" : Theme.border; width: 1 }
                 clip: true
-                Image {
-                    anchors.fill: parent
-                    source: view.mediaActive ? (view.media.artwork || "") : ""
-                    fillMode: Image.PreserveAspectCrop
-                    visible: status === Image.Ready && !view.media.ambient
-                }
                 Rectangle {
                     anchors.fill: parent
                     gradient: Gradient {
@@ -141,6 +135,13 @@ Item {
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
+                Image {
+                    anchors.fill: parent
+                    source: view.mediaActive && view.media.live ? (view.media.artwork || "") : ""
+                    fillMode: Image.PreserveAspectCrop
+                    opacity: 0.34
+                    visible: status === Image.Ready
+                }
                 Column {
                     anchors.fill: parent
                     anchors.margins: 20
