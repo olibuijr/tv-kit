@@ -564,23 +564,36 @@ kit_frame_test() {
   ctest --test-dir "$kit_frame_build_dir" --output-on-failure
 }
 
-kit_frame_health() {
-  (($# == 0)) || { echo 'tvctl: kit frame health accepts no arguments' >&2; return 64; }
+kit_frame_health_since() {
+  local minimum_timestamp=$1 wait_ms=$2
+  [[ $minimum_timestamp =~ ^[0-9]+$ && $wait_ms =~ ^[0-9]+$ ]] || { echo 'tvctl: invalid internal frame health timing' >&2; return 64; }
   kit_systemctl 'is-active --quiet tv-frame.service'
-  remote "test -s ~/$kit_home/frame-health.json && ~/.bun/bin/bun -e 'const state=JSON.parse(await Bun.file(process.argv[1]).text()); if(!state.connected || !state.updatedAt || !state.lastMessageAt || Date.now()-state.updatedAt>30000 || Date.now()-state.lastMessageAt>30000) process.exit(1); console.log(JSON.stringify(state));' ~/$kit_home/frame-health.json"
+  remote "~/.bun/bin/bun ~/$kit_remote_dir/tools/frame-health-check.ts ~/$kit_home/frame-health.json $minimum_timestamp $wait_ms"
 }
 
-kit_frame_verify() {
-  (($# <= 1)) || { echo 'tvctl: kit frame verify accepts at most one screenshot path' >&2; return 64; }
-  kit_frame_health
-  local output=${1:-"$PWD/tv-frame-verify-$(date -u +%Y%m%d-%H%M%S).png"}
+kit_frame_health() {
+  (($# == 0)) || { echo 'tvctl: kit frame health accepts no arguments' >&2; return 64; }
+  kit_frame_health_since 0 0
+}
+
+kit_frame_verify_since() {
+  local minimum_timestamp=$1 output=${2:-"$PWD/tv-frame-verify-$(date -u +%Y%m%d-%H%M%S).png"} wait_ms=0
+  ((minimum_timestamp > 0)) && wait_ms=20000
+  kit_frame_health_since "$minimum_timestamp" "$wait_ms"
   "$0" screenshot "$output" >/dev/null
   [[ -s $output ]] || { echo "tvctl: native-frame screenshot is empty: $output" >&2; return 1; }
   printf 'native-frame visual confirmation: %s\n' "$output"
 }
 
+kit_frame_verify() {
+  (($# <= 1)) || { echo 'tvctl: kit frame verify accepts at most one screenshot path' >&2; return 64; }
+  kit_frame_verify_since 0 "${1:-}"
+}
+
 kit_frame_deploy() {
   (($# <= 1)) || { echo 'tvctl: kit frame deploy accepts at most one message' >&2; return 64; }
+  local deploy_started_at
+  deploy_started_at=$(date +%s%3N)
   echo '== stop orphaned players'
   kit_orphan_cleanup
   echo "== sync source -> $target:$kit_remote_dir"
@@ -596,7 +609,7 @@ kit_frame_deploy() {
   echo '== switch display client'
   kit_systemctl 'daemon-reload'
   kit_systemctl "enable --now ${kit_enable[*]}"
-  kit_frame_verify
+  kit_frame_verify_since "$deploy_started_at"
   (kit_archive "${1:-Deploy native TV Frame}" >>/tmp/tv-kit-archive.log 2>&1 && echo "archive ok $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log || echo "archive FAILED $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log) &
   disown
 }

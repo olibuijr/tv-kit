@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
+import { validateFrameHealth } from "../tools/frame-health-check";
 
 const root = join(import.meta.dir, "..");
 const tvctl = join(root, "tools/tvctl");
@@ -47,3 +48,18 @@ test("tvctl rejects unknown Titan test log targets", () => {
 		"service must be server or remote",
 	);
 });
+
+test("frame health distinguishes old-process evidence from restarted-frame health", () => {
+	expect(() => validateFrameHealth({
+		connected: true,
+		updatedAt: 1_999,
+		lastMessageAt: 2_001,
+	}, 2_000, 2_001)).toThrow("updatedAt predates this deployment");
+	expect(validateFrameHealth({
+		connected: true,
+		updatedAt: 2_001,
+		lastMessageAt: 2_002,
+		view: "home",
+	}, 2_000, 2_002).view).toBe("home");
+});
+

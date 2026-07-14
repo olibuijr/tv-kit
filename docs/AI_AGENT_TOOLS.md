@@ -149,15 +149,15 @@ tracked torrent still finds peers without a router port forward. Verify with
 `engine:"mpv"`, advancing `currentTime`, and a `tvctl screenshot`; never retry a
 failed hash automatically.
 
-Successful normal torrent verification requires `engine:"mpv"`, one on-demand mpv process, advancing `currentTime`, and real video pixels. Browser torrent playback is gated by `BROWSER_TORRENT_PLAYBACK_ENABLED` and is off by default; do not count it as the normal success path. A stationary timestamp is a failure. `tvctl kit setup` installs mpv; service restart/deploy cleanup removes stale player and verifier processes. Torrent state is intentionally stopped and its stale source cleared whenever `tvserverd` starts.
+Successful normal torrent verification requires `engine:"mpv"`, `status:"ready"`, advancing frame-reported `currentTime`, and real video pixels. The player is embedded libmpv inside `tv-frame`; normal mode has no standalone mpv process or browser fallback. A stationary timestamp is a failure. Restart/deploy cleanup removes stale external players, aria2, and playback verifiers. Torrent state is intentionally stopped and its stale source cleared whenever `tvserverd` starts.
 
-Completed torrent files are opened locally by mpv; progressive HTTP range playback is reserved for incomplete streams. Verify hardware decoding, near-zero `avsync`, stable frame-drop counts, and one PipeWire sink when diagnosing 1080p60 choppiness or A/V drift.
+Completed torrent files are opened locally by embedded mpv; progressive HTTP range playback is reserved for incomplete streams. Track labels come from mpv and must be read from `state.media.audioTracks` / `subtitles`, not guessed. For subtitles, require continued position growth after selection and confirm rendered text with a physical screenshot. Diagnose hardware decoding or A/V drift from the frame/libmpv path, not the direct-maintenance IPC socket.
 
 For aria2 multi-file torrents, the incomplete-state file is `<item-dir>/<torrent-name>.aria2`, not `<media-file>.aria2`. File size and a persisted `ready` status are insufficient completion evidence while that top-level control file exists; run an aria2 integrity check before blaming mpv for decoder corruption.
 
-Direct maintenance mpv is out-of-band and must never run beside TV Kit's media services. Keep one systemd-owned process and require `hwdec-current` to report VA-API, `avsync` near zero, stable frame-drop counters, and one PipeWire sink. `Invalid NAL unit size` or similar decoder errors require torrent integrity repair, not more player flags.
+Direct maintenance mpv is out-of-band and must never run beside `tv-frame` playback. Stop frame playback first, keep one systemd-owned direct process, and require `hwdec-current` to report VA-API, `avsync` near zero, stable frame-drop counters, and one PipeWire sink. `Invalid NAL unit size` or similar decoder errors require torrent integrity repair, not more player flags.
 
-Implementation references: [aria2 BitTorrent piece priority](https://aria2.github.io/manual/en/html/aria2c.html#cmdoption-bt-prioritize-piece), [aria2 JSON-RPC status](https://aria2.github.io/manual/en/html/aria2c.html#aria2.tellStatus), [mpv JSON IPC and cache properties](https://mpv.io/manual/stable/#json-ipc), and [RFC 9110 partial content](https://www.rfc-editor.org/rfc/rfc9110.html#name-206-partial-content).
+Implementation references: [aria2 BitTorrent piece priority](https://aria2.github.io/manual/en/html/aria2c.html#cmdoption-bt-prioritize-piece), [aria2 JSON-RPC status](https://aria2.github.io/manual/en/html/aria2c.html#aria2.tellStatus), [mpv cache properties](https://mpv.io/manual/stable/#property-list), and [RFC 9110 partial content](https://www.rfc-editor.org/rfc/rfc9110.html#name-206-partial-content).
 
 ### Verify runtime changes
 
@@ -166,7 +166,7 @@ Implementation references: [aria2 BitTorrent piece priority](https://aria2.githu
 /home/olafurbui/.local/bin/tvctl kit status
 ```
 
-`kit verify` checks enabled/active units, all HTTP endpoints, and WebSocket ping/pong.
+`kit verify` checks enabled/active units, all HTTP endpoints, and WebSocket ping/pong. `kit frame deploy` additionally records its start time and waits for a connected `frame-health.json` whose `updatedAt` and `lastMessageAt` were written after that deployment began; a recent file from the old frame process is not accepted.
 
 ### Verify a Deildu catalog job
 
