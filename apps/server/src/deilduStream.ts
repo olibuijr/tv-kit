@@ -921,11 +921,10 @@ export async function startDeilduPlayback(
 			itemId,
 		);
 	}, (metadata) => selectMediaFile(metadata, item.mediaKind, target));
-	// Stremio-style pre-buffer: don't start mpv until enough contiguous pieces
-	// are verified, so playback doesn't stall after 10-15 seconds on a
-	// thinly-seeded torrent. 80 pieces at 1 MB each = ~60-80 seconds of
-	// buffer at typical 1080p bitrates, giving aria2 time to fetch more.
-	await waitForContiguousPieces(stream, 80, onProgress);
+	// Stremio-style pre-buffer: wait for enough contiguous pieces from the
+	// start so mpv doesn't stall immediately. The head priority is 128 MB
+	// but in practice we get ~16 MB quickly; the rest fills in during playback.
+	await waitForContiguousPieces(stream, 16, onProgress);
 	const src = `${config.serverUrl}/deildu/stream/${itemId}`;
 	return {
 		id: itemId,
