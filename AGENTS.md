@@ -105,11 +105,11 @@
 
 ## Global player and radio UI
 
-- `apps/tv-frame/qml/PlayerHud.qml` is the passive transport strip docked to the bottom edge (full width, top border only, no floating margins or radius). Keep it that way.
+- `apps/tv-frame/qml/PlayerHud.qml` is the passive transport strip docked to the bottom edge (full width, top border only, no floating margins or radius). It remains visible with selected media on menu pages, auto-hides over fullscreen video, and remains visible beneath any open OSD panel.
 - Live-TV OSD copy derives the current programme from DB-backed dashboard content so schedule transitions update without retuning. Deduplicate title/subtitle/source values; a gap should read as the channel plus an honest live-broadcast status, never `RÚV · RÚV` or a missing-data warning.
 - When the user wants uninterrupted viewing during edits, use `tvctl kit fullscreen ruv` (or `ruv2`) and leave it enabled. Retuning resets fullscreen, so the CLI deliberately tunes first and reapplies fullscreen.
 - The frame is render-only: playback state changes come from the tablet remote through `tvserverd` WebSocket commands, including tune/play/pause/stop, seek, volume/mute, playback rate, panels, subtitle/audio selection, favourites, power, and fullscreen.
-- The remote (`apps/remote`) exposes Radio as a first-class bottom-nav tab; radio mode hides the TV remote/favourites/up-next panels and shows the station browser fed by `GET /radio/stations`. The frame's `RadioView` reads the same endpoint through `FrameClient`.
+- The remote (`apps/remote`) exposes dedicated Sjónvarp and Radio bottom-nav pages. Sjónvarp lists DB-backed channels, current/upcoming EPG, favourites, and tune actions; Radio shows the station browser from `GET /radio/stations`. The corresponding frame views read the same server content through `FrameClient`.
 - The radio EPG must stay honest: Spilarinn supplies streams only, so show the live-broadcast placeholder rather than invented programme data.
 
 ## Interaction model
