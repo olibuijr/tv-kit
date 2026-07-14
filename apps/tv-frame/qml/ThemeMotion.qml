@@ -7,4 +7,5 @@ QtObject {
     readonly property int progress: 400
     readonly property int loading: 600
     readonly property int pulse: 900
+    readonly property int newsItemDuration: 9000
 }

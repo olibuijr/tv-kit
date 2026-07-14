@@ -17,4 +17,6 @@ QtObject {
     readonly property int cardGap: 14
     readonly property int panelPadding: 20
     readonly property int heroPadding: 30
+    readonly property int newsItemHeight: 92
+    readonly property int newsThumbnailSize: 72
 }

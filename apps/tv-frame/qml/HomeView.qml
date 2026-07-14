@@ -192,7 +192,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.preferredHeight: 2
+                Layout.preferredHeight: 2.2
                 radius: Theme.radiusHero
                 color: Theme.surface
                 border.color: Theme.border
@@ -252,6 +252,7 @@ Item {
                             }
                         }
                     }
+                    Item { width: 1; height: Theme.cardGap }
                     Text {
                         visible: !view.teeTimes
                         text: "Ekki tiltækt"
@@ -264,7 +265,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.preferredHeight: 4
+                Layout.preferredHeight: 3.8
                 radius: Theme.radiusHero
                 color: Theme.surface
                 border.color: Theme.border
@@ -274,23 +275,71 @@ Item {
                     anchors.margins: 20
                     spacing: 10
                     Text { text: "Fréttir"; color: Theme.ink; font.pixelSize: Theme.fontSection; font.weight: Theme.weightSemibold }
-                    Repeater {
-                        model: view.news.slice(0, 3)
-                        delegate: Column {
-                            required property var modelData
-                            width: parent.width
-                            spacing: 2
-                            Text { text: modelData.categoryTitle || "RÚV"; color: Theme.accent; font.pixelSize: Theme.fontMini; font.weight: Theme.weightSemibold }
-                            Text {
-                                text: modelData.title
-                                color: Theme.ink
-                                font.pixelSize: Theme.fontCallout
-                                width: parent.width
-                                wrapMode: Text.WordWrap
-                                maximumLineCount: 2
-                                elide: Text.ElideRight
+                    Item {
+                        width: parent.width
+                        height: parent.height - y
+                        clip: true
+
+                        ListView {
+                            id: newsTicker
+                            anchors.fill: parent
+                            interactive: false
+                            spacing: Theme.cardGap
+                            model: view.news.length ? view.news.concat(view.news) : []
+
+                            delegate: Item {
+                                required property var modelData
+                                width: newsTicker.width
+                                height: Theme.newsItemHeight
+
+                                Row {
+                                    anchors.fill: parent
+                                    spacing: 12
+
+                                    Rectangle {
+                                        width: Theme.newsThumbnailSize
+                                        height: Theme.newsThumbnailSize
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        radius: Theme.radiusMedia
+                                        color: Theme.mediaBackdrop
+                                        clip: true
+
+                                        Image {
+                                            anchors.fill: parent
+                                            anchors.margins: 2
+                                            source: modelData.mainImageUrl || modelData.image || ""
+                                            fillMode: Image.PreserveAspectFit
+                                            visible: status === Image.Ready
+                                        }
+                                    }
+
+                                    Column {
+                                        width: parent.width - Theme.newsThumbnailSize - 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 2
+                                        Text { text: modelData.categoryTitle || "RÚV"; color: Theme.accent; font.pixelSize: Theme.fontMini; font.weight: Theme.weightSemibold }
+                                        Text {
+                                            text: modelData.title
+                                            color: Theme.ink
+                                            font.pixelSize: Theme.fontCallout
+                                            width: parent.width
+                                            wrapMode: Text.WordWrap
+                                            maximumLineCount: 2
+                                            elide: Text.ElideRight
+                                        }
+                                        Text { text: Theme.relativeTime(modelData.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: Theme.fontMini }
+                                    }
+                                }
                             }
-                            Text { text: Theme.relativeTime(modelData.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: Theme.fontMini }
+
+                            NumberAnimation on contentY {
+                                from: 0
+                                to: view.news.length * (Theme.newsItemHeight + Theme.cardGap)
+                                duration: Math.max(1, view.news.length) * Theme.motionNewsItem
+                                loops: Animation.Infinite
+                                running: view.news.length > 1
+                                easing.type: Easing.Linear
+                            }
                         }
                     }
                 }

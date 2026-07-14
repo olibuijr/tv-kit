@@ -64,6 +64,8 @@ QtObject {
     readonly property int cardGap: metrics.cardGap
     readonly property int panelPadding: metrics.panelPadding
     readonly property int heroPadding: metrics.heroPadding
+    readonly property int newsItemHeight: metrics.newsItemHeight
+    readonly property int newsThumbnailSize: metrics.newsThumbnailSize
 
     readonly property int motionFast: motion.fast
     readonly property int motionNormal: motion.normal
@@ -71,6 +73,7 @@ QtObject {
     readonly property int motionProgress: motion.progress
     readonly property int motionLoading: motion.loading
     readonly property int motionPulse: motion.pulse
+    readonly property int motionNewsItem: motion.newsItemDuration
     readonly property real wallpaperOpacity: wallpaper.opacity
     readonly property real wallpaperScrimOpacity: wallpaper.scrimOpacity
     readonly property int videoTopInset: wallpaper.videoTopInset
