@@ -8,6 +8,7 @@ Item {
     required property real now
 
     readonly property var media: state.media || ({})
+    readonly property bool mediaActive: Boolean(media.src) || media.status === "loading" || media.status === "error"
     readonly property var channels: content.channels || []
     readonly property var programs: content.programs || []
     readonly property var news: content.news || []
@@ -36,7 +37,7 @@ Item {
                 clip: true
                 Image {
                     anchors.fill: parent
-                    source: view.media.artwork || ""
+                    source: view.mediaActive ? (view.media.artwork || "") : ""
                     fillMode: Image.PreserveAspectCrop
                     visible: status === Image.Ready
                 }
@@ -55,7 +56,7 @@ Item {
                     width: parent.width * 0.66
                     spacing: 8
                     Text {
-                        text: view.media.live ? "Í BEINNI" : view.media.title ? "Í SPILUN" : "TV KIT"
+                        text: !view.mediaActive ? "TV KIT" : view.media.status === "error" ? "VILLA" : view.media.status === "loading" ? "HLEÐUR" : view.media.live ? "Í BEINNI" : view.state.playing ? "Í SPILUN" : "VALIÐ EFNI"
                         color: Theme.primary
                         font.pixelSize: 17
                         font.bold: true
@@ -63,7 +64,7 @@ Item {
                     }
                     Text {
                         width: parent.width
-                        text: view.media.title || "Velkomin heim"
+                        text: view.mediaActive ? (view.media.title || "Spilun") : "Velkomin heim"
                         color: Theme.ink
                         font.pixelSize: 44
                         font.bold: true
@@ -73,9 +74,9 @@ Item {
                     }
                     Text {
                         width: parent.width
-                        text: view.media.title
+                        text: view.mediaActive
                             ? [view.media.subtitle, view.media.source].filter(part => part).join(" · ")
-                            : (view.state.lastAction || "Veldu efni á fjarstýringunni")
+                            : "Veldu efni á fjarstýringunni"
                         color: Theme.muted
                         font.pixelSize: 20
                         elide: Text.ElideRight
