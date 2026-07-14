@@ -82,6 +82,7 @@ export async function fetchDashboardContent(
 		deilduShows: content.deilduShows ?? [],
 		deilduShow: content.deilduShow ?? null,
 		deilduPagination:
+			content.deilduPagination ?? EMPTY_DASHBOARD_CONTENT.deilduPagination,
 		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,
 		tmdbToday: content.tmdbToday ?? null,
 		podcasts: content.podcasts ?? [],
