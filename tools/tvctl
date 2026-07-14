@@ -400,6 +400,7 @@ kit_test_clone_db() {
     return 74
   }
   chmod 0600 "$local_snapshot"
+  rm -f "$test_db-wal" "$test_db-shm"
   mv -f "$local_snapshot" "$test_db"
 }
 

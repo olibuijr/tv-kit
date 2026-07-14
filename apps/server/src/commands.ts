@@ -92,7 +92,7 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 			...(label === undefined ? {} : { label }),
 		};
 	if (
-		(action === "deildu-category" || action === "news-article") &&
+		(action === "deildu-category" || action === "news-article" || action === "media-program") &&
 		finiteNumber(candidate.value, 0, Number.MAX_SAFE_INTEGER, true)
 	)
 		return {
@@ -130,6 +130,13 @@ export function parseCommandMessage(raw: unknown): ParsedCommand | null {
 		};
 	}
 	if (action === "news-scroll" && finiteNumber(candidate.value, 0, 1))
+		return {
+			type: "command",
+			action,
+			value: candidate.value as number,
+			...(label === undefined ? {} : { label }),
+		};
+	if (action === "media-buffering" && finiteNumber(candidate.value, 0, 100))
 		return {
 			type: "command",
 			action,

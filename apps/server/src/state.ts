@@ -95,6 +95,7 @@ export function createDefaultState(): HomeState {
 		previousView: "home",
 		deilduCategoryId: 0,
 		deilduShowId: "",
+		mediaProgramId: 0,
 		newsArticleId: 0,
 		power: true,
 		lastAction: "Tilbúið",
@@ -302,6 +303,14 @@ export function normalizeHomeState(
 			),
 		),
 		deilduShowId: string(source.deilduShowId, fallback.deilduShowId, 256),
+		mediaProgramId: Math.round(
+			number(
+				source.mediaProgramId,
+				fallback.mediaProgramId,
+				0,
+				Number.MAX_SAFE_INTEGER,
+			),
+		),
 		newsArticleId: Math.round(
 			number(
 				source.newsArticleId,

@@ -24,7 +24,7 @@ ApplicationWindow {
     // window-manager stacking. "Video active" just means the menu chrome
     // (declared below, later = on top) should hide so the video shows.
     readonly property bool mpvActive: media.engine === "mpv" && Boolean(media.src)
-    readonly property bool videoActive: mpvActive
+    readonly property bool videoActive: mpvActive && media.fullscreen === true
         && media.kind !== "radio" && media.kind !== "music" && media.kind !== "podcast"
     property real now: Date.now()
 
@@ -127,6 +127,7 @@ ApplicationWindow {
             root.lastBufferingSentAt = t
             frame.sendCommand("media-buffering", bufferingPercent)
         }
+        onTrackReportChanged: if (trackReport.source) frame.sendCommand("player-tracks", trackReport)
         onEndOfFile: (reason) => {
             if (reason === "eof") frame.sendCommand("set-playing", false)
         }
@@ -155,7 +156,12 @@ ApplicationWindow {
                     root.lastLoadedSrc = src
                     video.loadSource(src)
                 }
-                video.setPaused(root.state.playing !== true)
+                video.setPaused(root.state.playing !== true || !root.power)
+                video.setVolumePercent(root.state.volume ?? 100)
+                video.setMuted(root.state.muted === true)
+                video.setPlaybackRate(root.media.playbackRate || 1)
+                video.selectSubtitle(root.media.subtitleTrack || "Slökkt")
+                video.selectAudio(root.media.audioTrack || "")
                 const token = root.media.seekToken || 0
                 if (root.lastSeekToken === -1) {
                     root.lastSeekToken = token
@@ -191,6 +197,11 @@ ApplicationWindow {
         blurMax: 64
     }
 
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.bg
+        visible: !root.power
+    }
     // Standby
     Column {
         visible: !root.power

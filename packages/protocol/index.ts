@@ -405,6 +405,7 @@ export type HomeState = {
 	previousView: View;
 	deilduCategoryId: number;
 	deilduShowId: string;
+	mediaProgramId: number;
 	newsArticleId: number;
 	power: boolean;
 	lastAction: string;
@@ -449,6 +450,7 @@ export type Command =
 				| "news-scroll"
 				| "news-article"
 				| "ruv-program"
+				| "media-program"
 				| "program-favorite"
 				| "deildu-play"
 				| "deildu-category";

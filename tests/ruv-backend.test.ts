@@ -166,6 +166,7 @@ const state = (lastAction: string): HomeState => ({
 	previousView: "home",
 	deilduCategoryId: 0,
 	deilduShowId: "",
+	mediaProgramId: 0,
 	newsArticleId: 0,
 	power: true,
 	lastAction,
@@ -1343,6 +1344,7 @@ test("shared state normalization carries program favourites", () => {
 	expect(createDefaultState().programFavorites).toEqual([]);
 	expect(createDefaultState().deilduCategoryId).toBe(0);
 	expect(createDefaultState().newsArticleId).toBe(0);
+	expect(createDefaultState().mediaProgramId).toBe(0);
 	const normalized = normalizeHomeState(
 		{},
 		{ radio: [3], tv: ["ruv"], programs: [5, 2] },
@@ -1352,6 +1354,7 @@ test("shared state normalization carries program favourites", () => {
 	expect(normalized.tvFavorites).toEqual(["ruv"]);
 	expect(normalized.deilduCategoryId).toBe(0);
 	expect(normalized.newsArticleId).toBe(0);
+	expect(normalized.mediaProgramId).toBe(0);
 	const inheritedView = normalizeHomeState(
 		{ view: "toString", previousView: "constructor" },
 		{ radio: [], tv: [], programs: [] },

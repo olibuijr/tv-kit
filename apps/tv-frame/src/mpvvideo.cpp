@@ -1,6 +1,7 @@
 #include "mpvvideo.h"
 
 #include <MpvController>
+#include <QVariantList>
 
 MpvVideo::MpvVideo(QQuickItem *parent)
     : MpvAbstractItem(parent)
@@ -63,6 +64,54 @@ void MpvVideo::onPropertyChanged(const QString &property, const QVariant &value)
 void MpvVideo::onFileLoaded()
 {
     m_restartedSignalled = false;
+    refreshTracks();
+}
+ 
+void MpvVideo::refreshTracks()
+{
+    m_subtitleTrackIds.clear();
+    m_audioTrackIds.clear();
+    m_selectedSubtitle.clear();
+    m_selectedAudio.clear();
+
+    QVariantList subtitles;
+    QStringList audioTracks;
+    const auto tracks = mpvController()->getProperty(QStringLiteral("track-list")).toList();
+    for (const QVariant &value : tracks) {
+        const QVariantMap track = value.toMap();
+        const QString type = track.value(QStringLiteral("type")).toString();
+        const int id = track.value(QStringLiteral("id")).toInt();
+        if (id <= 0 || (type != QStringLiteral("sub") && type != QStringLiteral("audio"))) continue;
+
+        const QString language = track.value(QStringLiteral("lang")).toString();
+        QString label = track.value(QStringLiteral("title")).toString().trimmed();
+        if (label.isEmpty()) label = language.trimmed();
+        if (label.isEmpty())
+            label = type == QStringLiteral("sub")
+                ? QStringLiteral("Skjátexti %1").arg(id)
+                : QStringLiteral("Hljóðrás %1").arg(id);
+
+        auto &ids = type == QStringLiteral("sub") ? m_subtitleTrackIds : m_audioTrackIds;
+        if (ids.contains(label)) label += QStringLiteral(" (%1)").arg(id);
+        ids.insert(label, id);
+
+        if (type == QStringLiteral("sub")) {
+            subtitles.append(QVariantMap{
+                {QStringLiteral("label"), label},
+                {QStringLiteral("language"), language},
+                {QStringLiteral("src"), QString()},
+            });
+        } else {
+            audioTracks.append(label);
+        }
+    }
+
+    m_trackReport = QVariantMap{
+        {QStringLiteral("source"), m_currentSource},
+        {QStringLiteral("subtitles"), subtitles},
+        {QStringLiteral("audioTracks"), audioTracks},
+    };
+    emit trackReportChanged();
 }
 
 void MpvVideo::onEndFile(const QString &reason)
@@ -101,7 +150,45 @@ void MpvVideo::seekAbsolute(double seconds)
 
 void MpvVideo::setVolumePercent(int value)
 {
-    setPropertyAsync(QStringLiteral("volume"), qBound(0, value, 100));
+    value = qBound(0, value, 100);
+    if (value == m_volume) return;
+    m_volume = value;
+    setPropertyAsync(QStringLiteral("volume"), value);
+}
+
+void MpvVideo::setMuted(bool value)
+{
+    if (m_mutedSet && value == m_muted) return;
+    m_muted = value;
+    m_mutedSet = true;
+    setPropertyAsync(QStringLiteral("mute"), value);
+}
+
+void MpvVideo::setPlaybackRate(double value)
+{
+    value = qBound(0.5, value, 2.0);
+    if (qFuzzyCompare(value, m_playbackRate)) return;
+    m_playbackRate = value;
+    setPropertyAsync(QStringLiteral("speed"), value);
+}
+
+void MpvVideo::selectSubtitle(const QString &label)
+{
+    if (label == m_selectedSubtitle) return;
+    if (label == QStringLiteral("Slökkt")) {
+        m_selectedSubtitle = label;
+        setPropertyAsync(QStringLiteral("sid"), QStringLiteral("no"));
+    } else if (m_subtitleTrackIds.contains(label)) {
+        m_selectedSubtitle = label;
+        setPropertyAsync(QStringLiteral("sid"), m_subtitleTrackIds.value(label));
+    }
+}
+
+void MpvVideo::selectAudio(const QString &label)
+{
+    if (label == m_selectedAudio || !m_audioTrackIds.contains(label)) return;
+    m_selectedAudio = label;
+    setPropertyAsync(QStringLiteral("aid"), m_audioTrackIds.value(label));
 }
 
 void MpvVideo::stop()
