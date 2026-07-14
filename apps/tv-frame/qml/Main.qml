@@ -112,10 +112,10 @@ ApplicationWindow {
 
     MpvVideo {
         id: video
-        x: root.ambientActive && root.view === "home" ? root.width * 0.68 : 0
-        y: root.ambientActive && root.view === "home" ? 118 : 0
-        width: root.ambientActive && root.view === "home" ? root.width * 0.32 : root.width
-        height: root.ambientActive && root.view === "home" ? root.height * 0.22 : root.height
+        x: root.ambientActive && root.view === "home" ? root.width * 0.034 : 0
+        y: root.ambientActive && root.view === "home" ? root.height * 0.595 : 0
+        width: root.ambientActive && root.view === "home" ? root.width * 0.115 : root.width
+        height: root.ambientActive && root.view === "home" ? root.height * 0.104 : root.height
         layer.enabled: Boolean(root.media.panel)
 
         onPositionChanged: {
