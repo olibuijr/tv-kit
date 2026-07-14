@@ -130,6 +130,7 @@ const tvPublic = defineTool({
 			Type.Literal("list"),
 			Type.Literal("scrape"),
 			Type.Literal("state"),
+			Type.Literal("download"),
 			Type.Literal("play"),
 			Type.Literal("stop"),
 		]),
@@ -143,9 +144,14 @@ const tvPublic = defineTool({
 			if (!query) throw new Error("tv_public search requires query");
 			return run(["public", "search", query], signal);
 		}
-		if (params.action === "play") {
-			if (!params.hash) throw new Error("tv_public play requires hash");
-			return run(["public", "play", params.hash], signal, 45_000);
+		if (params.action === "play" || params.action === "download") {
+			if (!params.hash)
+				throw new Error(`tv_public ${params.action} requires hash`);
+			return run(
+				["public", params.action, params.hash],
+				signal,
+				params.action === "play" ? 130_000 : 45_000,
+			);
 		}
 		if (params.action === "list") {
 			return run(["public", "list", String(params.limit ?? 30)], signal);

@@ -1631,12 +1631,15 @@ const server = Bun.serve<WebSocketData>({
         state.view = next;
       } else if (message.action === "power") state.power = !state.power;
       else if (message.action === "media-duration") {
+        if (!state.media.src) return;
         state.media.duration = message.value;
         upsertMedia(state.media);
       } else if (
         message.action === "seek" ||
         message.action === "media-progress"
       ) {
+        // media-progress is a frame report; drop it once playback is cleared.
+        if (message.action === "media-progress" && !state.media.src) return;
         state.media.currentTime = Math.min(
           state.media.duration || Number.MAX_SAFE_INTEGER,
           message.value,
@@ -1656,10 +1659,14 @@ const server = Bun.serve<WebSocketData>({
         state.media.panel = (message.value || null) as PlayerPanel;
       else if (message.action === "fullscreen")
         state.media.fullscreen = message.value;
-      else if (message.action === "player-status")
-        state.media.status = message.value as MediaItem["status"];
-      else if (message.action === "media-buffering")
-        state.media.buffering = message.value as number;
+      else if (message.action === "player-status") {
+        // Ignore stale frame reports once playback is cleared, so a
+        // still-loading libmpv can't resurrect a stopped stream's status
+        // and leave a frozen frame on screen.
+        if (state.media.src) state.media.status = message.value as MediaItem["status"];
+      } else if (message.action === "media-buffering") {
+        if (state.media.src) state.media.buffering = message.value as number;
+      }
       else if (message.action === "player-tracks") {
         if (message.value.source !== state.media.src) return;
         const subtitles = message.value.subtitles.filter(

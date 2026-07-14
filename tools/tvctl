@@ -104,6 +104,7 @@ Public torrents (multi-source: ThePirateBay/apibay, Knaben, 1337x, EZTV):
   public list [N]        Read-only DB sample sorted by seeders (default 30)
   public scrape          Trigger concurrent scrape + clean + enrich
   public state           Show scrape run state
+  public download HASH   Full verified background download; re-run for progress
   public play HASH       Play a public torrent (40-hex info hash); verifies frames
   public stop            Stop playback
 
@@ -872,7 +873,7 @@ const abort = () => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.
 const fail = (message, stop = false) => { console.error(message); if (stop) abort(); setTimeout(() => { try { ws?.close(); } catch {} process.exit(1); }, stop ? 200 : 0); };
 const state = async () => (await (await fetch("http://127.0.0.1:3110/health")).json()).state;
 const done = current => { console.log(JSON.stringify({ playing: current.playing, id: current.media.id, title: current.media.title, engine: current.media.engine || "none", position: current.media.currentTime, status: current.media.status })); ws?.close(); setTimeout(() => process.exit(0), 100); };
-const watchdog = setTimeout(() => fail("TV Kit playback produced no frames", true), 40000);
+const watchdog = setTimeout(() => fail("TV Kit playback produced no frames", true), 110000);
 const verify = async (attempt = 0) => {
   const current = await state();
   if (current.media.id === id) {
@@ -886,13 +887,39 @@ const verify = async (attempt = 0) => {
 ws = new WebSocket("ws://127.0.0.1:3110/ws?client=tvctl", { headers: { Origin: "http://127.0.0.1:3112" } });
 ws.onerror = () => fail("TV Kit WebSocket connection failed");
 ws.onopen = () => { ws.send(JSON.stringify({ type: "command", action: "public-torrent-play", value: hash, label: "tvctl public" })); setTimeout(() => verify(), 1500); };'
-      remote_argv env TVCTL_PUBLIC_HASH="$hash" ~/.bun/bin/bun -e "$script"
+      local q= a
+      for a in env TVCTL_PUBLIC_HASH="$hash" ~/.bun/bin/bun -e "$script"; do
+        printf -v a '%q' "$a"; q+="${q:+ }$a"
+      done
+      remote_long 120 "$q"
+      ;;
+    download)
+      (($# == 1)) && [[ $1 =~ ^[A-Fa-f0-9]{40}$ ]] || { echo 'tvctl: public download requires one 40-hex info hash' >&2; exit 64; }
+      # Full verified background download to the engine's dir, so a subsequent
+      # `public play HASH` finds a complete local file and plays it with no
+      # progressive-streaming gaps. Re-run to report progress; prints "complete"
+      # when the file is fully downloaded and verified.
+      remote_argv env TVCTL_PUBLIC_HASH="${1^^}" bash -c 'set -e
+H=$TVCTL_PUBLIC_HASH
+D=$HOME/.tv-kit/data/torrents/public/$H
+if pgrep -f "aria2c.*$H" >/dev/null; then
+  grep -oE "\([0-9]+%\)[^]]*" "$D/dl.log" 2>/dev/null | tail -1 || echo "downloading"
+  exit 0
+fi
+if find "$D" -name "*.mp4" -size +1M >/dev/null 2>&1 && [ -z "$(find "$D" -name "*.aria2" 2>/dev/null)" ]; then
+  echo "complete"; exit 0
+fi
+mkdir -p "$D"
+[ -f "$D/source.torrent" ] || curl -sL -o "$D/source.torrent" "https://itorrents.org/torrent/$H.torrent"
+cd "$D"
+nohup aria2c --continue=true --check-integrity=true --enable-dht=true --enable-peer-exchange=true --bt-enable-lpd=true --dht-listen-port=6881-6999 --listen-port=6881-6999 --bt-max-peers=200 --seed-time=0 --file-allocation=none --console-log-level=warn --summary-interval=15 --dir="$D" source.torrent > "$D/dl.log" 2>&1 &
+echo "download-started pid=$!"'
       ;;
     stop)
       (($# == 0)) || { echo 'tvctl: public stop accepts no arguments' >&2; exit 64; }
       kit_playback stop
       ;;
-    *) echo 'tvctl: public accepts search QUERY, list [N], scrape, state, play HASH, or stop' >&2; exit 64 ;;
+    *) echo 'tvctl: public accepts search QUERY, list [N], scrape, state, download HASH, play HASH, or stop' >&2; exit 64 ;;
   esac
 }
 
