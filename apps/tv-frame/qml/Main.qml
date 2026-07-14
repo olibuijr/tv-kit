@@ -144,9 +144,9 @@ ApplicationWindow {
     MpvVideo {
         id: video
         cropToFill: root.ambientActive && root.view === "home"
-        x: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).x : 0
+        x: root.ambientActive && root.view === "home" ? Theme.marginX : 0
         y: root.ambientActive && root.view === "home"
-            ? homeView.liveVideoContainer.mapToItem(root, 0, 0).y + Theme.videoTopInset : 0
+            ? Theme.headerHeight + Theme.viewTopMargin + Theme.videoTopInset : 0
         width: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.width : root.width
         height: root.ambientActive && root.view === "home"
             ? Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) : root.height
@@ -298,7 +298,7 @@ ApplicationWindow {
         // Header
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 88
+            Layout.preferredHeight: Theme.headerHeight
             color: Theme.glassHeader
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: Theme.stroke; color: Theme.glassEdge }
             RowLayout {
@@ -341,8 +341,8 @@ ApplicationWindow {
             Layout.fillHeight: true
             Layout.leftMargin: Theme.marginX
             Layout.rightMargin: Theme.marginX
-            Layout.topMargin: 18
-            Layout.bottomMargin: 12
+            Layout.topMargin: Theme.viewTopMargin
+            Layout.bottomMargin: Theme.viewBottomMargin
             currentIndex: Math.max(0, ["home", "tv", "radio", "podcasts", "media", "deildu", "news"].indexOf(root.view))
 
             HomeView { id: homeView; state: root.state; content: root.content; now: root.now }

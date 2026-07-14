@@ -2,6 +2,9 @@ import QtQuick
 
 QtObject {
     readonly property int marginX: 28
+    readonly property int headerHeight: 88
+    readonly property int viewTopMargin: 18
+    readonly property int viewBottomMargin: 12
 
     readonly property int radiusHero: 14
     readonly property int radiusPanel: 12

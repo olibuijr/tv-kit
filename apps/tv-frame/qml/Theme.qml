@@ -51,6 +51,9 @@ QtObject {
     readonly property int fontLoadingTitle: typography.loadingTitle
 
     readonly property int marginX: metrics.marginX
+    readonly property int headerHeight: metrics.headerHeight
+    readonly property int viewTopMargin: metrics.viewTopMargin
+    readonly property int viewBottomMargin: metrics.viewBottomMargin
     readonly property int radiusHero: metrics.radiusHero
     readonly property int radiusPanel: metrics.radiusPanel
     readonly property int radiusCard: metrics.radiusCard
