@@ -144,6 +144,16 @@ ApplicationWindow {
         Behavior on opacity { NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic } }
     }
 
+    Rectangle {
+        id: homeVideoMask
+        width: root.homeVideoWidth
+        height: root.homeVideoHeight
+        radius: Theme.radiusHero
+        color: Theme.ink
+        visible: false
+        layer.enabled: true
+    }
+
     MpvVideo {
         id: video
         cropToFill: false
@@ -152,7 +162,11 @@ ApplicationWindow {
             ? Theme.headerHeight + Theme.viewTopMargin + Theme.videoTopInset : 0
         width: root.ambientActive && root.view === "home" ? root.homeVideoWidth : root.width
         height: root.ambientActive && root.view === "home" ? root.homeVideoHeight : root.height
-        layer.enabled: Boolean(root.media.panel)
+        layer.enabled: Boolean(root.media.panel) || (root.ambientActive && root.view === "home")
+        layer.effect: MultiEffect {
+            maskEnabled: root.ambientActive && root.view === "home"
+            maskSource: homeVideoMask
+        }
 
         onPositionChanged: {
             const t = Date.now()
