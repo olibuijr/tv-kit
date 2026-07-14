@@ -83,6 +83,7 @@ import {
 } from "./podcasts";
 import {
   createDefaultState,
+  createEmptyMedia,
   normalizeHomeState,
   stopTransientPlaybackOnStartup,
 } from "./state";
@@ -191,14 +192,28 @@ const broadcastPodcastContentRefresh = () => {
   for (const client of clients) client.send(payload);
 };
 
+// Ambient (home-screen background preview) audio state — saved before muting
+// so we can restore it when ambient ends (tune, leave, fullscreen, stop).
+let _savedAmbientVolume = 35;
+let _savedAmbientMuted = false;
+
+function restoreAmbientAudio() {
+  state.volume = _savedAmbientVolume;
+  state.muted = _savedAmbientMuted;
+}
+
+// Start ambient RÚV on home screen at boot if idle
+if (state.view === "home" && !state.media.src) startAmbientTv();
+
 function stopPlayback(message = "Spilun stöðvuð", error = false) {
+  restoreAmbientAudio();
   state.playing = false;
   state.media = {
     ...state.media,
     src: "",
     status: error ? "error" : "idle",
     fullscreen: false,
-    engine: undefined,
+    ambient: false,
   };
   state.lastAction = message;
   void stopDeilduStream();
@@ -219,6 +234,63 @@ function torrentProgressBroadcast(mediaId: string) {
     lastPush = Date.now();
     broadcast();
   };
+}
+
+/**
+ * Start ambient RÚV playback on the home screen — muted, no fullscreen,
+ * stays on the "home" view so the menu UI is visible over the video.
+ * Called when the user enters the home view while idle (no active media).
+ */
+function startAmbientTv() {
+	const channels = listRuvChannels("tv");
+	const channel = channels[0];
+	if (!channel) return false;
+	const now = getRuvNow(channel.slug);
+	const current = now?.current;
+	_savedAmbientVolume = state.volume;
+	_savedAmbientMuted = state.muted;
+	state.volume = 0;
+	state.muted = true;
+	state.playing = true;
+	state.media = {
+		id: `ambient-${channel.slug}`,
+		kind: "tv",
+		title: channel.name,
+		subtitle: current?.title ?? "Bein útsending",
+		source: channel.name,
+		src: channel.streamUrl,
+		artwork: current?.watchFromStart?.image ?? "",
+		live: true,
+		currentTime: current ? Math.max(0, (Date.now() - current.startTime) / 1000) : 0,
+		duration: current?.endTime
+			? Math.max(0, (current.endTime - current.startTime) / 1000)
+			: 0,
+		playbackRate: 1,
+		subtitleTrack: "Slökkt",
+		audioTrack: "Aðalhljóð",
+		subtitles: [],
+		textTracks: [],
+		audioTracks: ["Aðalhljóð"],
+		epg: [
+			...(current
+				? [{
+					start: "Núna",
+					title: current.title,
+					detail: current.category || "",
+					current: true,
+				}]
+				: []),
+		],
+		panel: null,
+		fullscreen: false,
+		favorite: state.tvFavorites.includes(channel.slug),
+		status: "loading",
+		engine: "mpv",
+		ambient: true,
+	};
+	state.lastAction = `Bakgrunnur - ${channel.name}`;
+	broadcast();
+	return true;
 }
 
 const agentChatMessages = () =>
@@ -1684,15 +1756,36 @@ const server = Bun.serve<WebSocketData>({
       else if (message.action === "scene") state.scene = message.value;
       else if (message.action === "lights") state.lights = message.value;
       else if (message.action === "view") {
-        state.previousView = state.view;
+        const prevView = state.view;
+        state.previousView = prevView;
         state.view = message.value;
         state.newsArticleId = 0;
+        // Start ambient when entering home idle; stop when leaving home ambient.
+        if (message.value === "home" && !state.media.src && !startAmbientTv()) {
+          // no channel available — fall through to normal broadcast
+        } else if (prevView === "home" && state.media.ambient) {
+          restoreAmbientAudio();
+          state.playing = false;
+          state.media = createEmptyMedia();
+        }
       } else if (message.action === "back") {
-        const next = state.previousView;
-        state.previousView = state.view;
-        state.view = next;
-      } else if (message.action === "power") state.power = !state.power;
-      else if (message.action === "media-duration") {
+        const currentView = state.view;
+        const nextView = state.previousView;
+        state.previousView = currentView;
+        state.view = nextView;
+        // If leaving home while ambient, stop it
+        if (currentView === "home" && state.media.ambient) {
+          restoreAmbientAudio();
+          state.playing = false;
+          state.media = createEmptyMedia();
+        }
+        // If arriving at home idle, start ambient
+        if (state.view === "home" && !state.media.src && !startAmbientTv()) {
+          // no channel — fall through
+        }
+      } else if (message.action === "power") {
+        state.power = !state.power;
+      } else if (message.action === "media-duration") {
         if (!state.media.src) return;
         state.media.duration = message.value;
         upsertMedia(state.media);
@@ -1719,9 +1812,13 @@ const server = Bun.serve<WebSocketData>({
         state.media.audioTrack = message.value;
       } else if (message.action === "player-panel")
         state.media.panel = (message.value || null) as PlayerPanel;
-      else if (message.action === "fullscreen")
+      else if (message.action === "fullscreen") {
+        if (state.media.ambient && message.value === true) {
+          state.media.ambient = false;
+          restoreAmbientAudio();
+        }
         state.media.fullscreen = message.value;
-      else if (message.action === "player-status") {
+      } else if (message.action === "player-status") {
         // Ignore stale frame reports once playback is cleared, so a
         // still-loading libmpv can't resurrect a stopped stream's status
         // and leave a frozen frame on screen.

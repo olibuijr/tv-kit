@@ -26,6 +26,7 @@ ApplicationWindow {
     readonly property bool mpvActive: media.engine === "mpv" && Boolean(media.src)
     readonly property bool videoActive: mpvActive && media.fullscreen === true
         && media.kind !== "radio" && media.kind !== "music" && media.kind !== "podcast"
+    readonly property bool ambientActive: media.ambient === true
     property real now: Date.now()
 
     // Screen element snapshot for frame-health.json — lets non-vision
@@ -205,10 +206,9 @@ ApplicationWindow {
     }
 
     // Opaque menu background — painted after (on top of) the video, and
-    // hides entirely while video is active so the embedded mpv shows through.
     Rectangle {
         anchors.fill: parent
-        color: Theme.bg
+        color: root.ambientActive ? Qt.alpha(Theme.bg, 0.65) : Theme.bg
         visible: root.power && !root.videoActive
     }
 
@@ -334,6 +334,7 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: root.power
+            && !root.ambientActive
             && ((root.mpvActive && !root.videoActive)
                 || Boolean(root.media.panel)
                 || (root.hudAutoVisible

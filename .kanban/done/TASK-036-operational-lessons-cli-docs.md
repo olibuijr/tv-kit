@@ -1,7 +1,7 @@
 ---
 id: TASK-036
 title: "Apply UI playback lessons to docs, skills, and tvctl"
-status: review
+status: done
 priority: medium
 assignee: "Main"
 epic: ""
@@ -37,9 +37,10 @@ The project Kanban CLI is absent in this board version; this card follows the re
 
 - Architecture and verification guidance corrected in `AGENTS.md`, `docs/AI_AGENT_TOOLS.md`, `.pi/skills/tv-kit-operations/SKILL.md`, `.pi/skills/tv-kit-operations/references/torrent-playback.md`, and the relevant `.pi/skills/tv-frame-ui/references/`.
 - `tools/frame-health-check.ts` is the shared validator. Following independent review, `tools/tvctl` now requires the old frame to stop, removes its health file, records the boundary from the TV clock, and waits up to 20 seconds for both new-frame timestamps to meet it.
-- `bun test tests/tvctl.test.ts`: 4 passed, 0 failed. The freshness regression distinguishes old-process evidence from new-frame health.
-- `tvctl kit check` after sync: 44 passed, 0 failed; Svelte check 0 errors and 54 pre-existing warnings.
-- Live `tvctl kit frame deploy "Enforce fresh native-frame deploy health"` completed in 5.61 seconds through the new gate. Physical evidence: `tv-frame-verify-20260714-151440.png`, connected Home view with populated content.
+- `bun test tests/tvctl.test.ts`: 4 passed, 0 failed, 11 assertions. The regression proves an early deployment boundary accepts a late old-process write while the post-stop boundary rejects it.
+- `tvctl kit check` after corrected sync: 44 passed, 0 failed; Svelte check 0 errors and 54 pre-existing warnings.
+- Live `tvctl kit frame deploy "Fix native-frame health boundary race"` completed in 7.74 seconds through the corrected gate. Physical evidence: `tv-frame-verify-20260714-153345.png`, connected Home view with populated content.
 - Forced stale fixture exits 1 with `tvctl: native-frame health failed: frame health updatedAt predates frame restart`.
 - `tvctl kit verify`: HTTP health, WebSocket ping/pong, and enabled/active services passed. Final `tvctl kit frame health`: connected, `view:"home"`, fresh timestamps, and `Tengt`.
-- Independent review found and blocked a race in the first implementation: recording the boundary before stopping the old frame allowed a later old-process write to qualify. The corrected ordering above removes that race and will be independently re-reviewed after live verification.
+- Independent review found and blocked a race in the first implementation: recording the boundary before stopping the old frame allowed a later old-process write to qualify. The corrected ordering removes old health after a required stop, takes the boundary from the TV clock, and passed live verification.
+- Independent re-review by `Task036Review` confirmed the corrected code, TV-clock boundary semantics, polling, public/deploy behavior, and named documentation are clean with no remaining blockers.

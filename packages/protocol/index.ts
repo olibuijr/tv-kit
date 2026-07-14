@@ -74,6 +74,11 @@ export type MediaItem = {
 		downloadedBytes: number;
 		totalBytes: number;
 	};
+	// When true, this media is auto-started as a silent background preview
+	// (home-screen ambient mode). The frame renders it behind a translucent
+	// menu UI. A "fullscreen" command clears ambient, restores volume, and
+	// goes fullscreen.
+	ambient?: boolean;
 };
 
 export type Station = {

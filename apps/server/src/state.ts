@@ -80,6 +80,7 @@ export function createEmptyMedia(): MediaItem {
 		fullscreen: false,
 		favorite: false,
 		status: "idle",
+		ambient: false,
 	};
 }
 
@@ -254,6 +255,7 @@ export function normalizeHomeState(
 		...(mediaSource.engine === "mpv" || mediaSource.engine === "browser"
 			? { engine: mediaSource.engine as "mpv" | "browser" }
 			: {}),
+		ambient: boolean(mediaSource.ambient, mediaFallback.ambient as boolean),
 	};
 	const view =
 		typeof source.view === "string" && Object.hasOwn(views, source.view)
