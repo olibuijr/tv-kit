@@ -36,6 +36,7 @@ qt_add_qml_module(tv-frame
         qml/RadioView.qml
         qml/PodcastView.qml
         qml/MediaView.qml
+        qml/MediaProgramView.qml
         qml/DeilduView.qml
         qml/NewsView.qml
 )
