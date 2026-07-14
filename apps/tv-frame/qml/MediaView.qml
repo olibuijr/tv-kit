@@ -41,7 +41,7 @@ Flickable {
             visible: !view.categories.length
             text: "Ekkert myndefni er tiltækt."
             color: Theme.faint
-            font.pixelSize: 26
+            font.pixelSize: Theme.fontSection
         }
     }
 
@@ -52,7 +52,7 @@ Flickable {
         width: parent.width
         spacing: 12
         visible: rail.items.length > 0
-        Text { text: rail.title; color: Theme.ink; font.pixelSize: 26; font.bold: true }
+        Text { text: rail.title; color: Theme.ink; font.pixelSize: Theme.fontSection; font.weight: Theme.weightSemibold }
         Row {
             spacing: 16
             Repeater {
@@ -63,7 +63,7 @@ Flickable {
                     spacing: 8
                     Rectangle {
                         width: 244; height: 137
-                        radius: 10
+                        radius: Theme.radiusCard
                         color: Theme.raised
                         clip: true
                         Image {
@@ -80,7 +80,7 @@ Flickable {
                     Text {
                         text: modelData.title
                         color: Theme.ink
-                        font.pixelSize: 19
+                        font.pixelSize: Theme.fontBody
                         width: parent.width
                         elide: Text.ElideRight
                     }
@@ -90,7 +90,7 @@ Flickable {
                             || modelData.source
                             || ""
                         color: Theme.faint
-                        font.pixelSize: 15
+                        font.pixelSize: Theme.fontCaption
                         width: parent.width
                         elide: Text.ElideRight
                     }

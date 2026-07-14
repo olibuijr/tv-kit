@@ -28,7 +28,7 @@ Item {
 
             Rectangle {
                 width: 210; height: 210
-                radius: 18
+                radius: Theme.radiusPanel
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
@@ -47,19 +47,19 @@ Item {
                 Text {
                     text: view.podcast ? view.podcast.title : ""
                     color: Theme.ink
-                    font.pixelSize: 42
-                    font.bold: true
+                    font.pixelSize: Theme.fontDisplay
+                    font.weight: Theme.weightSemibold
                 }
                 Text {
                     text: view.podcast ? view.podcast.author : ""
-                    color: Theme.primary
-                    font.pixelSize: 20
-                    font.bold: true
+                    color: Theme.accent
+                    font.pixelSize: Theme.fontCardTitle
+                    font.weight: Theme.weightSemibold
                 }
                 Text {
                     text: view.podcast ? view.podcast.description : ""
                     color: Theme.muted
-                    font.pixelSize: 19
+                    font.pixelSize: Theme.fontBody
                     width: parent.width
                     wrapMode: Text.WordWrap
                     maximumLineCount: 3
@@ -72,8 +72,8 @@ Item {
             visible: view.podcast !== null
             text: "Nýjustu þættir"
             color: Theme.ink
-            font.pixelSize: 25
-            font.bold: true
+            font.pixelSize: Theme.fontSection
+            font.weight: Theme.weightSemibold
         }
 
         GridView {
@@ -93,11 +93,11 @@ Item {
                     anchors.fill: parent
                     anchors.rightMargin: 16
                     anchors.bottomMargin: 16
-                    radius: 12
+                    radius: Theme.radiusPanel
                     readonly property bool active: view.activeId === "podcast-" + parent.modelData.id
-                    color: active ? Theme.raised : Theme.surface
-                    border.color: active ? Theme.primary : Theme.border
-                    border.width: active ? 2 : 1
+                    color: active ? Qt.alpha(Theme.selection, 0.16) : Theme.surface
+                    border.color: active ? Theme.selection : Theme.border
+                    border.width: Theme.stroke
                     Row {
                         anchors.fill: parent
                         anchors.margins: 10
@@ -105,7 +105,7 @@ Item {
                         Rectangle {
                             width: 164
                             height: 96
-                            radius: 8
+                            radius: Theme.radiusMedia
                             color: Theme.raised
                             clip: true
                             Image {
@@ -123,15 +123,15 @@ Item {
                                 width: parent.width
                                 text: modelData.title
                                 color: Theme.ink
-                                font.pixelSize: 20
-                                font.bold: true
+                                font.pixelSize: Theme.fontCardTitle
+                                font.weight: Theme.weightSemibold
                                 elide: Text.ElideRight
                             }
                             Text {
                                 width: parent.width
                                 text: modelData.description
                                 color: Theme.muted
-                                font.pixelSize: 15
+                                font.pixelSize: Theme.fontCaption
                                 maximumLineCount: 2
                                 wrapMode: Text.WordWrap
                                 elide: Text.ElideRight
@@ -139,7 +139,7 @@ Item {
                             Text {
                                 text: view.duration(modelData.duration)
                                 color: Theme.faint
-                                font.pixelSize: 14
+                                font.pixelSize: Theme.fontCaption
                             }
                         }
                     }
@@ -153,6 +153,6 @@ Item {
         anchors.centerIn: parent
         text: "Sæki hlaðvörp…"
         color: Theme.faint
-        font.pixelSize: 26
+        font.pixelSize: Theme.fontSection
     }
 }

@@ -28,6 +28,10 @@ qt_add_qml_module(tv-frame
     QML_FILES
         qml/Main.qml
         qml/Theme.qml
+        qml/ThemeColors.qml
+        qml/ThemeTypography.qml
+        qml/ThemeMetrics.qml
+        qml/ThemeMotion.qml
         qml/PlayerHud.qml
         qml/OsdPanel.qml
         qml/LoadingOverlay.qml

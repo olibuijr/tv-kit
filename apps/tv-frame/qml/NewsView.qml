@@ -33,15 +33,15 @@ Item {
 
             Row {
                 spacing: 16
-                Text { text: view.article.categoryTitle || view.article.topicName || "RÚV"; color: Theme.accent; font.pixelSize: 18; font.bold: true }
-                Text { text: Theme.relativeTime(view.article.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: 18 }
+                Text { text: view.article.categoryTitle || view.article.topicName || "RÚV"; color: Theme.accent; font.pixelSize: Theme.fontBody; font.weight: Theme.weightSemibold }
+                Text { text: Theme.relativeTime(view.article.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: Theme.fontBody }
             }
             Text {
                 width: parent.width
                 text: view.article.title || "Sæki frétt…"
                 color: Theme.ink
-                font.pixelSize: 44
-                font.bold: true
+                font.pixelSize: Theme.fontDisplay
+                font.weight: Theme.weightSemibold
                 wrapMode: Text.WordWrap
             }
             Text {
@@ -49,14 +49,14 @@ Item {
                 width: parent.width
                 text: view.article.subtitle || ""
                 color: Theme.muted
-                font.pixelSize: 25
+                font.pixelSize: Theme.fontSection
                 wrapMode: Text.WordWrap
             }
             Rectangle {
                 visible: Boolean(view.article.mainImageUrl)
                 width: parent.width
                 height: width * 9 / 16
-                radius: 12
+                radius: Theme.radiusPanel
                 color: Theme.raised
                 clip: true
                 Image { anchors.fill: parent; anchors.margins: 0; source: view.article.mainImageUrl || ""; fillMode: Image.PreserveAspectFit }
@@ -68,7 +68,7 @@ Item {
                     width: reader.width
                     text: modelData
                     color: Theme.muted
-                    font.pixelSize: 22
+                    font.pixelSize: Theme.fontSection
                     lineHeight: 1.35
                     wrapMode: Text.WordWrap
                 }
@@ -93,7 +93,7 @@ Item {
                 anchors.fill: parent
                 anchors.rightMargin: 18
                 anchors.bottomMargin: 18
-                radius: 12
+                radius: Theme.radiusPanel
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
@@ -104,8 +104,8 @@ Item {
                     Rectangle {
                         width: 160; height: parent.height
                         anchors.verticalCenter: parent.verticalCenter
-                        radius: 8
-                        color: "#000000"
+                        radius: Theme.radiusMedia
+                        color: Theme.mediaBackdrop
                         clip: true
                         Image {
                             anchors.fill: parent
@@ -118,18 +118,18 @@ Item {
                     Column {
                         width: parent.width - 190
                         spacing: 6
-                        Text { text: modelData.categoryTitle || modelData.topicName || "RÚV"; color: Theme.accent; font.pixelSize: 15; font.bold: true }
+                        Text { text: modelData.categoryTitle || modelData.topicName || "RÚV"; color: Theme.accent; font.pixelSize: Theme.fontCaption; font.weight: Theme.weightSemibold }
                         Text {
                             width: parent.width
                             text: modelData.title
                             color: Theme.ink
-                            font.pixelSize: 21
-                            font.bold: true
+                            font.pixelSize: Theme.fontCardTitle
+                            font.weight: Theme.weightSemibold
                             wrapMode: Text.WordWrap
                             maximumLineCount: 3
                             elide: Text.ElideRight
                         }
-                        Text { text: Theme.relativeTime(modelData.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: 15 }
+                        Text { text: Theme.relativeTime(modelData.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: Theme.fontCaption }
                     }
                 }
             }
@@ -139,7 +139,7 @@ Item {
             anchors.centerIn: parent
             text: "Engar fréttir eru tiltækar."
             color: Theme.faint
-            font.pixelSize: 26
+            font.pixelSize: Theme.fontSection
         }
     }
 }

@@ -33,15 +33,15 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredHeight: 3
-                radius: 14
+                radius: Theme.radiusHero
                 color: view.media.ambient ? "transparent" : Theme.surface
-                border { color: view.media.ambient ? "transparent" : Theme.border; width: 1 }
+                border { color: view.media.ambient ? "transparent" : Theme.border; width: Theme.stroke }
                 clip: true
                 Rectangle {
                     anchors.fill: parent
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: view.media.ambient ? Qt.alpha("#13100f", 0.7) : Qt.alpha("#13100f", 0.88) }
+                        GradientStop { position: 0; color: view.media.ambient ? Qt.alpha(Theme.bg, 0.7) : Qt.alpha(Theme.bg, 0.88) }
                         GradientStop { position: 0.8; color: "transparent" }
                     }
                 }
@@ -53,17 +53,19 @@ Item {
                     spacing: 8
                     Text {
                         text: !view.mediaActive ? "TV KIT" : view.media.status === "error" ? "VILLA" : view.media.status === "loading" ? "HLEÐUR" : view.media.live ? "Í BEINNI" : view.state.playing ? "Í SPILUN" : "VALIÐ EFNI"
-                        color: Theme.primary
-                        font.pixelSize: 17
-                        font.bold: true
+                        color: view.media.status === "error" ? Theme.danger
+                            : view.media.status === "loading" ? Theme.warning
+                            : view.media.live ? Theme.live : Theme.selection
+                        font.pixelSize: Theme.fontCallout
+                        font.weight: Theme.weightSemibold
                         font.letterSpacing: 2
                     }
                     Text {
                         width: parent.width
                         text: view.mediaActive ? (view.media.title || "Spilun") : "Velkomin heim"
                         color: Theme.ink
-                        font.pixelSize: 44
-                        font.bold: true
+                        font.pixelSize: Theme.fontDisplay
+                        font.weight: Theme.weightSemibold
                         wrapMode: Text.WordWrap
                         maximumLineCount: 2
                         elide: Text.ElideRight
@@ -74,7 +76,7 @@ Item {
                             ? [view.media.subtitle, view.media.source].filter(part => part).join(" · ")
                             : "Veldu efni á fjarstýringunni"
                         color: Theme.muted
-                        font.pixelSize: 20
+                        font.pixelSize: Theme.fontCardTitle
                         elide: Text.ElideRight
                     }
                 }
@@ -84,7 +86,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredHeight: 2
-                radius: 14
+                radius: Theme.radiusHero
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
@@ -92,7 +94,7 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 20
                     spacing: 12
-                    Text { text: "Nýtt í Sarpinum"; color: Theme.ink; font.pixelSize: 22; font.bold: true }
+                    Text { text: "Nýtt í Sarpinum"; color: Theme.ink; font.pixelSize: Theme.fontSection; font.weight: Theme.weightSemibold }
                     Row {
                         spacing: 14
                         Repeater {
@@ -103,7 +105,7 @@ Item {
                                 spacing: 8
                                 Rectangle {
                                     width: 200; height: 112
-                                    radius: 8
+                                    radius: Theme.radiusMedia
                                     color: Theme.raised
                                     clip: true
                                     Image {
@@ -113,7 +115,7 @@ Item {
                                         visible: status === Image.Ready
                                     }
                                 }
-                                Text { text: modelData.title; color: Theme.ink; font.pixelSize: 16; width: parent.width; elide: Text.ElideRight }
+                                Text { text: modelData.title; color: Theme.ink; font.pixelSize: Theme.fontCallout; width: parent.width; elide: Text.ElideRight }
                             }
                         }
                     }
@@ -132,7 +134,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredHeight: 3
-                radius: 14
+                radius: Theme.radiusHero
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
@@ -140,7 +142,7 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 20
                     spacing: 12
-                    Text { text: "Í beinni á RÚV"; color: Theme.ink; font.pixelSize: 22; font.bold: true }
+                    Text { text: "Í beinni á RÚV"; color: Theme.ink; font.pixelSize: Theme.fontSection; font.weight: Theme.weightSemibold }
                     Repeater {
                         model: view.channels
                         delegate: Column {
@@ -151,24 +153,24 @@ Item {
                             Row {
                                 width: parent.width
                                 spacing: 12
-                                Text { text: modelData.channel.name; color: Theme.accent; font.pixelSize: 18; font.bold: true; width: 66 }
+                                Text { text: modelData.channel.name; color: Theme.accent; font.pixelSize: Theme.fontBody; font.weight: Theme.weightSemibold; width: 66 }
                                 Text {
                                     width: parent.width - 84
                                     text: modelData.current ? modelData.current.title : "Bein útsending"
                                     color: Theme.ink
-                                    font.pixelSize: 18
+                                    font.pixelSize: Theme.fontBody
                                     elide: Text.ElideRight
                                 }
                             }
                             Rectangle {
                                 width: parent.width
                                 height: 3
-                                radius: 1.5
+                                radius: Theme.radiusPill
                                 color: Theme.raised
                                 Rectangle {
                                     height: parent.height
-                                    radius: 1.5
-                                    color: Theme.primary
+                                    radius: Theme.radiusPill
+                                    color: Theme.selection
                                     width: parent.width * Theme.eventProgress(modelData.current, view.now) / 100
                                 }
                             }
@@ -178,7 +180,7 @@ Item {
                                     ? "Næst " + Theme.scheduleTime(futureUpcoming[0].startTime) + " · " + futureUpcoming[0].title
                                     : ""
                                 color: Theme.faint
-                                font.pixelSize: 14
+                                font.pixelSize: Theme.fontCaption
                                 width: parent.width
                                 elide: Text.ElideRight
                             }
@@ -191,7 +193,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredHeight: 2
-                radius: 14
+                radius: Theme.radiusHero
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
@@ -202,8 +204,8 @@ Item {
                     Text {
                         text: view.teeTimes ? "Lausir rástímar · " + view.teeTimes.course : "Lausir rástímar"
                         color: Theme.ink
-                        font.pixelSize: 22
-                        font.bold: true
+                        font.pixelSize: Theme.fontSection
+                        font.weight: Theme.weightSemibold
                         width: parent.width
                         elide: Text.ElideRight
                     }
@@ -211,24 +213,24 @@ Item {
                         visible: view.golfPerson.length > 0
                         width: parent.width
                         spacing: 10
-                        Text { text: view.golfPerson; color: Theme.accent; font.pixelSize: 16; font.bold: true; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: view.golfPerson; color: Theme.accent; font.pixelSize: Theme.fontCallout; font.weight: Theme.weightSemibold; anchors.verticalCenter: parent.verticalCenter }
                         Repeater {
                             model: view.golfBookings
                             delegate: Rectangle {
                                 required property var modelData
                                 height: 30
                                 width: bookingLabel.implicitWidth + 20
-                                radius: 15
+                                radius: Theme.radiusPill
                                 color: Theme.raised
                                 anchors.verticalCenter: parent.verticalCenter
-                                Text { id: bookingLabel; anchors.centerIn: parent; text: Theme.golfDate(modelData.date) + " " + modelData.time; color: Theme.ink; font.pixelSize: 14 }
+                                Text { id: bookingLabel; anchors.centerIn: parent; text: Theme.golfDate(modelData.date) + " " + modelData.time; color: Theme.ink; font.pixelSize: Theme.fontCaption }
                             }
                         }
                         Text {
                             visible: view.golfBookings.length === 0
                             text: "Enginn skráður rástími næstu daga"
                             color: Theme.faint
-                            font.pixelSize: 15
+                            font.pixelSize: Theme.fontCaption
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -240,12 +242,12 @@ Item {
                             delegate: Rectangle {
                                 required property var modelData
                                 width: 92; height: 50
-                                radius: 8
+                                radius: Theme.radiusMedia
                                 color: Theme.raised
                                 Column {
                                     anchors.centerIn: parent
-                                    Text { text: modelData.time; color: Theme.ink; font.pixelSize: 16; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
-                                    Text { text: modelData.openSeats + " laus"; color: Theme.faint; font.pixelSize: 12; anchors.horizontalCenter: parent.horizontalCenter }
+                                    Text { text: modelData.time; color: Theme.ink; font.pixelSize: Theme.fontCallout; font.weight: Theme.weightSemibold; anchors.horizontalCenter: parent.horizontalCenter }
+                                    Text { text: modelData.openSeats + " laus"; color: Theme.faint; font.pixelSize: Theme.fontMini; anchors.horizontalCenter: parent.horizontalCenter }
                                 }
                             }
                         }
@@ -254,7 +256,7 @@ Item {
                         visible: !view.teeTimes
                         text: "Ekki tiltækt"
                         color: Theme.faint
-                        font.pixelSize: 16
+                        font.pixelSize: Theme.fontCallout
                     }
                 }
             }
@@ -263,7 +265,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredHeight: 4
-                radius: 14
+                radius: Theme.radiusHero
                 color: Theme.surface
                 border.color: Theme.border
                 clip: true
@@ -271,24 +273,24 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 20
                     spacing: 10
-                    Text { text: "Fréttir"; color: Theme.ink; font.pixelSize: 22; font.bold: true }
+                    Text { text: "Fréttir"; color: Theme.ink; font.pixelSize: Theme.fontSection; font.weight: Theme.weightSemibold }
                     Repeater {
                         model: view.news.slice(0, 3)
                         delegate: Column {
                             required property var modelData
                             width: parent.width
                             spacing: 2
-                            Text { text: modelData.categoryTitle || "RÚV"; color: Theme.accent; font.pixelSize: 13; font.bold: true }
+                            Text { text: modelData.categoryTitle || "RÚV"; color: Theme.accent; font.pixelSize: Theme.fontMini; font.weight: Theme.weightSemibold }
                             Text {
                                 text: modelData.title
                                 color: Theme.ink
-                                font.pixelSize: 17
+                                font.pixelSize: Theme.fontCallout
                                 width: parent.width
                                 wrapMode: Text.WordWrap
                                 maximumLineCount: 2
                                 elide: Text.ElideRight
                             }
-                            Text { text: Theme.relativeTime(modelData.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: 13 }
+                            Text { text: Theme.relativeTime(modelData.firstPublishedAt, view.now); color: Theme.faint; font.pixelSize: Theme.fontMini }
                         }
                     }
                 }

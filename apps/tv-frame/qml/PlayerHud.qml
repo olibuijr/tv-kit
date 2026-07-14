@@ -13,18 +13,18 @@ Rectangle {
         : 0
 
     height: 132
-    color: Theme.header
-    border.color: Theme.border
-    border.width: 1
+    color: Theme.glassHeader
+    border.color: Theme.glassEdge
+    border.width: Theme.stroke
 
     Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         height: 3
-        color: Theme.primary
+        color: media.live ? Theme.live : Theme.selection
         width: media.live ? parent.width : parent.width * hud.progress
         opacity: media.live ? 0.35 : 1
-        Behavior on width { NumberAnimation { duration: 400 } }
+        Behavior on width { NumberAnimation { duration: Theme.motionProgress } }
     }
 
     RowLayout {
@@ -36,7 +36,7 @@ Rectangle {
         Rectangle {
             Layout.preferredWidth: 84
             Layout.preferredHeight: 84
-            radius: 10
+            radius: Theme.radiusCard
             color: Theme.raised
             clip: true
             Image {
@@ -50,7 +50,7 @@ Rectangle {
         Rectangle {
             Layout.preferredHeight: 34
             Layout.preferredWidth: statusText.implicitWidth + 28
-            radius: 17
+            radius: Theme.radiusPill
             color: Qt.alpha(Theme.accent, 0.14)
             Text {
                 id: statusText
@@ -59,9 +59,10 @@ Rectangle {
                     : hud.media.status === "error" ? "Villa"
                     : hud.playing ? (hud.media.live ? "Í beinni" : "Spilar")
                     : "Í pásu"
-                color: hud.media.status === "error" ? Theme.primary : Theme.accent
-                font.pixelSize: 20
-                font.bold: true
+                color: hud.media.status === "error" ? Theme.danger
+                    : hud.media.status === "loading" ? Theme.warning : Theme.accent
+                font.pixelSize: Theme.fontCardTitle
+                font.weight: Theme.weightSemibold
             }
         }
 
@@ -72,15 +73,15 @@ Rectangle {
                 Layout.fillWidth: true
                 text: hud.media.title || ""
                 color: Theme.ink
-                font.pixelSize: 27
-                font.bold: true
+                font.pixelSize: Theme.fontTitle
+                font.weight: Theme.weightSemibold
                 elide: Text.ElideRight
             }
             Text {
                 Layout.fillWidth: true
                 text: [hud.media.subtitle, hud.media.source].filter(part => part).filter((part, index, list) => list.indexOf(part) === index).join(" · ")
                 color: Theme.muted
-                font.pixelSize: 19
+                font.pixelSize: Theme.fontBody
                 elide: Text.ElideRight
             }
         }
@@ -89,10 +90,10 @@ Rectangle {
             text: hud.media.live
                 ? "BEIN ÚTSENDING"
                 : Theme.clock(hud.media.currentTime) + (hud.media.duration > 0 ? " / " + Theme.clock(hud.media.duration) : "")
-            color: hud.media.live ? Theme.primary : Theme.ink
-            font.pixelSize: hud.media.live ? 19 : 24
-            font.family: "monospace"
-            font.bold: Boolean(hud.media.live)
+            color: hud.media.live ? Theme.live : Theme.ink
+            font.pixelSize: hud.media.live ? 19 : Theme.fontSection
+            font.family: Theme.monoFontFamily
+            font.weight: hud.media.live ? Theme.weightSemibold : Theme.weightRegular
         }
     }
 }

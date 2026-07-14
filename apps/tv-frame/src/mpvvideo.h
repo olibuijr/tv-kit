@@ -21,6 +21,7 @@ class MpvVideo : public MpvAbstractItem {
     Q_PROPERTY(double bufferingPercent READ bufferingPercent NOTIFY bufferingPercentChanged)
     Q_PROPERTY(QString currentSource READ currentSource NOTIFY currentSourceChanged)
     Q_PROPERTY(QVariantMap trackReport READ trackReport NOTIFY trackReportChanged)
+    Q_PROPERTY(bool cropToFill READ cropToFill WRITE setCropToFill NOTIFY cropToFillChanged)
 
 public:
     explicit MpvVideo(QQuickItem *parent = nullptr);
@@ -32,6 +33,7 @@ public:
     double bufferingPercent() const { return m_bufferingPercent; }
     QString currentSource() const { return m_currentSource; }
     QVariantMap trackReport() const { return m_trackReport; }
+    bool cropToFill() const { return m_cropToFill; }
 
     // Loads a new source, or a no-op if already loaded (idempotent — safe to
     // call on every state broadcast). Empty url stops playback.
@@ -41,6 +43,7 @@ public:
     Q_INVOKABLE void setVolumePercent(int value);
     Q_INVOKABLE void setMuted(bool value);
     Q_INVOKABLE void setPlaybackRate(double value);
+    void setCropToFill(bool value);
     Q_INVOKABLE void selectSubtitle(const QString &label);
     Q_INVOKABLE void selectAudio(const QString &label);
     Q_INVOKABLE void stop();
@@ -53,6 +56,7 @@ signals:
     void bufferingPercentChanged();
     void currentSourceChanged();
     void trackReportChanged();
+    void cropToFillChanged();
     // Real frames confirmed rendering (paused-for-cache cleared with a
     // positive time-pos) — distinct from "file-loaded" which fires before
     // enough is buffered to actually show anything.
@@ -80,6 +84,7 @@ private:
     bool m_muted = false;
     bool m_mutedSet = false;
     double m_playbackRate = 0;
+    bool m_cropToFill = false;
     QString m_selectedSubtitle;
     QString m_selectedAudio;
 };

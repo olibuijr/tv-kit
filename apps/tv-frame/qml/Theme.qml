@@ -2,19 +2,71 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property color bg: "#13100f"
-    readonly property color header: "#191413"
-    readonly property color surface: "#1e1917"
-    readonly property color raised: "#272019"
-    readonly property color border: "#3a2f28"
-    readonly property color ink: "#f7ece8"
-    readonly property color muted: "#cbbab2"
-    readonly property color faint: "#8d7d73"
-    readonly property color primary: "#e9704a"
-    readonly property color accent: "#e9b46a"
-    readonly property color good: "#79d49b"
+    // Public style facade. Edit the focused Theme*.qml files to restyle the
+    // entire frame; views import only this singleton.
+    readonly property QtObject colors: ThemeColors {}
+    readonly property QtObject typography: ThemeTypography {}
+    readonly property QtObject metrics: ThemeMetrics {}
+    readonly property QtObject motion: ThemeMotion {}
 
-    readonly property int marginX: 28
+    readonly property color bg: colors.bg
+    readonly property color header: colors.header
+    readonly property color surface: colors.surface
+    readonly property color raised: colors.raised
+    readonly property color border: colors.border
+    readonly property color borderStrong: colors.borderStrong
+    readonly property color glassEdge: colors.glassEdge
+    readonly property color glassHeader: colors.glassHeader
+    readonly property color glassPanel: colors.glassPanel
+    readonly property color ink: colors.ink
+    readonly property color muted: colors.muted
+    readonly property color faint: colors.faint
+    readonly property color selection: colors.selection
+    readonly property color accent: colors.accent
+    readonly property color good: colors.good
+    readonly property color warning: colors.warning
+    readonly property color danger: colors.danger
+    readonly property color live: colors.live
+    readonly property color logoBackdrop: colors.logoBackdrop
+    readonly property color mediaBackdrop: colors.mediaBackdrop
+
+    readonly property string fontFamily: typography.family
+    readonly property string monoFontFamily: typography.monoFamily
+    readonly property int weightRegular: typography.regular
+    readonly property int weightMedium: typography.medium
+    readonly property int weightSemibold: typography.semibold
+    readonly property int weightBold: typography.bold
+    readonly property int fontDisplay: typography.display
+    readonly property int fontPageTitle: typography.pageTitle
+    readonly property int fontTitle: typography.title
+    readonly property int fontSection: typography.section
+    readonly property int fontCardTitle: typography.cardTitle
+    readonly property int fontBody: typography.body
+    readonly property int fontCallout: typography.callout
+    readonly property int fontCaption: typography.caption
+    readonly property int fontMini: typography.mini
+    readonly property int fontClock: typography.clock
+    readonly property int fontStandbyClock: typography.standbyClock
+    readonly property int fontLoadingTitle: typography.loadingTitle
+
+    readonly property int marginX: metrics.marginX
+    readonly property int radiusHero: metrics.radiusHero
+    readonly property int radiusPanel: metrics.radiusPanel
+    readonly property int radiusCard: metrics.radiusCard
+    readonly property int radiusMedia: metrics.radiusMedia
+    readonly property int radiusPill: metrics.radiusPill
+    readonly property int stroke: metrics.stroke
+    readonly property int contentGap: metrics.contentGap
+    readonly property int cardGap: metrics.cardGap
+    readonly property int panelPadding: metrics.panelPadding
+    readonly property int heroPadding: metrics.heroPadding
+
+    readonly property int motionFast: motion.fast
+    readonly property int motionNormal: motion.normal
+    readonly property int motionPanel: motion.panel
+    readonly property int motionProgress: motion.progress
+    readonly property int motionLoading: motion.loading
+    readonly property int motionPulse: motion.pulse
 
     function clock(seconds) {
         const total = Math.max(0, Math.floor(seconds || 0))

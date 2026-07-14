@@ -12,6 +12,15 @@ ApplicationWindow {
     visibility: Window.FullScreen
     color: Theme.bg
     title: "TV Kit"
+    font.family: Theme.fontFamily
+    palette.window: Theme.bg
+    palette.windowText: Theme.ink
+    palette.button: Theme.raised
+    palette.buttonText: Theme.ink
+    palette.base: Theme.surface
+    palette.text: Theme.ink
+    palette.highlight: Theme.selection
+    palette.highlightedText: Theme.ink
 
     FrameClient { id: frame; Component.onCompleted: start() }
 
@@ -112,6 +121,7 @@ ApplicationWindow {
 
     MpvVideo {
         id: video
+        cropToFill: root.ambientActive && root.view === "home"
         x: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).x : 0
         y: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).y : 0
         width: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.width : root.width
@@ -241,17 +251,17 @@ ApplicationWindow {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatDateTime(new Date(root.now), "hh:mm")
-            color: Theme.ink; font.pixelSize: 120; font.bold: true
+            color: Theme.ink; font.pixelSize: Theme.fontStandbyClock; font.weight: Theme.weightSemibold
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatDateTime(new Date(root.now), "dddd, d. MMMM")
-            color: Theme.muted; font.pixelSize: 30
+            color: Theme.muted; font.pixelSize: Theme.fontTitle
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Kveiktu með fjarstýringunni"
-            color: Theme.faint; font.pixelSize: 22
+            color: Theme.faint; font.pixelSize: Theme.fontSection
         }
     }
 
@@ -264,8 +274,8 @@ ApplicationWindow {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 88
-            color: Theme.header
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
+            color: Theme.glassHeader
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: Theme.stroke; color: Theme.glassEdge }
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: Theme.marginX
@@ -273,29 +283,29 @@ ApplicationWindow {
                 spacing: 26
                 Text {
                     text: ({home:"Heim", tv:"Sjónvarp", radio:"Útvarp", podcasts:"Hlaðvörp", media:"Sarpurinn", deildu:"Deildu", news:"Fréttir"})[root.view] || "TV Kit"
-                    color: Theme.ink; font.pixelSize: 34; font.bold: true
+                    color: Theme.ink; font.pixelSize: Theme.fontPageTitle; font.weight: Theme.weightSemibold
                     Layout.fillWidth: true
                 }
                 Text {
                     text: Qt.formatDateTime(new Date(root.now), "dddd, d. MMMM")
-                    color: Theme.muted; font.pixelSize: 20
+                    color: Theme.muted; font.pixelSize: Theme.fontCardTitle
                 }
                 Rectangle {
                     Layout.preferredHeight: 34
                     Layout.preferredWidth: statusLabel.implicitWidth + 26
-                    radius: 17
-                    color: Qt.alpha(frame.connected ? Theme.good : Theme.accent, 0.14)
+                    radius: Theme.radiusPill
+                    color: Qt.alpha(frame.connected ? Theme.good : Theme.warning, 0.12)
                     Text {
                         id: statusLabel
                         anchors.centerIn: parent
                         text: frame.connected ? "Tengt" : "Tengist"
-                        color: frame.connected ? Theme.good : Theme.accent
-                        font.pixelSize: 17; font.bold: true
+                        color: frame.connected ? Theme.good : Theme.warning
+                        font.pixelSize: Theme.fontCallout; font.weight: Theme.weightSemibold
                     }
                 }
                 Text {
                     text: Qt.formatDateTime(new Date(root.now), "hh:mm:ss")
-                    color: Theme.ink; font.pixelSize: 30; font.bold: true; font.family: "monospace"
+                    color: Theme.ink; font.pixelSize: Theme.fontClock; font.weight: Theme.weightSemibold; font.family: Theme.monoFontFamily
                 }
             }
         }
@@ -343,7 +353,7 @@ ApplicationWindow {
                 || (root.hudAutoVisible
                     && (root.state.playing || root.media.status === "loading" || root.media.status === "error")))
         opacity: visible ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+        Behavior on opacity { NumberAnimation { duration: Theme.motionProgress } }
         media: root.media
         playing: root.state.playing === true
     }

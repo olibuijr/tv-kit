@@ -15,7 +15,7 @@ Rectangle {
         return 0
     }
 
-    color: "#0b0908"
+    color: Theme.bg
 
     Image {
         anchors.fill: parent
@@ -27,9 +27,9 @@ Rectangle {
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0; color: Qt.alpha("#0b0908", 0.55) }
-            GradientStop { position: 0.62; color: Qt.alpha("#0b0908", 0.35) }
-            GradientStop { position: 1; color: Qt.alpha("#0b0908", 0.92) }
+            GradientStop { position: 0; color: Qt.alpha(Theme.bg, 0.55) }
+            GradientStop { position: 0.62; color: Qt.alpha(Theme.bg, 0.35) }
+            GradientStop { position: 1; color: Qt.alpha(Theme.bg, 0.92) }
         }
     }
 
@@ -47,34 +47,34 @@ Rectangle {
             SequentialAnimation on opacity {
                 loops: Animation.Infinite
                 running: overlay.visible
-                NumberAnimation { from: 0.55; to: 1; duration: 900; easing.type: Easing.InOutSine }
-                NumberAnimation { from: 1; to: 0.55; duration: 900; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 0.55; to: 1; duration: Theme.motionPulse; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 1; to: 0.55; duration: Theme.motionPulse; easing.type: Easing.InOutSine }
             }
 
             Text {
                 id: title
                 width: parent.width
                 text: overlay.media.title || ""
-                color: Qt.alpha("#f7ece8", 0.28)
-                font.pixelSize: 92
-                font.bold: true
+                color: Qt.alpha(Theme.ink, 0.28)
+                font.pixelSize: Theme.fontLoadingTitle
+                font.weight: Theme.weightSemibold
                 font.letterSpacing: 1
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
                 elide: Text.ElideRight
                 style: Text.Raised
-                styleColor: "#00000066"
+                styleColor: Qt.alpha(Theme.mediaBackdrop, 0.4)
             }
             Item {
                 width: parent.width * overlay.fraction
                 height: parent.height
                 clip: true
-                Behavior on width { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
+                Behavior on width { NumberAnimation { duration: Theme.motionLoading; easing.type: Easing.OutCubic } }
                 Text {
                     width: logo.width
                     text: title.text
-                    color: "#f7ece8"
+                    color: Theme.ink
                     font: title.font
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
@@ -92,32 +92,32 @@ Rectangle {
             Text {
                 visible: Boolean(overlay.transfer)
                 text: overlay.transfer ? overlay.transfer.peers + " tengingar" + (overlay.transfer.seeders ? " · " + overlay.transfer.seeders + " deilendur" : "") : ""
-                color: "#cbbab2"
-                font.pixelSize: 26
+                color: Theme.muted
+                font.pixelSize: Theme.fontSection
             }
             Text {
                 visible: Boolean(overlay.transfer) && overlay.transfer.speedBps > 0
                 text: overlay.transfer ? (overlay.transfer.speedBps >= 1048576
                     ? (overlay.transfer.speedBps / 1048576).toFixed(1) + " MB/s"
                     : Math.round(overlay.transfer.speedBps / 1024) + " kB/s") : ""
-                color: "#f7ece8"
-                font.pixelSize: 26
-                font.bold: true
+                color: Theme.ink
+                font.pixelSize: Theme.fontSection
+                font.weight: Theme.weightSemibold
             }
             Text {
                 text: Math.round(overlay.fraction * 100) + "%"
-                color: "#e9b46a"
-                font.pixelSize: 26
-                font.bold: true
-                font.family: "monospace"
+                color: Theme.accent
+                font.pixelSize: Theme.fontSection
+                font.weight: Theme.weightSemibold
+                font.family: Theme.monoFontFamily
             }
         }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: overlay.media.source || ""
-            color: "#8d7d73"
-            font.pixelSize: 20
+            color: Theme.faint
+            font.pixelSize: Theme.fontCardTitle
         }
     }
 }

@@ -25,11 +25,11 @@ Item {
                 anchors.fill: parent
                 anchors.rightMargin: 16
                 anchors.bottomMargin: 16
-                radius: 12
+                radius: Theme.radiusPanel
                 readonly property bool active: view.activeId === "radio-" + parent.modelData.id
-                color: active ? Theme.raised : Theme.surface
-                border.color: active ? Theme.primary : Theme.border
-                border.width: active ? 2 : 1
+                color: active ? Qt.alpha(Theme.selection, 0.16) : Theme.surface
+                border.color: active ? Theme.selection : Theme.border
+                border.width: Theme.stroke
                 Row {
                     anchors.fill: parent
                     anchors.margins: 16
@@ -37,8 +37,8 @@ Item {
                     Rectangle {
                         width: 70; height: 70
                         anchors.verticalCenter: parent.verticalCenter
-                        radius: 10
-                        color: "#ffffff"
+                        radius: Theme.radiusCard
+                        color: Theme.logoBackdrop
                         clip: true
                         Image {
                             anchors.fill: parent
@@ -52,11 +52,11 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - 100
                         spacing: 4
-                        Text { text: modelData.name; color: Theme.ink; font.pixelSize: 21; font.bold: true; width: parent.width; elide: Text.ElideRight }
+                        Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.fontCardTitle; font.weight: Theme.weightSemibold; width: parent.width; elide: Text.ElideRight }
                         Text {
                             text: modelData.terrestrial ? modelData.frequency.toFixed(1) + " FM" : "Á netinu"
                             color: Theme.muted
-                            font.pixelSize: 16
+                            font.pixelSize: Theme.fontCallout
                         }
                     }
                 }
@@ -72,8 +72,8 @@ Item {
             visible: view.favoriteStations.length > 0
             text: "Uppáhaldsstöðvar"
             color: Theme.accent
-            font.pixelSize: 24
-            font.bold: true
+            font.pixelSize: Theme.fontSection
+            font.weight: Theme.weightSemibold
         }
         StationGrid {
             visible: view.favoriteStations.length > 0
@@ -82,7 +82,7 @@ Item {
             items: view.favoriteStations
         }
 
-        Text { text: "Allar stöðvar"; color: Theme.ink; font.pixelSize: 24; font.bold: true; topPadding: 10 }
+        Text { text: "Allar stöðvar"; color: Theme.ink; font.pixelSize: Theme.fontSection; font.weight: Theme.weightSemibold; topPadding: 10 }
         StationGrid {
             width: parent.width
             height: parent.height - y
@@ -96,6 +96,6 @@ Item {
         anchors.centerIn: parent
         text: "Sæki útvarpsstöðvar…"
         color: Theme.faint
-        font.pixelSize: 26
+        font.pixelSize: Theme.fontSection
     }
 }

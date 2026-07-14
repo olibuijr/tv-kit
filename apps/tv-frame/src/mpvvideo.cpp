@@ -172,6 +172,14 @@ void MpvVideo::setPlaybackRate(double value)
     setPropertyAsync(QStringLiteral("speed"), value);
 }
 
+void MpvVideo::setCropToFill(bool value)
+{
+    if (value == m_cropToFill) return;
+    m_cropToFill = value;
+    setPropertyAsync(QStringLiteral("panscan"), value ? 1.0 : 0.0);
+    emit cropToFillChanged();
+}
+
 void MpvVideo::selectSubtitle(const QString &label)
 {
     if (label == m_selectedSubtitle) return;

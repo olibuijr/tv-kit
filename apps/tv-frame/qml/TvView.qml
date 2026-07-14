@@ -20,10 +20,10 @@ Item {
                 readonly property bool active: (view.state.media || {}).id === "ruv-channel-" + modelData.channel.slug
                 width: (parent.width - 20 * Math.max(0, view.channels.length - 1)) / Math.max(1, view.channels.length)
                 height: parent.height
-                radius: 14
-                color: Theme.surface
-                border.color: active ? Theme.primary : Theme.border
-                border.width: active ? 2 : 1
+                radius: Theme.radiusHero
+                color: active ? Qt.alpha(Theme.selection, 0.16) : Theme.surface
+                border.color: active ? Theme.selection : Theme.border
+                border.width: Theme.stroke
                 clip: true
 
                 Column {
@@ -34,7 +34,7 @@ Item {
                     Rectangle {
                         width: parent.width
                         height: Math.min(280, parent.height * 0.4)
-                        radius: 10
+                        radius: Theme.radiusCard
                         color: Theme.raised
                         clip: true
                         Image {
@@ -50,20 +50,20 @@ Item {
                             anchors.margins: 14
                             text: card.modelData.channel.name
                             color: Theme.ink
-                            font.pixelSize: 24
-                            font.bold: true
+                            font.pixelSize: Theme.fontSection
+                            font.weight: Theme.weightSemibold
                             style: Text.Outline
-                            styleColor: "#13100f"
+                            styleColor: Theme.bg
                         }
                     }
 
-                    Text { text: card.active ? "Í SPILUN" : "Í BEINNI"; color: Theme.primary; font.pixelSize: 15; font.bold: true; font.letterSpacing: 2 }
+                    Text { text: card.active ? "Í SPILUN" : "Í BEINNI"; color: card.active ? Theme.selection : Theme.live; font.pixelSize: Theme.fontCaption; font.weight: Theme.weightSemibold; font.letterSpacing: 2 }
                     Text {
                         width: parent.width
                         text: card.modelData.current ? card.modelData.current.title : card.modelData.channel.name
                         color: Theme.ink
-                        font.pixelSize: 30
-                        font.bold: true
+                        font.pixelSize: Theme.fontTitle
+                        font.weight: Theme.weightSemibold
                         wrapMode: Text.WordWrap
                         maximumLineCount: 2
                         elide: Text.ElideRight
@@ -74,7 +74,7 @@ Item {
                             ? (card.modelData.current.category || card.modelData.current.description || "Bein útsending")
                             : "Bein útsending"
                         color: Theme.muted
-                        font.pixelSize: 19
+                        font.pixelSize: Theme.fontBody
                         wrapMode: Text.WordWrap
                         maximumLineCount: 2
                         elide: Text.ElideRight
@@ -83,30 +83,30 @@ Item {
                     Rectangle {
                         width: parent.width
                         height: 5
-                        radius: 2.5
+                        radius: Theme.radiusPill
                         color: Theme.raised
                         visible: Boolean(card.modelData.current)
                         Rectangle {
                             height: parent.height
-                            radius: 2.5
-                            color: Theme.primary
+                            radius: Theme.radiusPill
+                            color: Theme.selection
                             width: parent.width * Theme.eventProgress(card.modelData.current, view.now) / 100
                         }
                     }
 
-                    Text { text: "Næst"; color: Theme.accent; font.pixelSize: 17; font.bold: true; topPadding: 8 }
+                    Text { text: "Næst"; color: Theme.accent; font.pixelSize: Theme.fontCallout; font.weight: Theme.weightSemibold; topPadding: 8 }
                     Repeater {
                         model: Theme.futureProgramme(card.modelData.upcoming, view.now).slice(0, 5)
                         delegate: Row {
                             required property var modelData
                             width: parent.width
                             spacing: 14
-                            Text { text: Theme.scheduleTime(modelData.startTime); color: Theme.faint; font.pixelSize: 18; font.family: "monospace"; width: 66 }
+                            Text { text: Theme.scheduleTime(modelData.startTime); color: Theme.faint; font.pixelSize: Theme.fontBody; font.family: Theme.monoFontFamily; width: 66 }
                             Text {
                                 width: parent.width - 80
                                 text: modelData.title
                                 color: Theme.ink
-                                font.pixelSize: 18
+                                font.pixelSize: Theme.fontBody
                                 elide: Text.ElideRight
                             }
                         }

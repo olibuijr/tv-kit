@@ -18,20 +18,20 @@ Item {
     clip: true
     visible: opacity > 0.001
     opacity: open ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    Behavior on opacity { NumberAnimation { duration: Theme.motionPanel; easing.type: Easing.OutCubic } }
 
     Rectangle {
         id: glass
         width: parent.width
         height: parent.height
         y: panel.open ? 0 : -height
-        Behavior on y { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+        Behavior on y { NumberAnimation { duration: Theme.motionPanel; easing.type: Easing.OutCubic } }
 
-        color: Qt.alpha(Theme.header, 0.62)
-        border.color: Qt.alpha("#ffffff", 0.14)
-        border.width: 1
+        color: Theme.glassPanel
+        border.color: Theme.glassEdge
+        border.width: Theme.stroke
 
-        Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Qt.alpha("#ffffff", 0.22) }
+        Rectangle { anchors.top: parent.top; width: parent.width; height: Theme.stroke; color: Theme.glassEdge }
 
         ColumnLayout {
             anchors.fill: parent
@@ -41,8 +41,8 @@ Item {
             Text {
                 text: ({epg: "Dagskrá", subtitles: "Skjátextar", audio: "Hljóðrás", queue: "Röð"})[panel.media.panel] || ""
                 color: Theme.accent
-                font.pixelSize: 24
-                font.bold: true
+                font.pixelSize: Theme.fontSection
+                font.weight: Theme.weightSemibold
             }
 
             // EPG: upcoming programme list for the tuned channel.
@@ -58,20 +58,20 @@ Item {
                     required property var modelData
                     width: 320
                     height: panel.height - 90
-                    radius: 10
-                    color: modelData.current ? Qt.alpha(Theme.primary, 0.16) : Theme.surface
-                    border.color: modelData.current ? Theme.primary : Theme.border
+                    radius: Theme.radiusCard
+                    color: modelData.current ? Qt.alpha(Theme.selection, 0.16) : Theme.surface
+                    border.color: modelData.current ? Theme.selection : Theme.border
                     Column {
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 8
-                        Text { text: modelData.start; color: Theme.accent; font.pixelSize: 18; font.bold: true; font.family: "monospace" }
+                        Text { text: modelData.start; color: Theme.accent; font.pixelSize: Theme.fontBody; font.weight: Theme.weightSemibold; font.family: Theme.monoFontFamily }
                         Text {
                             width: parent.width
                             text: modelData.title
                             color: Theme.ink
-                            font.pixelSize: 20
-                            font.bold: true
+                            font.pixelSize: Theme.fontCardTitle
+                            font.weight: Theme.weightSemibold
                             wrapMode: Text.WordWrap
                             maximumLineCount: 3
                             elide: Text.ElideRight
@@ -80,7 +80,7 @@ Item {
                             width: parent.width
                             text: modelData.detail || ""
                             color: Theme.muted
-                            font.pixelSize: 15
+                            font.pixelSize: Theme.fontCaption
                             wrapMode: Text.WordWrap
                             maximumLineCount: 2
                             elide: Text.ElideRight
@@ -92,7 +92,7 @@ Item {
                     anchors.centerIn: parent
                     text: "Engin dagskrá tiltæk."
                     color: Theme.faint
-                    font.pixelSize: 20
+                    font.pixelSize: Theme.fontCardTitle
                 }
             }
 
@@ -108,10 +108,10 @@ Item {
                         readonly property bool selected: modelData === (panel.media.panel === "subtitles" ? panel.media.subtitleTrack : panel.media.audioTrack)
                         height: 44
                         width: label.implicitWidth + 32
-                        radius: 22
-                        color: selected ? Theme.primary : Theme.raised
-                        border.color: Theme.border
-                        Text { id: label; anchors.centerIn: parent; text: modelData; color: selected ? "#fff" : Theme.muted; font.pixelSize: 18; font.bold: selected }
+                        radius: Theme.radiusPill
+                        color: selected ? Theme.selection : Theme.raised
+                        border.color: selected ? Theme.selection : Theme.border
+                        Text { id: label; anchors.centerIn: parent; text: modelData; color: selected ? Theme.ink : Theme.muted; font.pixelSize: Theme.fontBody; font.weight: selected ? Theme.weightSemibold : Theme.weightRegular }
                     }
                 }
             }

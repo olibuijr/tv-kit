@@ -22,7 +22,7 @@ Flickable {
         // Back button
         Button {
             text: "\u2190 Til baka"
-            font.pixelSize: 18
+            font.pixelSize: Theme.fontBody
             flat: true
         }
 
@@ -30,8 +30,8 @@ Flickable {
         Text {
             text: program.title || ""
             color: Theme.ink
-            font.pixelSize: 36
-            font.bold: true
+            font.pixelSize: Theme.fontPageTitle
+            font.weight: Theme.weightSemibold
             width: parent.width
             elide: Text.ElideRight
         }
@@ -40,7 +40,7 @@ Flickable {
         Text {
             text: program.foreignTitle || ""
             color: Theme.muted
-            font.pixelSize: 22
+            font.pixelSize: Theme.fontSection
             visible: text !== "" && text !== program.title
         }
 
@@ -51,17 +51,17 @@ Flickable {
             Text {
                 text: program.episodes ? program.episodes.filter(function(e) { return e.available }).length + " þættir" : ""
                 color: Theme.muted
-                font.pixelSize: 18
+                font.pixelSize: Theme.fontBody
             }
             Text {
                 text: program.year ? String(program.year) : ""
                 color: Theme.muted
-                font.pixelSize: 18
+                font.pixelSize: Theme.fontBody
             }
             Text {
                 text: program.categories ? program.categories.map(function(c) { return c.title }).join(" · ") : ""
                 color: Theme.muted
-                font.pixelSize: 18
+                font.pixelSize: Theme.fontBody
             }
         }
 
@@ -69,7 +69,7 @@ Flickable {
         Text {
             text: program.description || program.shortDescription || ""
             color: Theme.ink
-            font.pixelSize: 22
+            font.pixelSize: Theme.fontSection
             wrapMode: Text.WordWrap
             width: parent.width
             visible: text !== ""
@@ -78,8 +78,8 @@ Flickable {
         // Play all button
         Button {
             text: "\u25B6 Spila"
-            font.pixelSize: 22
-            font.bold: true
+            font.pixelSize: Theme.fontSection
+            font.weight: Theme.weightSemibold
             visible: episodes.length > 0
         }
 
@@ -87,8 +87,8 @@ Flickable {
         Text {
             text: "Þættir"
             color: Theme.ink
-            font.pixelSize: 24
-            font.bold: true
+            font.pixelSize: Theme.fontSection
+            font.weight: Theme.weightSemibold
             visible: episodes.length > 0
         }
 
@@ -99,7 +99,7 @@ Flickable {
                 width: parent.width
                 height: 72
                 color: Theme.raised
-                radius: 10
+                radius: Theme.radiusCard
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: 12
@@ -109,7 +109,7 @@ Flickable {
                     Rectangle {
                         Layout.preferredWidth: 120
                         Layout.preferredHeight: 48
-                        radius: 6
+                        radius: Theme.radiusMedia
                         color: Theme.surface
                         clip: true
                         Image {
@@ -126,8 +126,8 @@ Flickable {
                         Text {
                             text: modelData.title || ""
                             color: Theme.ink
-                            font.pixelSize: 20
-                            font.bold: true
+                            font.pixelSize: Theme.fontCardTitle
+                            font.weight: Theme.weightSemibold
                             elide: Text.ElideRight
                             width: parent.width
                         }
@@ -135,13 +135,13 @@ Flickable {
                             text: (modelData.durationFriendly || "")
                                 + (modelData.firstRun ? " · " + Qt.formatDate(new Date(modelData.firstRun), "d.M.yyyy") : "")
                             color: Theme.muted
-                            font.pixelSize: 16
+                            font.pixelSize: Theme.fontCallout
                         }
                     }
 
                     Button {
                         text: "\u25B6 Spila"
-                        font.pixelSize: 18
+                        font.pixelSize: Theme.fontBody
                         Layout.preferredWidth: 110
                     }
                 }

@@ -34,8 +34,8 @@ Item {
                     width: parent.width
                     text: view.show ? view.show.title : ""
                     color: Theme.ink
-                    font.pixelSize: 44
-                    font.bold: true
+                    font.pixelSize: Theme.fontDisplay
+                    font.weight: Theme.weightSemibold
                     elide: Text.ElideRight
                 }
                 Text {
@@ -43,13 +43,13 @@ Item {
                         ? [view.show.year, view.show.rating ? "★ " + view.show.rating.toFixed(1) : "", (view.show.seasons || []).length + " seríur", (view.show.episodes || []).length + " þættir"].filter(part => part).join(" · ")
                         : ""
                     color: Theme.muted
-                    font.pixelSize: 21
+                    font.pixelSize: Theme.fontCardTitle
                 }
                 Text {
                     width: parent.width
                     text: view.show ? (view.show.description || "") : ""
                     color: Theme.faint
-                    font.pixelSize: 18
+                    font.pixelSize: Theme.fontBody
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
@@ -59,7 +59,7 @@ Item {
                 id: poster
                 visible: Boolean(view.show && view.show.artwork)
                 width: 96; height: 140
-                radius: 8
+                radius: Theme.radiusMedia
                 color: Theme.raised
                 clip: true
                 Image { anchors.fill: parent; source: view.show ? (view.show.artwork || "") : ""; fillMode: Image.PreserveAspectCrop }
@@ -81,10 +81,10 @@ Item {
                 spacing: 8
                 Rectangle {
                     width: parent.width; height: Math.floor(parent.width * 9 / 16)
-                    radius: 10
+                    radius: Theme.radiusCard
                     color: Theme.raised
-                    border.color: parent.active ? Theme.primary : "transparent"
-                    border.width: 2
+                    border.color: parent.active ? Theme.selection : "transparent"
+                    border.width: Theme.stroke
                     clip: true
                     Image {
                         anchors.fill: parent
@@ -99,16 +99,16 @@ Item {
                         anchors.margins: 10
                         width: playingLabel.implicitWidth + 20
                         height: 30
-                        radius: 15
-                        color: Theme.primary
-                        Text { id: playingLabel; anchors.centerIn: parent; text: "Í spilun"; color: "#fff"; font.pixelSize: 16; font.bold: true }
+                        radius: Theme.radiusPill
+                        color: Theme.selection
+                        Text { id: playingLabel; anchors.centerIn: parent; text: "Í spilun"; color: Theme.ink; font.pixelSize: Theme.fontCaption; font.weight: Theme.weightSemibold }
                     }
                 }
-                Text { text: modelData.title; color: Theme.ink; font.pixelSize: 21; font.bold: true; width: parent.width; elide: Text.ElideRight }
+                Text { text: modelData.title; color: Theme.ink; font.pixelSize: Theme.fontCardTitle; font.weight: Theme.weightSemibold; width: parent.width; elide: Text.ElideRight }
                 Text {
                     text: ["S" + modelData.season + (modelData.episode !== null ? " · Þáttur " + modelData.episode : ""), modelData.seeders + " deilendur"].join(" · ")
                     color: Theme.faint
-                    font.pixelSize: 16
+                    font.pixelSize: Theme.fontCallout
                     width: parent.width
                     elide: Text.ElideRight
                 }
@@ -130,16 +130,16 @@ Item {
                     required property var modelData
                     height: 40
                     width: categoryLabel.implicitWidth + 30
-                    radius: 20
-                    color: view.selectedCategoryId === modelData.id ? Theme.primary : Theme.surface
-                    border.color: Theme.border
+                    radius: Theme.radiusPill
+                    color: view.selectedCategoryId === modelData.id ? Theme.selection : Theme.surface
+                    border.color: view.selectedCategoryId === modelData.id ? Theme.selection : Theme.border
                     Text {
                         id: categoryLabel
                         anchors.centerIn: parent
                         text: modelData.name
-                        color: view.selectedCategoryId === modelData.id ? "#fff" : Theme.muted
-                        font.pixelSize: 18
-                        font.bold: view.selectedCategoryId === modelData.id
+                        color: view.selectedCategoryId === modelData.id ? Theme.ink : Theme.muted
+                        font.pixelSize: Theme.fontBody
+                        font.weight: view.selectedCategoryId === modelData.id ? Theme.weightSemibold : Theme.weightRegular
                     }
                 }
             }
@@ -159,7 +159,7 @@ Item {
                 spacing: 8
                 Rectangle {
                     width: parent.width; height: Math.floor(parent.width * 2 / 3)
-                    radius: 10
+                    radius: Theme.radiusCard
                     color: Theme.raised
                     clip: true
                     Image {
@@ -174,7 +174,7 @@ Item {
                         width: parent.width - 30
                         text: modelData.title || ""
                         color: Theme.faint
-                        font.pixelSize: 19
+                        font.pixelSize: Theme.fontBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                         maximumLineCount: 3
@@ -184,8 +184,8 @@ Item {
                 Text {
                     text: modelData.title || ""
                     color: Theme.ink
-                    font.pixelSize: 20
-                    font.bold: true
+                    font.pixelSize: Theme.fontCardTitle
+                    font.weight: Theme.weightSemibold
                     width: parent.width
                     elide: Text.ElideRight
                 }
@@ -194,7 +194,7 @@ Item {
                         ? [(modelData.year || ""), modelData.episodes.length + " þættir"].filter(part => part).join(" · ")
                         : [view.sizeLabel(modelData.sizeBytes), modelData.categoryName].filter(part => part).join(" · ")
                     color: Theme.faint
-                    font.pixelSize: 16
+                    font.pixelSize: Theme.fontCallout
                     width: parent.width
                     elide: Text.ElideRight
                 }
