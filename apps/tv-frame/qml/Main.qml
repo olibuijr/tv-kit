@@ -36,7 +36,7 @@ ApplicationWindow {
         const dateText = Qt.formatDateTime(new Date(root.now), "dddd, d. MMMM")
         const clockText = Qt.formatDateTime(new Date(root.now), "hh:mm:ss")
         const connText = frame.connected ? "Tengt" : "Tengist"
-        const statusText = root.media.title || (root.media.live ? "Í BEINNI" : "")
+        const statusText = (root.media.src || root.media.status === "loading" || root.media.status === "error") ? (root.media.title || (root.media.live ? "Í BEINNI" : "")) : ""
         const arr = [
             {role: "heading", text: viewName},
             {role: "date", text: dateText},
