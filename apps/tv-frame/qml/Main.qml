@@ -208,7 +208,7 @@ ApplicationWindow {
     // Opaque menu background — painted after (on top of) the video, and
     Rectangle {
         anchors.fill: parent
-        color: root.ambientActive ? Qt.alpha(Theme.bg, 0.65) : Theme.bg
+        color: root.ambientActive ? "transparent" : Theme.bg
         visible: root.power && !root.videoActive
     }
 

@@ -28,24 +28,25 @@ Item {
             spacing: 18
 
             Rectangle {
+                id: hero
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredHeight: 3
                 radius: 14
-                color: Theme.surface
-                border.color: Theme.border
+                color: view.media.ambient ? "transparent" : Theme.surface
+                border { color: view.media.ambient ? "transparent" : Theme.border; width: 1 }
                 clip: true
                 Image {
                     anchors.fill: parent
                     source: view.mediaActive ? (view.media.artwork || "") : ""
                     fillMode: Image.PreserveAspectCrop
-                    visible: status === Image.Ready
+                    visible: status === Image.Ready && !view.media.ambient
                 }
                 Rectangle {
                     anchors.fill: parent
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: Qt.alpha("#13100f", 0.88) }
+                        GradientStop { position: 0; color: view.media.ambient ? Qt.alpha("#13100f", 0.7) : Qt.alpha("#13100f", 0.88) }
                         GradientStop { position: 0.8; color: "transparent" }
                     }
                 }
