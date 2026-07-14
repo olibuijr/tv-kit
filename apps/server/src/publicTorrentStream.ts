@@ -10,6 +10,7 @@ import {
 	playbackKind,
 	serveStream,
 	type StreamContext,
+	waitForContiguousPieces,
 } from "./deilduStream";
 
 // Transient per-info-hash download state, shared between the playback context
@@ -114,6 +115,7 @@ export async function startPublicTorrentPlayback(
 	if (!row) throw new Error("Torrent fannst ekki í opinberum lista");
 	const ctx = publicContext(infoHash, row.torrent_uri, row.media_kind);
 	const stream = await beginStream(ctx, onProgress);
+	await waitForContiguousPieces(stream, 80, onProgress);
 	const src = `${config.serverUrl}/public-torrents/stream/${infoHash}`;
 	return {
 		infoHash,

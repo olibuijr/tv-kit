@@ -857,6 +857,50 @@ export async function beginStream(
 	return stream;
 }
 
+// Count how many consecutive pieces from position 0 are fully downloaded.
+// aria2's bitfield is a hex string; each byte's MSB is the lowest piece index
+// within that byte, so we read bits left-to-right through the hex.
+function countContiguousPieces(bitfield: string): number {
+	let count = 0;
+	for (let i = 0; i < bitfield.length; i++) {
+		const nibble = parseInt(bitfield[i], 16);
+		// Each hex char is 4 bits; iterate MSB..LSB within the nibble.
+		for (let shift = 3; shift >= 0; shift--) {
+			if (nibble & (1 << shift)) {
+				count++;
+			} else {
+				return count;
+			}
+		}
+	}
+	return count;
+}
+
+// Wait until at least `minPieces` contiguous pieces from the start of the
+// torrent are downloaded, polling aria2 every second. This prevents mpv from
+// starting playback only to immediately stall because the next piece hasn't
+// arrived yet — the Stremio-style pre-buffer approach.
+export async function waitForContiguousPieces(
+	stream: ActiveStream,
+	minPieces: number,
+	onProgress?: () => void,
+): Promise<void> {
+	if (stream.status === "ready") return;
+	if (!stream.gid) return;
+	const deadline = Date.now() + config.deilduStreamStartTimeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			const status = await rpc<any>("aria2.tellStatus", [stream.gid]);
+			const contig = countContiguousPieces(status.bitfield ?? "");
+			if (contig >= minPieces) return;
+		} catch {
+			// RPC may fail briefly during startup — retry
+		}
+		onProgress?.();
+		await sleep(1000);
+	}
+	// Timed out — start anyway rather than blocking forever.
+}
 export async function startDeilduPlayback(
 	itemId: number,
 	onProgress?: () => void,
@@ -877,6 +921,11 @@ export async function startDeilduPlayback(
 			itemId,
 		);
 	}, (metadata) => selectMediaFile(metadata, item.mediaKind, target));
+	// Stremio-style pre-buffer: don't start mpv until enough contiguous pieces
+	// are verified, so playback doesn't stall after 10-15 seconds on a
+	// thinly-seeded torrent. 80 pieces at 1 MB each = ~60-80 seconds of
+	// buffer at typical 1080p bitrates, giving aria2 time to fetch more.
+	await waitForContiguousPieces(stream, 80, onProgress);
 	const src = `${config.serverUrl}/deildu/stream/${itemId}`;
 	return {
 		id: itemId,

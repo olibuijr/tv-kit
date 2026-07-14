@@ -85,7 +85,11 @@ ApplicationWindow {
         onDurationChanged: if (duration > 0) frame.sendCommand("media-duration", duration)
         onPlaybackRestarted: frame.sendCommand("player-status", "ready")
         onPausedForCacheChanged: {
-            if (pausedForCache) frame.sendCommand("player-status", "loading")
+            // Symmetric status: a cache underrun shows the LoadingOverlay
+            // ("loading"); cache recovery MUST clear it ("ready"), otherwise the
+            // overlay stays stuck over playing video after any mid-stream
+            // rebuffer (audio + advancing time-pos behind a frozen 100% screen).
+            frame.sendCommand("player-status", pausedForCache ? "loading" : "ready")
         }
         onBufferingPercentChanged: {
             const t = Date.now()
