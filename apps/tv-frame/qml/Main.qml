@@ -112,7 +112,7 @@ ApplicationWindow {
 
     MpvVideo {
         id: video
-        x: root.ambientActive && root.view === "home" ? root.width * 0.80 : 0
+        x: root.ambientActive && root.view === "home" ? root.width * 0.68 : 0
         y: root.ambientActive && root.view === "home" ? root.height * 0.12 : 0
         width: root.ambientActive && root.view === "home" ? root.width * 0.18 : root.width
         height: root.ambientActive && root.view === "home" ? root.height * 0.19 : root.height
