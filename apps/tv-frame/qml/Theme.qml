@@ -8,6 +8,7 @@ QtObject {
     readonly property QtObject typography: ThemeTypography {}
     readonly property QtObject metrics: ThemeMetrics {}
     readonly property QtObject motion: ThemeMotion {}
+    readonly property QtObject wallpaper: ThemeWallpaper {}
 
     readonly property color bg: colors.bg
     readonly property color header: colors.header
@@ -67,6 +68,9 @@ QtObject {
     readonly property int motionProgress: motion.progress
     readonly property int motionLoading: motion.loading
     readonly property int motionPulse: motion.pulse
+    readonly property real wallpaperOpacity: wallpaper.opacity
+    readonly property real wallpaperScrimOpacity: wallpaper.scrimOpacity
+    readonly property int videoTopInset: wallpaper.videoTopInset
 
     function clock(seconds) {
         const total = Math.max(0, Math.floor(seconds || 0))

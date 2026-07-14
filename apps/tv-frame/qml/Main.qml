@@ -37,6 +37,11 @@ ApplicationWindow {
         && media.kind !== "radio" && media.kind !== "music" && media.kind !== "podcast"
     readonly property bool ambientActive: media.ambient === true
     property real now: Date.now()
+    property int wallpaperRevision: 0
+    readonly property string wallpaperSource: frameWallpaperUrl.length
+        ? frameWallpaperUrl + (frameWallpaperUrl.indexOf("?") >= 0 ? "&" : "?")
+            + "refresh=" + wallpaperRevision
+        : ""
 
     // Screen element snapshot for frame-health.json — lets non-vision
     // agents verify what the native frame displays without a screenshot.
@@ -119,13 +124,32 @@ ApplicationWindow {
         onTriggered: root.now = Date.now()
     }
 
+    Timer {
+        interval: frameWallpaperRotationMs
+        running: interval > 0 && frameWallpaperUrl.length > 0
+        repeat: true
+        onTriggered: root.wallpaperRevision += 1
+    }
+
+    Image {
+        anchors.fill: parent
+        source: root.wallpaperSource
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: false
+        opacity: status === Image.Ready ? Theme.wallpaperOpacity : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic } }
+    }
+
     MpvVideo {
         id: video
         cropToFill: root.ambientActive && root.view === "home"
         x: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).x : 0
-        y: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).y : 0
+        y: root.ambientActive && root.view === "home"
+            ? homeView.liveVideoContainer.mapToItem(root, 0, 0).y + Theme.videoTopInset : 0
         width: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.width : root.width
-        height: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.height : root.height
+        height: root.ambientActive && root.view === "home"
+            ? Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) : root.height
         layer.enabled: Boolean(root.media.panel)
 
         onPositionChanged: {
@@ -221,7 +245,8 @@ ApplicationWindow {
     // Opaque menu background — painted after (on top of) the video, and
     Rectangle {
         anchors.fill: parent
-        color: root.ambientActive ? "transparent" : Theme.bg
+        color: root.ambientActive || !root.mpvActive
+            ? Qt.alpha(Theme.bg, Theme.wallpaperScrimOpacity) : Theme.bg
         visible: root.power && !root.videoActive
     }
 

@@ -3,8 +3,8 @@ import QtQuick
 QtObject {
     readonly property color bg: "#1c1c1e"
     readonly property color header: "#242426"
-    readonly property color surface: "#2c2c2e"
-    readonly property color raised: "#3a3a3c"
+    readonly property color surface: Qt.rgba(0.17, 0.17, 0.18, 0.82)
+    readonly property color raised: Qt.rgba(0.23, 0.23, 0.24, 0.88)
     readonly property color border: Qt.rgba(1, 1, 1, 0.10)
     readonly property color borderStrong: Qt.rgba(1, 1, 1, 0.18)
     readonly property color glassEdge: Qt.rgba(1, 1, 1, 0.16)
