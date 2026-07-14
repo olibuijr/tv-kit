@@ -5,14 +5,7 @@ Flickable {
     required property var state
     required property var content
 
-    readonly property var movies: content.movies || []
-    readonly property var programs: content.programs || []
-    readonly property var torrentMovies: content.torrentMovies || []
-    readonly property var continueWatching: (content.continueWatching || []).map(item => ({
-        title: item.episode.programTitle,
-        image: item.episode.image,
-        latestEpisode: { title: item.episode.title, image: item.episode.image },
-    }))
+    readonly property var categories: (content.sarpurCategories || []).filter(function(c) { return c.programs.length > 0 })
 
     contentWidth: width
     contentHeight: rails.height
@@ -78,7 +71,7 @@ Flickable {
         spacing: 26
 
         Repeater {
-            model: (content.sarpurCategories || []).filter(c => c.programs.length)
+            model: view.categories
             delegate: Rail {
                 required property var modelData
                 title: modelData.title
@@ -86,13 +79,8 @@ Flickable {
             }
         }
 
-        Rail { title: "Áframhaldandi áhorf"; items: view.continueWatching }
-        Rail { title: "Kvikmyndir í Sarpinum"; items: view.movies }
-        Rail { title: "Þættir í Sarpinum"; items: view.programs }
-        Rail { title: "Sótt efni"; items: view.torrentMovies }
-
         Text {
-            visible: !view.movies.length && !view.programs.length && !view.torrentMovies.length
+            visible: !view.categories.length
             text: "Ekkert myndefni er tiltækt."
             color: Theme.faint
             font.pixelSize: 26
