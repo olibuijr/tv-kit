@@ -45,6 +45,7 @@
 
   type Tab = "Heim" | "Sjónvarp" | "Útvarp" | "Hlaðvörp" | "Deildu" | "Sarpur" | "Fréttir" | "Spjall";
   const navTabs = [{name:"Heim",icon:Home},{name:"Sjónvarp",icon:Tv},{name:"Útvarp",icon:RadioTower},{name:"Hlaðvörp",icon:Podcast},{name:"Deildu",icon:Film},{name:"Sarpur",icon:Tv},{name:"Fréttir",icon:Newspaper},{name:"Spjall",icon:MessageCircle}] as const;
+  const tabForView: Record<HomeState["view"], Exclude<Tab, "Spjall">> = {home:"Heim",tv:"Sjónvarp",radio:"Útvarp",podcasts:"Hlaðvörp",media:"Sarpur",deildu:"Deildu",news:"Fréttir"};
   let state: HomeState | undefined;
   let connected = false;
   let socket: WebSocket;
@@ -272,6 +273,7 @@
 			const previousShowId = state?.deilduShowId;
           const changedAction = message.state.lastAction !== state?.lastAction;
           state = message.state;
+          if (activeTab !== "Spjall") activeTab = tabForView[state.view];
 			if (activeTab === "Deildu" && (changedAction || state.deilduCategoryId !== previousCategoryId || state.deilduShowId !== previousShowId)) void refreshContent();
           if (activeTab === "Fréttir" && state.newsArticleId !== selectedNewsArticleId) void loadNewsArticle(state.newsArticleId);
         } else if (message.type === "content-refresh" && (message.resource === "deildu" || message.resource === "podcasts")) {
