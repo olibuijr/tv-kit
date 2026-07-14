@@ -15,6 +15,7 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 	golfPerson: "",
 	golfBookings: [],
 	channels: [],
+	sarpurCategories: [],
 	programs: [],
 	movies: [],
 	torrentMovies: [],

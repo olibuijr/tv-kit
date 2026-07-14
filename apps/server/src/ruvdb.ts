@@ -392,6 +392,30 @@ export function listRuvPrograms(limit = 40, featuredOnly = true): RuvProgram[] {
 	return rows.map(programDto);
 }
 
+export function listSarpurCategories(): {title: string; slug: string; programs: RuvProgram[]}[] {
+	const rows = statement(`
+		SELECT json_extract(c.value, '$.title') as cat_title,
+			json_extract(c.value, '$.slug') as cat_slug
+		FROM ruv_programs p, json_each(p.categories) c
+		WHERE p.available=1 AND p.featured=1
+		GROUP BY cat_slug
+		ORDER BY COUNT(p.id) DESC
+		LIMIT 10
+	`).all() as unknown as {cat_title: string; cat_slug: string}[];
+	return rows.map(row => ({
+		title: row.cat_title,
+		slug: row.cat_slug,
+		programs: statement(`
+			SELECT * FROM ruv_programs p
+			WHERE p.available=1 AND p.featured=1 AND EXISTS (
+				SELECT 1 FROM json_each(p.categories)
+				WHERE json_extract(value, '$.slug')=?
+			)
+			ORDER BY p.featured DESC, p.updated_at DESC, p.title LIMIT 12
+		`).all(row.cat_slug).map(programDto),
+	}));
+}
+
 export function listRuvMovies(limit = 24): RuvProgram[] {
 	const rows = statement(`
     SELECT * FROM ruv_programs p
@@ -807,6 +831,7 @@ export function dashboardContent(): Omit<
 		movies: listRuvMovies(12),
 		news: listRuvNews(20),
 		continueWatching: listContinueWatching(12),
+		sarpurCategories: listSarpurCategories(),
 		myList: listMyListPrograms(24),
 	};
 }

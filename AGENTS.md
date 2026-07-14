@@ -124,16 +124,11 @@
 ## Remote-to-TV cross-verification (mandatory)
 
 - After every remote interaction that changes the TV state (navigation, tuning, playback, fullscreen), verify the TV reflects the change. Do not assume a remote click succeeded just because the remote UI updated.
-- **Primary verification**: `tvctl kit playback state` (id, engine, advancing position) plus `~/.tv-kit/frame-health.json` (`view` field) for navigation. The frame is native — there is no dashboard DOM to inspect.
-- **Physical screenshot** (`tvctl screenshot /tmp/tv-verify.png`): the authoritative check for frame layout, video pixels, and visual regressions.
-- For UI changes spanning both clients, verify them as two distinct surfaces: use native `agent_browser` only for the tablet remote (`http://192.168.1.12:3112/`) and use `tvctl screenshot` for the native TV dashboard (`tv-frame`). Do not treat `http://192.168.1.12:3110/` as a dashboard DOM; it is the `tvserverd` API.
-- When validating remote control, interact in the remote browser tab first, then confirm the resulting native TV view with `frame-health.json` and a physical screenshot. A remote DOM change alone is not proof that the TV changed.
-- When screenshot analysis is needed and the current model lacks vision support, spawn a one-shot agent:
-
-  ```sh
-  pi -p "Read the screenshot at /tmp/tv-verify.png and describe every section, text, and UI element visible." \
-     --provider openai-codex --model gpt-5.6-luna --no-lsp
-  ```
+- **Primary verification**: `tvctl kit frame health` — the `view` field for navigation, `elements[]` array (heading/date/clock/connection/now_playing) for UI content verification as plain text. Prefer this over screenshots for non-pixel checks; non-vision models can read it directly.
+- **Physical screenshot** (`tvctl screenshot /tmp/tv-verify.png`): fallback for frame layout, video pixels, and visual regressions when `elements[]` is insufficient.
+- For UI changes spanning both clients, verify them as two distinct surfaces: use native `agent_browser` only for the tablet remote (`http://192.168.1.12:3112/`) and use `tvctl kit frame health` (then screenshot only if needed) for the native TV dashboard (`tv-frame`). Do not treat `http://192.168.1.12:3110/` as a dashboard DOM; it is the `tvserverd` API.
+- When validating remote control, interact in the remote browser tab first, then confirm the resulting native TV view with `tvctl kit frame health` (and a screenshot only if elements are inconclusive). A remote DOM change alone is not proof that the TV changed.
+- When a screenshot IS needed and the current model lacks vision, use `tvctl kit frame health` first; if visual confirmation is still required, spawn a one-shot vision agent.
 
 ## Radio favourites
 

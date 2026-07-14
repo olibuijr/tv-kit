@@ -373,6 +373,7 @@ export type DashboardContent = {
 	golfBookings: GolfBooking[];
 	channels: RuvNow[];
 	programs: RuvProgram[];
+	sarpurCategories: {title: string; slug: string; programs: RuvProgram[]}[];
 	movies: RuvProgram[];
 	torrentMovies: TorrentMedia[];
 	deilduCategories: DeilduCategory[];

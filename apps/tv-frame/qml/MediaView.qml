@@ -77,6 +77,15 @@ Flickable {
         width: parent.width
         spacing: 26
 
+        Repeater {
+            model: (content.sarpurCategories || []).filter(c => c.programs.length)
+            delegate: Rail {
+                required property var modelData
+                title: modelData.title
+                items: modelData.programs
+            }
+        }
+
         Rail { title: "Áframhaldandi áhorf"; items: view.continueWatching }
         Rail { title: "Kvikmyndir í Sarpinum"; items: view.movies }
         Rail { title: "Þættir í Sarpinum"; items: view.programs }
