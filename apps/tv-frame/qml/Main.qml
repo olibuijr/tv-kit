@@ -112,9 +112,11 @@ ApplicationWindow {
 
     MpvVideo {
         id: video
-        anchors.fill: parent
+        x: root.ambientActive && root.view === "home" ? root.width * 0.68 : 0
+        y: root.ambientActive && root.view === "home" ? 118 : 0
+        width: root.ambientActive && root.view === "home" ? root.width * 0.32 : root.width
+        height: root.ambientActive && root.view === "home" ? root.height * 0.22 : root.height
         layer.enabled: Boolean(root.media.panel)
-        visible: !root.ambientActive || root.view !== "home"
 
         onPositionChanged: {
             const t = Date.now()

@@ -132,7 +132,7 @@ Item {
                 Layout.fillHeight: true
                 Layout.preferredHeight: 3
                 radius: 14
-                color: Theme.surface
+                color: Qt.alpha(Theme.surface, 0.76)
                 border.color: Theme.border
                 clip: true
                 Image {
@@ -148,12 +148,6 @@ Item {
                     spacing: 12
                     Text { text: "Í beinni á RÚV"; color: Theme.ink; font.pixelSize: 22; font.bold: true }
                     Repeater {
-                ShaderEffectSource {
-                    anchors.fill: parent
-                    sourceItem: video
-                    hideSource: true
-                    opacity: 0.55
-                }
                         model: view.channels
                         delegate: Column {
                             required property var modelData
