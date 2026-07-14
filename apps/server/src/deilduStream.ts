@@ -774,7 +774,7 @@ export async function beginStream(
 		cmd: [
 			config.deilduAria2Bin,
 			"--enable-rpc=true",
-			"--rpc-listen-all=false",
+			"--rpc-listen-all=true",
 			`--rpc-listen-port=${config.deilduStreamRpcPort}`,
 			"--allow-overwrite=true",
 			"--auto-file-renaming=false",

@@ -690,7 +690,7 @@ const send = () => ws.send(JSON.stringify(mode === "deildu"
     : { type: "command", action: "set-playing", value: true, label: `tvctl ${mode}` }));
 const verify = async (attempt = 0) => {
   const current = await state();
-  if (mode === "stop" && !current.playing || mode === "play" && current.playing && current.media.src) { clearTimeout(watchdog); return done(current); }
+  if (mode === "stop" && !current.playing && !current.media.src || mode === "play" && current.playing && current.media.src) { clearTimeout(watchdog); return done(current); }
   if (mode === "deildu" && current.media.id === `deildu-${value}`) {
     if (baseline === undefined) baseline = current.media.currentTime;
     if (["mpv", "browser"].includes(current.media.engine) && current.media.status === "ready" && current.media.currentTime > baseline + 0.5) { clearTimeout(watchdog); return done(current); }
@@ -703,7 +703,7 @@ ws = new WebSocket("ws://127.0.0.1:3110/ws?client=tvctl", { headers: { Origin: "
 ws.onerror = () => fail("TV Kit WebSocket connection failed");
 ws.onopen = async () => {
   const before = await state();
-  if (mode === "stop" && !before.playing || mode === "play" && before.playing) return done(before);
+  if (mode === "stop" && !before.playing && !before.media.src || mode === "play" && before.playing) return done(before);
   send();
   setTimeout(() => verify(), mode === "deildu" ? 1000 : 400);
 };'
