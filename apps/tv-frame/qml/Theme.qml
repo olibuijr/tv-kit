@@ -74,6 +74,7 @@ QtObject {
     readonly property real wallpaperOpacity: wallpaper.opacity
     readonly property real wallpaperScrimOpacity: wallpaper.scrimOpacity
     readonly property int videoTopInset: wallpaper.videoTopInset
+    readonly property real videoScale: wallpaper.videoScale
 
     function clock(seconds) {
         const total = Math.max(0, Math.floor(seconds || 0))

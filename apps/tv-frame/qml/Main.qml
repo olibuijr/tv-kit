@@ -44,7 +44,8 @@ ApplicationWindow {
         : ""
     readonly property real homeVideoWidth: Math.min(
         homeView.liveVideoContainer.width,
-        Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) * 16 / 9)
+        Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) * 16 / 9
+            * Theme.videoScale)
     readonly property real homeVideoHeight: homeVideoWidth * 9 / 16
 
     // Screen element snapshot for frame-health.json — lets non-vision
@@ -148,8 +149,7 @@ ApplicationWindow {
     MpvVideo {
         id: video
         cropToFill: false
-        x: root.ambientActive && root.view === "home"
-            ? Theme.marginX + homeView.liveVideoContainer.width - root.homeVideoWidth : 0
+        x: root.ambientActive && root.view === "home" ? Theme.marginX : 0
         y: root.ambientActive && root.view === "home"
             ? Theme.headerHeight + Theme.viewTopMargin + Theme.videoTopInset : 0
         width: root.ambientActive && root.view === "home" ? root.homeVideoWidth : root.width
