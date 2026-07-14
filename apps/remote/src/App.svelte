@@ -305,6 +305,7 @@
 
   <main class:chat-mode={activeTab === "Spjall"}>
     {#if activeTab !== "Spjall"}
+    {#if state.media.src || state.media.status === "loading" || state.media.status === "error"}
     <section class="now-playing panel">
       <div class="poster">{#if state.media.artwork}<img src={state.media.artwork} alt=""/>{:else}<Play size={28}/>{/if}</div>
       <div class="track"><span>{state.media.live ? "Í BEINNI" : state.media.source}</span><h1>{state.media.title}</h1><p>{state.media.subtitle}</p><div class="timeline"><i style={`width:${state.media.live ? 100 : Math.min(100,displayTime/Math.max(1,state.media.duration)*100)}%`}></i></div><div class="times"><span>{state.media.live ? "Í beinni" : formatMediaTime(displayTime)}</span><span>{state.media.live ? "" : formatMediaTime(state.media.duration)}</span></div></div>
@@ -338,6 +339,7 @@
     {#if state.media.panel === "audio"}<section class="option-sheet panel"><strong>Hljóðrás</strong>{#each state.media.audioTracks as track}<button class:selected={track === state.media.audioTrack} on:click={() => command("audio-track", track, track)}>{track}</button>{/each}</section>{/if}
     {#if state.media.panel === "epg"}<section class="epg-sheet panel"><strong>Dagskrá</strong>{#if state.media.epg.length}{#each state.media.epg as item}<article class:current={item.current}><time>{item.start}</time><div><strong>{item.title}</strong><span>{item.detail}</span></div></article>{/each}{:else}<p>Engin dagskrá tiltæk.</p>{/if}</section>{/if}
     </div>{/if}
+    {/if}
     {/if}
 
     {#if activeTab === "Heim"}
