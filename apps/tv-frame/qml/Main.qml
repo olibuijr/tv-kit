@@ -114,6 +114,7 @@ ApplicationWindow {
         id: video
         anchors.fill: parent
         layer.enabled: Boolean(root.media.panel)
+        visible: !root.ambientActive || root.view !== "home"
 
         onPositionChanged: {
             const t = Date.now()
