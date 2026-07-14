@@ -49,6 +49,14 @@ ApplicationWindow {
 
     onNowChanged: updateScreenElements()
     onViewChanged: updateScreenElements()
+    property int _mediaProgramId: 0
+    onStateChanged: {
+        const id = (state.mediaProgramId || 0)
+        if (id && id !== _mediaProgramId) {
+            _mediaProgramId = id
+            frame.fetchProgram(id)
+        }
+    }
 
     // Auto-hide HUD and cursor after 5s of no media changes.
     property int hudAutoToken: 0

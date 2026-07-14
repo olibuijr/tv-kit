@@ -1579,6 +1579,12 @@ const server = Bun.serve<WebSocketData>({
         playRuvProgram(message.value);
         return;
       }
+      if (message.action === "media-program") {
+        state.mediaProgramId = Number(message.value) || 0;
+        state.view = "media";
+        broadcast();
+        return;
+      }
       if (message.action === "radio") {
         tuneRadio(message.value);
         return;

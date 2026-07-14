@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 
 Flickable {
     id: view
@@ -6,10 +7,39 @@ Flickable {
     required property var content
 
     readonly property var categories: (content.sarpurCategories || []).filter(function(c) { return c.programs.length > 0 })
+    readonly property bool showDetail: state.mediaProgramId && state.mediaProgramId > 0
 
     contentWidth: width
-    contentHeight: rails.height
+    contentHeight: showDetail ? detailView.height : rails.height
     clip: true
+
+    // --- Program detail view ---
+    Loader {
+        id: detailView
+        width: parent.width
+        active: view.showDetail
+        sourceComponent: MediaProgramView { mediaProgram: frame.mediaProgram }
+    }
+
+    // --- Category grid ---
+    Column {
+        id: rails
+        width: parent.width
+        spacing: 26
+        visible: !view.showDetail
+
+        Repeater {
+            model: view.categories
+            delegate: railComponent
+        }
+
+        Text {
+            visible: !view.categories.length
+            text: "Ekkert myndefni er tiltækt."
+            color: Theme.faint
+            font.pixelSize: 26
+        }
+    }
 
     component Rail: Column {
         id: rail
@@ -23,67 +53,53 @@ Flickable {
             spacing: 16
             Repeater {
                 model: rail.items.slice(0, 7)
-                delegate: Column {
-                    required property var modelData
-                    width: 244
-                    spacing: 8
-                    Rectangle {
-                        width: 244; height: 137
-                        radius: 10
-                        color: Theme.raised
-                        clip: true
-                        Image {
-                            anchors.fill: parent
-                            source: modelData.image
-                                || (modelData.latestEpisode ? modelData.latestEpisode.image : "")
-                                || modelData.portraitImage
-                                || modelData.artwork
-                                || ""
-                            fillMode: Image.PreserveAspectCrop
-                            visible: status === Image.Ready
-                        }
-                    }
-                    Text {
-                        text: modelData.title
-                        color: Theme.ink
-                        font.pixelSize: 19
-                        width: parent.width
-                        elide: Text.ElideRight
-                    }
-                    Text {
-                        text: (modelData.latestEpisode ? modelData.latestEpisode.title : "")
-                            || modelData.foreignTitle
-                            || modelData.source
-                            || ""
-                        color: Theme.faint
-                        font.pixelSize: 15
-                        width: parent.width
-                        elide: Text.ElideRight
-                    }
-                }
+                delegate: railCardDelegate
             }
         }
     }
 
-    Column {
-        id: rails
-        width: parent.width
-        spacing: 26
+    component railComponent: Rail {
+        required property var modelData
+        title: modelData.title
+        items: modelData.programs
+    }
 
-        Repeater {
-            model: view.categories
-            delegate: Rail {
-                required property var modelData
-                title: modelData.title
-                items: modelData.programs
+    component railCardDelegate: Column {
+        required property var modelData
+        width: 244
+        spacing: 8
+        Rectangle {
+            width: 244; height: 137
+            radius: 10
+            color: Theme.raised
+            clip: true
+            Image {
+                anchors.fill: parent
+                source: modelData.image
+                    || (modelData.latestEpisode ? modelData.latestEpisode.image : "")
+                    || modelData.portraitImage
+                    || modelData.artwork
+                    || ""
+                fillMode: Image.PreserveAspectCrop
+                visible: status === Image.Ready
             }
         }
-
         Text {
-            visible: !view.categories.length
-            text: "Ekkert myndefni er tiltækt."
+            text: modelData.title
+            color: Theme.ink
+            font.pixelSize: 19
+            width: parent.width
+            elide: Text.ElideRight
+        }
+        Text {
+            text: (modelData.latestEpisode ? modelData.latestEpisode.title : "")
+                || modelData.foreignTitle
+                || modelData.source
+                || ""
             color: Theme.faint
-            font.pixelSize: 26
+            font.pixelSize: 15
+            width: parent.width
+            elide: Text.ElideRight
         }
     }
 }

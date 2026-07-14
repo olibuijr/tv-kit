@@ -19,6 +19,7 @@ class FrameClient : public QObject {
     Q_PROPERTY(QVariantList stations READ stations NOTIFY stationsChanged)
     Q_PROPERTY(QVariantMap article READ article NOTIFY articleChanged)
     Q_PROPERTY(QVariantList screenElements READ screenElements WRITE setScreenElements NOTIFY screenElementsChanged)
+    Q_PROPERTY(QVariantMap mediaProgram READ mediaProgram NOTIFY mediaProgramChanged)
 
 public:
     explicit FrameClient(QObject *parent = nullptr);
@@ -31,6 +32,8 @@ public:
     QString error() const;
     QVariantList screenElements() const;
     void setScreenElements(const QVariantList &elements);
+    QVariantMap mediaProgram() const;
+    Q_INVOKABLE void fetchProgram(int id);
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void refreshContent();
@@ -47,6 +50,7 @@ signals:
     void stationsChanged();
     void screenElementsChanged();
     void articleChanged();
+    void mediaProgramChanged();
     void errorChanged();
 
 private:
@@ -57,6 +61,8 @@ private:
     void refreshArticle();
     QUrl serverPath(const QString &path) const;
     QVariantList screenElements_;
+    QJsonObject mediaProgram_;
+    void handleProgramResponse(QNetworkReply *reply);
     QUrl contentUrl() const;
 
     QWebSocket socket_;

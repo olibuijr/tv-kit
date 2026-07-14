@@ -194,6 +194,7 @@
       const response = await fetch(`${tvServerUrl()}/ruv/programs/${id}`);
       if (!response.ok) throw new Error();
       selectedProgram = await response.json() as RuvProgramResponse;
+      command("media-program", id, selectedProgram.program.title);
     } catch { feedback = "Ekki náðist í þættina"; }
     finally { detailLoading = false; }
   }

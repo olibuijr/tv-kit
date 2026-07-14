@@ -79,6 +79,19 @@ QVariantMap FrameClient::article() const { return article_.toVariantMap(); }
 QString FrameClient::error() const { return error_; }
 QVariantList FrameClient::screenElements() const { return screenElements_; }
 void FrameClient::setScreenElements(const QVariantList &elements) { if (screenElements_ != elements) { screenElements_ = elements; emit screenElementsChanged(); } }
+QVariantMap FrameClient::mediaProgram() const { return mediaProgram_.toVariantMap(); }
+void FrameClient::fetchProgram(int id) {
+    auto *reply = network_.get(QNetworkRequest(serverPath(QStringLiteral("/ruv/programs/") + QString::number(id))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() { handleProgramResponse(reply); });
+}
+void FrameClient::handleProgramResponse(QNetworkReply *reply) {
+    reply->deleteLater();
+    if (reply->error() != QNetworkReply::NoError) return;
+    const auto doc = QJsonDocument::fromJson(reply->readAll());
+    if (!doc.isObject()) return;
+    mediaProgram_ = doc.object();
+    emit mediaProgramChanged();
+}
 
 void FrameClient::start()
 {
