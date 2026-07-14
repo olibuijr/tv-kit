@@ -66,6 +66,14 @@ ApplicationWindow {
     property string _prevMediaId: ""
     property string _prevMediaStatus: ""
     property bool _prevPlaying: false
+    property int _prevVolume: -1
+    property bool _prevMuted: false
+    property real _prevPlaybackRate: 1
+    property string _prevPanel: ""
+    property string _prevSubtitleTrack: ""
+    property string _prevAudioTrack: ""
+    property bool _prevFullscreen: false
+    property int _prevSeekToken: -1
 
     function bumpHud() {
         root.hudAutoToken += 1
@@ -141,14 +149,34 @@ ApplicationWindow {
             const curId = (root.state.media && root.state.media.id) || ""
             const curStatus = (root.state.media && root.state.media.status) || ""
             const curPlaying = root.state.playing === true
+            const curVolume = root.state.volume ?? 100
+            const curMuted = root.state.muted === true
+            const curRate = root.media.playbackRate || 1
+            const curPanel = root.media.panel || ""
+            const curSubtitle = root.media.subtitleTrack || ""
+            const curAudio = root.media.audioTrack || ""
+            const curFullscreen = root.media.fullscreen === true
+            const curSeekToken = root.media.seekToken || 0
             if (curView !== root._prevView || curId !== root._prevMediaId
-                || curStatus !== root._prevMediaStatus || curPlaying !== root._prevPlaying) {
+                || curStatus !== root._prevMediaStatus || curPlaying !== root._prevPlaying
+                || curVolume !== root._prevVolume || curMuted !== root._prevMuted
+                || curRate !== root._prevPlaybackRate || curPanel !== root._prevPanel
+                || curSubtitle !== root._prevSubtitleTrack || curAudio !== root._prevAudioTrack
+                || curFullscreen !== root._prevFullscreen || curSeekToken !== root._prevSeekToken) {
                 root.bumpHud()
             }
             root._prevView = curView
             root._prevMediaId = curId
             root._prevMediaStatus = curStatus
             root._prevPlaying = curPlaying
+            root._prevVolume = curVolume
+            root._prevMuted = curMuted
+            root._prevPlaybackRate = curRate
+            root._prevPanel = curPanel
+            root._prevSubtitleTrack = curSubtitle
+            root._prevAudioTrack = curAudio
+            root._prevFullscreen = curFullscreen
+            root._prevSeekToken = curSeekToken
 
             const src = root.media.src || ""
             if (root.mpvActive) {
@@ -306,9 +334,11 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: root.power
-            && root.hudAutoVisible
-            && (root.state.playing || root.media.status === "loading" || root.media.status === "error")
-        opacity: root.hudAutoVisible ? 1 : 0
+            && ((root.mpvActive && !root.videoActive)
+                || Boolean(root.media.panel)
+                || (root.hudAutoVisible
+                    && (root.state.playing || root.media.status === "loading" || root.media.status === "error")))
+        opacity: visible ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 400 } }
         media: root.media
         playing: root.state.playing === true
