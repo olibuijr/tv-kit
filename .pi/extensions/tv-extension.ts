@@ -116,6 +116,44 @@ const tvPlayback = defineTool({
 	},
 });
 
+const tvPublic = defineTool({
+	name: "tv_public",
+	label: "TV public torrents",
+	description:
+		"Search, inspect, scrape, or stream TV Kit's multi-source public torrent catalog (ThePirateBay/apibay, Knaben, 1337x, EZTV). search needs query; play needs a 40-hex info hash and verifies advancing frames; never retry a failed hash automatically.",
+	promptSnippet:
+		"Search public trackers, inspect the catalog, or stream a public torrent.",
+	executionMode: "sequential",
+	parameters: Type.Object({
+		action: Type.Union([
+			Type.Literal("search"),
+			Type.Literal("list"),
+			Type.Literal("scrape"),
+			Type.Literal("state"),
+			Type.Literal("play"),
+			Type.Literal("stop"),
+		]),
+		query: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+		hash: Type.Optional(Type.String({ pattern: "^[A-Fa-f0-9]{40}$" })),
+		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+	}),
+	execute: (_id, params, signal) => {
+		if (params.action === "search") {
+			const query = params.query?.trim();
+			if (!query) throw new Error("tv_public search requires query");
+			return run(["public", "search", query], signal);
+		}
+		if (params.action === "play") {
+			if (!params.hash) throw new Error("tv_public play requires hash");
+			return run(["public", "play", params.hash], signal, 45_000);
+		}
+		if (params.action === "list") {
+			return run(["public", "list", String(params.limit ?? 30)], signal);
+		}
+		return run(["public", params.action], signal);
+	},
+});
+
 const tvMpv = defineTool({
 	name: "tv_mpv",
 	label: "TV mpv",
@@ -200,6 +238,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool(tvSnapshot);
 	pi.registerTool(tvDeildu);
 	pi.registerTool(tvPlayback);
+	pi.registerTool(tvPublic);
 	pi.registerTool(tvMpv);
 	pi.registerTool(tvKit);
 }

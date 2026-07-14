@@ -783,6 +783,17 @@ export async function beginStream(
 			`--bt-prioritize-piece=head=${config.deilduStreamBufferBytes},tail=${config.deilduStreamBufferBytes}`,
 			`--select-file=${selected.index}`,
 			"--seed-time=0",
+			// Peer discovery: with few tracker seeders, DHT + peer-exchange +
+			// local peer discovery find far more peers than the torrent's own
+			// trackers, and a wide peer cap keeps the pipe full. This is the
+			// software fix for a laggy, thinly-seeded stream (no router port
+			// forward required for these outbound-discovered peers).
+			"--enable-dht=true",
+			"--enable-peer-exchange=true",
+			"--bt-enable-lpd=true",
+			"--dht-listen-port=6881-6999",
+			"--listen-port=6881-6999",
+			"--bt-max-peers=200",
 			// Streaming must not synchronously preallocate a multi-gigabyte file:
 			// ext4 journal commits can stall tvserverd and reset the player source.
 			"--file-allocation=none",

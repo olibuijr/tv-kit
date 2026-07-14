@@ -99,6 +99,14 @@ Deildu catalog (read-only, secret-safe):
   deildu links ID        Show safe detail, stream, and local torrent links
   deildu files ID        List files in cached torrent metadata
 
+Public torrents (multi-source: ThePirateBay/apibay, Knaben, 1337x, EZTV):
+  public search QUERY    Live multi-source search; dedup, sort by seeders, persist
+  public list [N]        Read-only DB sample sorted by seeders (default 30)
+  public scrape          Trigger concurrent scrape + clean + enrich
+  public state           Show scrape run state
+  public play HASH       Play a public torrent (40-hex info hash); verifies frames
+  public stop            Stop playback
+
 Environment: TV_HOST, TV_USER, TV_IDENTITY, TV_CONNECT_TIMEOUT, TV_CMD_TIMEOUT,
              TV_KIT_DIR, TITAN_HOST, TV_FRAME_BUILD_JOBS, TV_TEST_HOME,
              TV_TEST_HOST, TV_TEST_SERVER_PORT, TV_TEST_REMOTE_PORT,
@@ -812,6 +820,82 @@ console.log(JSON.stringify({id,detailUrl:`${base}/details.php?id=${id}`,streamUr
   esac
 }
 
+public_torrent() {
+  local action=${1:-search}; shift || true
+  case $action in
+    search)
+      (($#)) || { echo 'tvctl: public search requires a query' >&2; exit 64; }
+      # Live multi-source search (ThePirateBay/apibay, Knaben, ...). The server
+      # deduplicates by info-hash, sorts by seeders, and persists the hits.
+      remote_argv env TVCTL_PUBLIC_QUERY="$*" ~/.bun/bin/bun -e 'const query = Bun.env.TVCTL_PUBLIC_QUERY || "";
+const response = await fetch("http://127.0.0.1:3110/public-torrents/search", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:3112" },
+  body: JSON.stringify({ query }),
+});
+if (!response.ok) { console.error(`public search failed HTTP ${response.status}`); process.exit(1); }
+const { results = [] } = await response.json();
+console.log(JSON.stringify(results.map(r => ({ infoHash: r.infoHash, seeders: r.seeders, leechers: r.leechers, sizeBytes: r.sizeBytes, source: r.source, mediaKind: r.mediaKind, title: r.originalTitle })), null, 0));'
+      ;;
+    list)
+      (($# <= 1)) || { echo 'tvctl: public list accepts an optional row count' >&2; exit 64; }
+      local limit=${1:-30}
+      [[ $limit =~ ^[1-9][0-9]*$ ]] && ((limit <= 500)) || { echo 'tvctl: public list count must be 1..500' >&2; exit 64; }
+      remote_argv sqlite3 -json "/home/$user/$kit_home/data/tv-kit.sqlite" \
+        "SELECT info_hash,COALESCE(NULLIF(title,''),original_title) AS title,media_kind,size_bytes,seeders,leechers,source,cleanup_status FROM public_torrents ORDER BY seeders DESC,last_seen_at DESC LIMIT $limit;"
+      ;;
+    scrape)
+      (($# == 0)) || { echo 'tvctl: public scrape accepts no arguments' >&2; exit 64; }
+      # Trigger the concurrent multi-source firehose scrape + clean + enrich.
+      remote_argv ~/.bun/bin/bun -e 'const response = await fetch("http://127.0.0.1:3110/agent/tasks/public-torrent-import", { method: "POST", headers: { Origin: "http://127.0.0.1:3112" } });
+if (!response.ok) { console.error(`public scrape trigger failed HTTP ${response.status}`); process.exit(1); }
+const body = await response.json();
+console.log(JSON.stringify({ accepted: body.accepted ?? false, scrape: body.scrape?.message ?? "", running: body.scrape?.running ?? false }));'
+      ;;
+    state)
+      (($# == 0)) || { echo 'tvctl: public state accepts no arguments' >&2; exit 64; }
+      remote_argv ~/.bun/bin/bun -e 'const response = await fetch("http://127.0.0.1:3110/agent/tasks/public-torrent-import");
+const body = await response.json();
+const s = body.scrape ?? {};
+console.log(JSON.stringify({ running: s.running ?? false, status: s.status, message: s.message, inserted: s.inserted, updated: s.updated, itemCount: s.itemCount, sourceCount: s.sourceCount, cleaned: s.cleaned, enriched: s.enriched, lastRun: s.lastRun }));'
+      ;;
+    play)
+      (($# == 1)) && [[ $1 =~ ^[A-Fa-f0-9]{40}$ ]] || { echo 'tvctl: public play requires one 40-hex info hash' >&2; exit 64; }
+      local hash=${1^^}
+      # Send the maintained public-torrent-play command and verify advancing
+      # frames, exactly like Deildu playback. Never retry a failed hash.
+      local script='const hash = Bun.env.TVCTL_PUBLIC_HASH;
+const id = `public-${hash}`;
+let ws;
+let baseline;
+const abort = () => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "command", action: "stop-playback", label: "tvctl timeout" })); } catch {} };
+const fail = (message, stop = false) => { console.error(message); if (stop) abort(); setTimeout(() => { try { ws?.close(); } catch {} process.exit(1); }, stop ? 200 : 0); };
+const state = async () => (await (await fetch("http://127.0.0.1:3110/health")).json()).state;
+const done = current => { console.log(JSON.stringify({ playing: current.playing, id: current.media.id, title: current.media.title, engine: current.media.engine || "none", position: current.media.currentTime, status: current.media.status })); ws?.close(); setTimeout(() => process.exit(0), 100); };
+const watchdog = setTimeout(() => fail("TV Kit playback produced no frames", true), 40000);
+const verify = async (attempt = 0) => {
+  const current = await state();
+  if (current.media.id === id) {
+    if (baseline === undefined) baseline = current.media.currentTime;
+    if (["mpv", "browser"].includes(current.media.engine) && current.media.status === "ready" && current.media.currentTime > baseline + 0.5) { clearTimeout(watchdog); return done(current); }
+    if (current.media.status === "error") return fail("TV Kit playback failed", true);
+  }
+  if (attempt >= 18) return fail("TV Kit playback produced no frames", true);
+  setTimeout(() => verify(attempt + 1), 2000);
+};
+ws = new WebSocket("ws://127.0.0.1:3110/ws?client=tvctl", { headers: { Origin: "http://127.0.0.1:3112" } });
+ws.onerror = () => fail("TV Kit WebSocket connection failed");
+ws.onopen = () => { ws.send(JSON.stringify({ type: "command", action: "public-torrent-play", value: hash, label: "tvctl public" })); setTimeout(() => verify(), 1500); };'
+      remote_argv env TVCTL_PUBLIC_HASH="$hash" ~/.bun/bin/bun -e "$script"
+      ;;
+    stop)
+      (($# == 0)) || { echo 'tvctl: public stop accepts no arguments' >&2; exit 64; }
+      kit_playback stop
+      ;;
+    *) echo 'tvctl: public accepts search QUERY, list [N], scrape, state, play HASH, or stop' >&2; exit 64 ;;
+  esac
+}
+
 tv_snapshot() {
   (($# == 0)) || { echo 'tvctl: snapshot accepts no arguments' >&2; exit 64; }
   local script='import { freemem, hostname, loadavg, totalmem, uptime } from "node:os";
@@ -899,6 +983,10 @@ case ${1:-help} in
   deildu)
     shift
     deildu_query "$@"
+    ;;
+  public)
+    shift
+    public_torrent "$@"
     ;;
   snapshot)
     shift

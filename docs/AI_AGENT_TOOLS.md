@@ -13,6 +13,8 @@ This is the shared operational index for external coding agents and TV Kit's int
 | List/change mpv tracks | `tv_mpv` | Not exposed |
 | Stream a torrent video | `tv_deildu search`, then `tv_playback deildu` once | Not exposed |
 | Query Deildu metadata/links | `tv_deildu` | Not exposed |
+| Search public trackers / stream a public torrent | `tv_public search`, then `tv_public play HASH` once | Not exposed |
+| Scrape/inspect the public torrent catalog | `tv_public scrape` / `state` / `list` | Not exposed |
 | Run/verify Deildu catalog cleanup | Tablet remote task control; `tv_deildu search` for a safe DB sample | Not exposed |
 | Set volume | Tablet remote | `set_volume` (0–100) |
 | Deploy source | `tv_kit sync` | Not permitted |
@@ -119,6 +121,33 @@ Query Deildu without starting playback or exposing credentials:
 `links` returns only the public detail URL, local stream URL, and cached torrent path; the authenticated download URL is redacted. `files` removes private tracker announce and magnet values while retaining safe metadata and file paths.
 
 Use this maintained path instead of ad-hoc browser/WebSocket scripts. `deildu` waits for advancing frames from the codec-selected player; if none arrive within its deadline, it sends authoritative `stop-playback`, cleans the stream, and exits nonzero. Never retry automatically. Verify real video with `tvctl screenshot` and never treat `playing: true`, an assigned URL, `status:"ready"`, or a black screen as pixel proof.
+
+### Public torrents (multi-source)
+
+The `public_torrents` catalog is filled by a concurrent, rate-limited scraper
+that fans out one task per source (ThePirateBay/apibay, Knaben's DHT
+aggregation, 1337x, EZTV), then cleans and TMDB-enriches titles alongside
+Deildu. Every operation is a maintained `tvctl` subcommand — never an ad-hoc
+`curl`, WebSocket, or `sqlite3` script:
+
+```bash
+/home/olafurbui/.local/bin/tvctl public search "The Piano 1993"   # live multi-source, dedup by info-hash, sort by seeders, persist
+/home/olafurbui/.local/bin/tvctl public list 30                   # read-only DB sample, seeders desc
+/home/olafurbui/.local/bin/tvctl public scrape                    # trigger concurrent scrape + clean + enrich
+/home/olafurbui/.local/bin/tvctl public state                     # scrape run state
+/home/olafurbui/.local/bin/tvctl public play <40-hex-info-hash>   # stream through the head+tail engine; verifies advancing frames
+/home/olafurbui/.local/bin/tvctl public stop
+```
+
+`public play` resolves a real `.torrent` for the info-hash (the stored http(s)
+link, else the itorrents.org cache), then streams it through the same aria2
+head+tail buffering engine as Deildu — so MP4s with a trailing `moov` atom play
+while downloading. Pick a well-seeded release: prefer a higher seeder count and
+a lower bitrate (a 14-seeder 720p streams far more smoothly than a 6-seeder
+1080p). aria2 uses DHT, peer-exchange, and local peer discovery, so a thinly
+tracked torrent still finds peers without a router port forward. Verify with
+`engine:"mpv"`, advancing `currentTime`, and a `tvctl screenshot`; never retry a
+failed hash automatically.
 
 Successful normal torrent verification requires `engine:"mpv"`, one on-demand mpv process, advancing `currentTime`, and real video pixels. Browser torrent playback is gated by `BROWSER_TORRENT_PLAYBACK_ENABLED` and is off by default; do not count it as the normal success path. A stationary timestamp is a failure. `tvctl kit setup` installs mpv; service restart/deploy cleanup removes stale player and verifier processes. Torrent state is intentionally stopped and its stale source cleared whenever `tvserverd` starts.
 
