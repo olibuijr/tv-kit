@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QRandomGenerator>
 #include <QQuickStyle>
 #include <QQuickWindow>
 
@@ -13,9 +14,14 @@ int main(int argc, char *argv[])
     bool wallpaperRotationOk = false;
     const int wallpaperRotationMs =
         qEnvironmentVariableIntValue("TV_FRAME_WALLPAPER_ROTATION_MS", &wallpaperRotationOk);
+    const QStringList wallpaperUrls =
+        qEnvironmentVariable("TV_FRAME_WALLPAPER_URLS").split(',', Qt::SkipEmptyParts);
     engine.rootContext()->setContextProperty(
-        QStringLiteral("frameWallpaperUrl"),
-        qEnvironmentVariable("TV_FRAME_WALLPAPER_URL"));
+        QStringLiteral("frameWallpaperUrls"),
+        wallpaperUrls);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("frameWallpaperStartIndex"),
+        wallpaperUrls.isEmpty() ? 0 : QRandomGenerator::global()->bounded(wallpaperUrls.size()));
     engine.rootContext()->setContextProperty(
         QStringLiteral("frameWallpaperRotationMs"),
         wallpaperRotationOk ? wallpaperRotationMs : 0);

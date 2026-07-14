@@ -37,11 +37,9 @@ ApplicationWindow {
         && media.kind !== "radio" && media.kind !== "music" && media.kind !== "podcast"
     readonly property bool ambientActive: media.ambient === true
     property real now: Date.now()
-    property int wallpaperRevision: 0
-    readonly property string wallpaperSource: frameWallpaperUrl.length
-        ? frameWallpaperUrl + (frameWallpaperUrl.indexOf("?") >= 0 ? "&" : "?")
-            + "refresh=" + wallpaperRevision
-        : ""
+    property int wallpaperRevision: frameWallpaperStartIndex
+    readonly property string wallpaperSource: frameWallpaperUrls.length
+        ? frameWallpaperUrls[wallpaperRevision % frameWallpaperUrls.length] : ""
     readonly property real homeVideoWidth: Math.min(
         homeView.liveVideoContainer.width,
         Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) * 16 / 9
@@ -131,7 +129,7 @@ ApplicationWindow {
 
     Timer {
         interval: frameWallpaperRotationMs
-        running: interval > 0 && frameWallpaperUrl.length > 0
+        running: interval > 0 && frameWallpaperUrls.length > 1
         repeat: true
         onTriggered: root.wallpaperRevision += 1
     }
