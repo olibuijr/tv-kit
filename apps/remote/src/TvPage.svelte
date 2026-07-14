@@ -41,7 +41,7 @@
           {#if item.upcoming.length}
             <div class="upcoming">
               {#each item.upcoming.slice(0, 2) as event}
-                <div><time>{new Date(event.startTime).toLocaleTimeString("is-IS", {hour:"2-digit", minute:"2-digit"})}</time><span>{event.title}</span></div>
+                <div><time>{new Date(event.startTime).toLocaleTimeString("is-IS", {hour:"2-digit", minute:"2-digit", hour12:false})}</time><span>{event.title}</span></div>
               {/each}
             </div>
           {/if}
