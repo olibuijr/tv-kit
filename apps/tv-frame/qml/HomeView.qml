@@ -15,6 +15,7 @@ Item {
     readonly property var teeTimes: content.golfTeeTimes || null
     readonly property string golfPerson: content.golfPerson || ""
     readonly property var golfBookings: content.golfBookings || []
+    readonly property Item liveVideoContainer: hero
 
     RowLayout {
         anchors.fill: parent
@@ -132,16 +133,9 @@ Item {
                 Layout.fillHeight: true
                 Layout.preferredHeight: 3
                 radius: 14
-                color: Qt.alpha(Theme.surface, 0.76)
+                color: Theme.surface
                 border.color: Theme.border
                 clip: true
-                Image {
-                    anchors.fill: parent
-                    source: view.mediaActive && view.media.live ? (view.media.artwork || "") : ""
-                    fillMode: Image.PreserveAspectCrop
-                    opacity: 0.34
-                    visible: status === Image.Ready
-                }
                 Column {
                     anchors.fill: parent
                     anchors.margins: 20

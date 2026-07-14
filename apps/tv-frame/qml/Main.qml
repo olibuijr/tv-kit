@@ -112,10 +112,10 @@ ApplicationWindow {
 
     MpvVideo {
         id: video
-        x: root.ambientActive && root.view === "home" ? root.width * 0.68 : 0
-        y: root.ambientActive && root.view === "home" ? root.height * 0.12 : 0
-        width: root.ambientActive && root.view === "home" ? root.width * 0.18 : root.width
-        height: root.ambientActive && root.view === "home" ? root.height * 0.19 : root.height
+        x: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).x : 0
+        y: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.mapToItem(root, 0, 0).y : 0
+        width: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.width : root.width
+        height: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.height : root.height
         layer.enabled: Boolean(root.media.panel)
 
         onPositionChanged: {
@@ -310,7 +310,7 @@ ApplicationWindow {
             Layout.bottomMargin: 12
             currentIndex: Math.max(0, ["home", "tv", "radio", "podcasts", "media", "deildu", "news"].indexOf(root.view))
 
-            HomeView { state: root.state; content: root.content; now: root.now }
+            HomeView { id: homeView; state: root.state; content: root.content; now: root.now }
             TvView { state: root.state; content: root.content; now: root.now }
             RadioView { state: root.state; stations: frame.stations }
             PodcastView { state: root.state; content: root.content }
