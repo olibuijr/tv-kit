@@ -122,6 +122,120 @@ Item {
         anchors.fill: parent
         spacing: 18
 
+        // TMDB today strips
+        property var tmdbToday: (content && content.tmdbToday) ? content.tmdbToday : null
+
+        Column {
+            visible: parent.tmdbToday !== null
+            width: parent.width
+            spacing: 0
+
+            // New movies today
+            Column {
+                visible: parent.parent.tmdbToday && parent.parent.tmdbToday.movies && parent.parent.tmdbToday.movies.length > 0
+                width: parent.width
+                spacing: 10
+                Text {
+                    text: "Nýjar kvikmyndir í dag"
+                    color: Theme.ink
+                    font.pixelSize: Theme.fontBody
+                    font.weight: Theme.weightSemibold
+                    leftPadding: 0
+                }
+                ListView {
+                    width: parent.width
+                    height: 200
+                    orientation: ListView.Horizontal
+                    spacing: 10
+                    clip: true
+                    model: parent.parent.parent.tmdbToday ? parent.parent.parent.tmdbToday.movies : []
+                    delegate: Column {
+                        required property var modelData
+                        width: 120
+                        spacing: 6
+                        Rectangle {
+                            width: 120; height: 180
+                            radius: Theme.radiusCard
+                            color: Theme.raised
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                source: modelData.posterPath || ""
+                                fillMode: Image.PreserveAspectCrop
+                                visible: status === Image.Ready
+                            }
+                        }
+                        Text {
+                            text: modelData.title || ""
+                            color: Theme.ink
+                            font.pixelSize: Theme.fontCardTitle
+                            font.weight: Theme.weightSemibold
+                            width: 120
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            visible: modelData.rating !== null && modelData.rating > 0
+                            text: "★ " + (modelData.rating ? modelData.rating.toFixed(1) : "")
+                            color: Theme.faint
+                            font.pixelSize: Theme.fontCallout
+                        }
+                    }
+                }
+            }
+
+            // New TV today
+            Column {
+                visible: parent.parent.tmdbToday && parent.parent.tmdbToday.tvShows && parent.parent.tmdbToday.tvShows.length > 0
+                width: parent.width
+                spacing: 10
+                Text {
+                    text: "Nýir sjónvarpsþættir í dag"
+                    color: Theme.ink
+                    font.pixelSize: Theme.fontBody
+                    font.weight: Theme.weightSemibold
+                }
+                ListView {
+                    width: parent.width
+                    height: 200
+                    orientation: ListView.Horizontal
+                    spacing: 10
+                    clip: true
+                    model: parent.parent.parent.tmdbToday ? parent.parent.parent.tmdbToday.tvShows : []
+                    delegate: Column {
+                        required property var modelData
+                        width: 120
+                        spacing: 6
+                        Rectangle {
+                            width: 120; height: 180
+                            radius: Theme.radiusCard
+                            color: Theme.raised
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                source: modelData.posterPath || ""
+                                fillMode: Image.PreserveAspectCrop
+                                visible: status === Image.Ready
+                            }
+                        }
+                        Text {
+                            text: modelData.title || ""
+                            color: Theme.ink
+                            font.pixelSize: Theme.fontCardTitle
+                            font.weight: Theme.weightSemibold
+                            width: 120
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            visible: modelData.rating !== null && modelData.rating > 0
+                            text: "★ " + (modelData.rating ? modelData.rating.toFixed(1) : "")
+                            color: Theme.faint
+                            font.pixelSize: Theme.fontCallout
+                        }
+                    }
+                }
+            }
+        }
+
         Row {
             spacing: 10
             Repeater {

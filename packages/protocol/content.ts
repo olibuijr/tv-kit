@@ -47,6 +47,7 @@ export const EMPTY_DASHBOARD_CONTENT: DashboardContent = {
 	news: [],
 	continueWatching: [],
 	myList: [],
+	tmdbToday: null,
 };
 
 export async function fetchDashboardContent(
@@ -81,8 +82,8 @@ export async function fetchDashboardContent(
 		deilduShows: content.deilduShows ?? [],
 		deilduShow: content.deilduShow ?? null,
 		deilduPagination:
-			content.deilduPagination ?? EMPTY_DASHBOARD_CONTENT.deilduPagination,
 		deilduScrape: content.deilduScrape ?? EMPTY_DASHBOARD_CONTENT.deilduScrape,
+		tmdbToday: content.tmdbToday ?? null,
 		podcasts: content.podcasts ?? [],
 	};
 }

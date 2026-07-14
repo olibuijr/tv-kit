@@ -116,6 +116,7 @@ import {
   stopDeilduStream,
   transferStats,
 } from "./deilduStream";
+import { getTmdbToday } from "./tmdbToday";
 
 process.title = "tvserverd";
 const log = pino({ name: "tvserverd", level: "trace" });
@@ -1422,9 +1423,13 @@ const server = Bun.serve<WebSocketData>({
 			deilduShow,
           deilduPagination: deildu.pagination,
           deilduScrape: { ...scrapeState },
+          tmdbToday: await getTmdbToday(),
         },
         60,
       );
+    }
+    if (url.pathname === "/tmdb/today") {
+      return corsJson(req, await getTmdbToday(), 60);
     }
     if (url.pathname === "/ruv/continue") {
       const limit = boundedInt(url.searchParams.get("limit"), 12, 1, 50);

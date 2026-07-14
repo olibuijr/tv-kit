@@ -371,6 +371,23 @@ export type GolfTeeTimes = {
 	slots: { time: string; openSeats: number }[];
 };
 
+export type TmdbTodayItem = {
+	id: number;
+	title: string;
+	posterPath: string;
+	backdropPath: string;
+	date: string;
+	rating: number | null;
+	overview: string;
+	kind: "movie" | "tv";
+};
+
+export type TmdbToday = {
+	movies: TmdbTodayItem[];
+	tvShows: TmdbTodayItem[];
+	fetchedAt: number;
+};
+
 export type DashboardContent = {
 	generatedAt: number;
 	golfTeeTimes: GolfTeeTimes | null;
@@ -387,6 +404,7 @@ export type DashboardContent = {
 	deilduShow: DeilduShow | null;
 	deilduPagination: DeilduPagination;
 	deilduScrape: DeilduScrapeState;
+	tmdbToday: TmdbToday | null;
 	podcasts: PodcastSeries[];
 	news: RuvNewsArticle[];
 	continueWatching: ContinueWatchingItem[];

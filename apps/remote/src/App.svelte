@@ -362,7 +362,7 @@
     {:else if activeTab === "Hlaðvörp"}
       <PodcastPage podcasts={content.podcasts} activeMediaId={state.media.id} {command}/>
     {:else if activeTab === "Deildu"}
-		<DeilduPage categories={content.deilduCategories} items={content.deilduItems} shows={content.deilduShows} show={content.deilduShow} pagination={content.deilduPagination} scrape={content.deilduScrape} selectedCategoryId={state.deilduCategoryId} loading={deilduLoading} loadPage={(page) => void refreshContent(page, true)} {command}/>
+		<DeilduPage categories={content.deilduCategories} items={content.deilduItems} shows={content.deilduShows} show={content.deilduShow} pagination={content.deilduPagination} scrape={content.deilduScrape} selectedCategoryId={state.deilduCategoryId} loading={deilduLoading} loadPage={(page) => void refreshContent(page, true)} tmdbToday={content.tmdbToday} {command}/>
     {:else if activeTab === "Spjall"}
       <AgentChatPage />
     {:else if activeTab === "Sarpur"}
