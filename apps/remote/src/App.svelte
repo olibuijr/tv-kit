@@ -15,8 +15,8 @@
   import Flag from "lucide-svelte/icons/flag";
   import Gauge from "lucide-svelte/icons/gauge";
   import Heart from "lucide-svelte/icons/heart";
-  import Home from "lucide-svelte/icons/home";
   import Minus from "lucide-svelte/icons/minus";
+  import Home from "lucide-svelte/icons/home";
   import Newspaper from "lucide-svelte/icons/newspaper";
   import Pause from "lucide-svelte/icons/pause";
   import Play from "lucide-svelte/icons/play";
@@ -296,7 +296,7 @@
 
 {#if state}
 <div class="app-shell" class:chat-active={activeTab === "Spjall"}>
-  <header><div class="brand"><Home size={21}/><div><strong>TV Kit</strong><span>{formatDate(now)}</span></div></div><time>{formatClock(now)}</time><div class:offline={!connected} class="connection"><Wifi size={16}/>{connected ? contentError || "Tengt" : "Tengi"}</div><button class:off={!state.power} aria-label={state.power ? "Slökkva" : "Kveikja"} on:click={() => command("power", undefined, state.power ? "Slökkt" : "Kveikt")}><Power size={21}/></button></header>
+  <header><div class="brand"><div><strong>TV Kit</strong><span>{formatDate(now)}</span></div></div><time>{formatClock(now)}</time><div class:offline={!connected} class="connection"><Wifi size={16}/>{connected ? contentError || "Tengt" : "Tengi"}</div><button class:off={!state.power} aria-label={state.power ? "Slökkva" : "Kveikja"} on:click={() => command("power", undefined, state.power ? "Slökkt" : "Kveikt")}><Power size={21}/></button></header>
 
   <main class:chat-mode={activeTab === "Spjall"}>
     {#if activeTab !== "Spjall"}
