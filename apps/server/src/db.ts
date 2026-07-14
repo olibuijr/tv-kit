@@ -591,6 +591,16 @@ const migrations = [
     );
   `,
 	},
+	{
+		version: 19,
+		sql: `
+    ALTER TABLE podcast_feeds ADD COLUMN site_url TEXT NOT NULL DEFAULT '';
+    UPDATE podcast_feeds SET
+      site_url='https://www.ruv.is/utvarp/spila/i-ljosi-sogunnar/23795',
+      last_synced_at=NULL
+    WHERE id='i-ljosi-sogunnar';
+  `,
+	},
 ];
 
 db.exec(

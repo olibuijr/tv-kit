@@ -11,7 +11,7 @@
 - All tv-fast platform tasks live in `.kanban/`. Read `.kanban/README.md` for the full workflow.
 - Before starting new work, check `.kanban/tasks/` for unassigned tasks (`grep -l 'assignee: ""' .kanban/tasks/*.md`).
 - When you begin a task, set `assignee` to your agent name and `status` to `in-progress`. Update `updated` on every status change.
-- When done, set `status: review`. Another agent reviews, sets `status: done`, and moves the file to `.kanban/done/`.
+- When done, deploy where applicable and verify the live result yourself. For web UI changes inspect the deployed DOM; for native frame changes use frame health plus a physical screenshot. Then set `status: done` and move the file to `.kanban/done/`.
 - Create new tasks by copying `.kanban/templates/task.md`. Group related tasks under an epic (`.kanban/templates/epic.md`).
 - One agent per task at a time. Never delete done tasks — archive them in `.kanban/done/` as the project log.
 - Do not scan `.kanban/done/` during normal task discovery, search, or status checks. Consult archived filenames only when avoiding ID reuse.
@@ -89,7 +89,7 @@
 - Test one forced radio scrape and one due-check skip. Confirm the API count equals the SQLite count.
 - For EPG changes, run `tvctl kit epg sync`, require a complete latest run and nonzero counts for all configured channels, then compare any remaining gap with the upstream XML.
 - Verify TV and remote commands survive a `tvserverd` restart before considering a data feature complete.
-- Finish autonomous work with an evidence-backed review: inspect the live result, run the smallest relevant check, update these rules when a durable operational lesson is found, and leave the Kanban task in `review`.
+- Finish autonomous work with evidence-backed production verification: inspect the live result, run the smallest relevant check, update these rules when a durable operational lesson is found, then mark the Kanban task `done` and archive it.
 
 ## Native TV Frame (display client)
 

@@ -77,3 +77,29 @@ export function parsePodcastFeed(podcastId: string, xml: string): ParsedPodcastF
 		episodes,
 	};
 }
+
+export type EpisodeArtwork = {
+	title: string;
+	publishedAt: number;
+	imageUrl: string;
+};
+
+
+export function parseRuvEpisodeArtwork(html: string): EpisodeArtwork[] {
+	const payload = html.match(
+		/<script\b[^>]*\bid=["']apollo["'][^>]*>\s*window\.__APOLLO_STATE__\s*=\s*([\s\S]*?);?\s*<\/script>/i,
+	)?.[1];
+	if (!payload) throw new Error("RÚV series page contained no Apollo state");
+	const state = JSON.parse(payload) as Record<string, unknown>;
+	return Object.entries(state).flatMap(([key, value]) => {
+		if (!key.startsWith("Episode:") || !value || typeof value !== "object") return [];
+		const episode = value as Record<string, unknown>;
+		const title = typeof episode.title === "string" ? episode.title.trim() : "";
+		const imageUrl = typeof episode.image === "string" ? episode.image : "";
+		const publishedAt = typeof episode.firstrun === "string"
+			? Date.parse(episode.firstrun)
+			: Number.NaN;
+		if (!title || !/^https?:\/\//.test(imageUrl) || !Number.isFinite(publishedAt)) return [];
+		return [{ title, publishedAt, imageUrl }];
+	});
+}

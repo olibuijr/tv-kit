@@ -98,31 +98,49 @@ Item {
                     color: active ? Theme.raised : Theme.surface
                     border.color: active ? Theme.primary : Theme.border
                     border.width: active ? 2 : 1
-                    Column {
+                    Row {
                         anchors.fill: parent
-                        anchors.margins: 15
-                        spacing: 7
-                        Text {
-                            width: parent.width
-                            text: modelData.title
-                            color: Theme.ink
-                            font.pixelSize: 20
-                            font.bold: true
-                            elide: Text.ElideRight
+                        anchors.margins: 10
+                        spacing: 14
+                        Rectangle {
+                            width: 164
+                            height: 96
+                            radius: 8
+                            color: Theme.raised
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                source: modelData.artworkUrl || ""
+                                fillMode: Image.PreserveAspectCrop
+                                visible: status === Image.Ready
+                            }
                         }
-                        Text {
-                            width: parent.width
-                            text: modelData.description
-                            color: Theme.muted
-                            font.pixelSize: 15
-                            maximumLineCount: 2
-                            wrapMode: Text.WordWrap
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            text: view.duration(modelData.duration)
-                            color: Theme.faint
-                            font.pixelSize: 14
+                        Column {
+                            width: parent.width - 178
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+                            Text {
+                                width: parent.width
+                                text: modelData.title
+                                color: Theme.ink
+                                font.pixelSize: 20
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                width: parent.width
+                                text: modelData.description
+                                color: Theme.muted
+                                font.pixelSize: 15
+                                maximumLineCount: 2
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: view.duration(modelData.duration)
+                                color: Theme.faint
+                                font.pixelSize: 14
+                            }
                         }
                     }
                 }

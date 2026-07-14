@@ -1,4 +1,4 @@
-import { parsePodcastFeed } from "./podcastFeed";
+import { parsePodcastFeed, parseRuvEpisodeArtwork } from "./podcastFeed";
 import type { PodcastEpisode, PodcastSeries } from "../../../packages/protocol";
 import { config } from "./config";
 import { db, statement } from "./db";
@@ -10,6 +10,7 @@ type FeedRow = {
 	author: string;
 	imageUrl: string;
 	feedUrl: string;
+	siteUrl: string;
 	position: number;
 	lastSyncedAt: number | null;
 };
@@ -17,7 +18,8 @@ type FeedRow = {
 
 const feeds = () => statement(`
 	SELECT id, title, description, author, image_url AS imageUrl,
-		feed_url AS feedUrl, position, last_synced_at AS lastSyncedAt
+		feed_url AS feedUrl, site_url AS siteUrl, position,
+		last_synced_at AS lastSyncedAt
 	FROM podcast_feeds WHERE enabled=1 ORDER BY position, title
 `).all() as FeedRow[];
 
@@ -51,6 +53,35 @@ async function syncFeed(feed: FeedRow) {
 		});
 		if (!response.ok) throw new Error(`Podcast feed responded ${response.status}`);
 		const parsed = parsePodcastFeed(feed.id, await response.text());
+		const existingArtwork = new Map(
+			(statement(
+				"SELECT id, artwork_url AS artworkUrl FROM podcast_episodes WHERE podcast_id=?",
+			).all(feed.id) as { id: string; artworkUrl: string }[])
+				.map((episode) => [episode.id, episode.artworkUrl]),
+		);
+		const artworkByEpisode = new Map<string, string>();
+		if (feed.siteUrl) {
+			try {
+				const page = await fetch(feed.siteUrl, {
+					signal: AbortSignal.timeout(config.podcastFetchTimeoutMs),
+					headers: { "user-agent": "tvserverd-podcasts/1.0" },
+				});
+				if (page.ok) {
+					for (const artwork of parseRuvEpisodeArtwork(await page.text())) {
+						const key = `${artwork.title.trim().toLowerCase()}\n${new Date(artwork.publishedAt).toISOString().slice(0, 10)}`;
+						artworkByEpisode.set(key, artwork.imageUrl);
+					}
+				}
+			} catch {
+				// Preserve the last healthy artwork when RÚV's page is unavailable.
+			}
+		}
+		for (const episode of parsed.episodes) {
+			const key = `${episode.title.trim().toLowerCase()}\n${new Date(episode.publishedAt).toISOString().slice(0, 10)}`;
+			episode.artworkUrl = artworkByEpisode.get(key)
+				?? existingArtwork.get(episode.id)
+				?? episode.artworkUrl;
+		}
 		const now = Date.now();
 		db.transaction(() => {
 			statement(`

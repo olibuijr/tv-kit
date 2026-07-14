@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parsePodcastFeed } from "../apps/server/src/podcastFeed";
+import { parsePodcastFeed, parseRuvEpisodeArtwork } from "../apps/server/src/podcastFeed";
 
 test("podcast RSS exposes stable public audio episodes", () => {
 	const feed = parsePodcastFeed("history", `
@@ -33,4 +33,23 @@ test("podcast RSS exposes stable public audio episodes", () => {
 			episodeNumber: 357,
 		}),
 	]);
+});
+
+test("RÚV series metadata exposes episode-specific artwork", () => {
+	const artwork = parseRuvEpisodeArtwork(`
+		<script id="apollo">window.__APOLLO_STATE__ = {
+			"Program:23795":{"title":"Í ljósi sögunnar"},
+			"Episode:bk8quj":{
+				"title":"Kaupskipið Batavía II",
+				"firstrun":"2026-06-26T09:03:00",
+				"image":"https://myndir.ruv.is/batavia.webp"
+			}
+		};</script>
+	`);
+
+	expect(artwork).toEqual([{
+		title: "Kaupskipið Batavía II",
+		publishedAt: Date.parse("2026-06-26T09:03:00"),
+		imageUrl: "https://myndir.ruv.is/batavia.webp",
+	}]);
 });

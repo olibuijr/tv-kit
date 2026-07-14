@@ -1,7 +1,7 @@
 ---
 id: TASK-NNN
 title: ""
-status: backlog                # backlog | todo | in-progress | review | done (move done files to ../done/)
+status: backlog                # backlog | todo | in-progress | done (move done files to ../done/)
 priority: medium               # high | medium | low
 assignee: ""                   # agent name, empty = unassigned
 epic: ""                       # EPIC-NNN or empty

@@ -33,12 +33,14 @@ Set `assignee` to your agent name and `status` to `in-progress`.
 Keep `updated` current. Add findings to `Notes`. Check off `Done` items as
 you complete them.
 
-### 3. Hand off
+### 3. Verify and archive
 
-When done, set `status: review`. Another agent reviews, sets `status: done`,
-and moves the file from `.kanban/tasks/` to `.kanban/done/`. The archive is
-project history and must not be included in routine task discovery or content
-scans.
+When implementation is complete, deploy where applicable and verify the live
+result yourself. Inspect deployed DOM for web UI changes; use frame health and
+a physical screenshot for native frame changes. Record the evidence, set
+`status: done`, and move the file from `.kanban/tasks/` to `.kanban/done/`.
+The archive is project history and must not be included in routine task
+discovery or content scans.
 
 ### 4. Create new work
 
@@ -50,13 +52,12 @@ cp .kanban/templates/task.md .kanban/tasks/TASK-NNN-slug.md
 
 ## Statuses
 
-| Status       | Meaning                              |
-| ------------ | ------------------------------------ |
-| `backlog`    | Not yet prioritized or ready.        |
-| `todo`       | Ready to pick up.                    |
-| `in-progress`| Agent is actively working on it.     |
-| `review`     | Done, needs another agent to verify. |
-| `done`       | Verified and complete.               |
+| Status        | Meaning                          |
+| ------------- | -------------------------------- |
+| `backlog`     | Not yet prioritized or ready.    |
+| `todo`        | Ready to pick up.                |
+| `in-progress` | Agent is actively working on it. |
+| `done`        | Live-verified and complete.      |
 
 ## Epics
 
