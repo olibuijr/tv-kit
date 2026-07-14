@@ -166,7 +166,7 @@ Implementation references: [aria2 BitTorrent piece priority](https://aria2.githu
 /home/olafurbui/.local/bin/tvctl kit status
 ```
 
-`kit verify` checks enabled/active units, all HTTP endpoints, and WebSocket ping/pong. `kit frame deploy` additionally records its start time and waits for a connected `frame-health.json` whose `updatedAt` and `lastMessageAt` were written after that deployment began; a recent file from the old frame process is not accepted.
+`kit verify` checks enabled/active units, all HTTP endpoints, and WebSocket ping/pong. `kit frame deploy` additionally stops the old frame, removes its health file, records a boundary from the TV clock, and waits for connected health whose `updatedAt` and `lastMessageAt` meet that boundary.
 
 ### Verify a Deildu catalog job
 

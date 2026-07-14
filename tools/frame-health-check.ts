@@ -24,7 +24,7 @@ export function validateFrameHealth(
 			throw new Error(`frame health ${field} is invalid`);
 		}
 		if (timestamp < minimumTimestamp) {
-			throw new Error(`frame health ${field} predates this deployment`);
+			throw new Error(`frame health ${field} predates frame restart`);
 		}
 		if (now - timestamp > 30_000) {
 			throw new Error(`frame health ${field} is stale`);

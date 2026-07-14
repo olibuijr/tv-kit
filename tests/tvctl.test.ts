@@ -49,17 +49,23 @@ test("tvctl rejects unknown Titan test log targets", () => {
 	);
 });
 
-test("frame health distinguishes old-process evidence from restarted-frame health", () => {
-	expect(() => validateFrameHealth({
+test("post-stop boundary rejects a late health write from the old frame", () => {
+	const lateOldProcessHealth = {
 		connected: true,
-		updatedAt: 1_999,
-		lastMessageAt: 2_001,
-	}, 2_000, 2_001)).toThrow("updatedAt predates this deployment");
+		updatedAt: 2_500,
+		lastMessageAt: 2_500,
+	};
+	expect(validateFrameHealth(lateOldProcessHealth, 2_000, 3_000).connected).toBe(true);
+	expect(() => validateFrameHealth(
+		lateOldProcessHealth,
+		3_000,
+		3_000,
+	)).toThrow("updatedAt predates frame restart");
 	expect(validateFrameHealth({
 		connected: true,
-		updatedAt: 2_001,
-		lastMessageAt: 2_002,
+		updatedAt: 3_001,
+		lastMessageAt: 3_002,
 		view: "home",
-	}, 2_000, 2_002).view).toBe("home");
+	}, 3_000, 3_002).view).toBe("home");
 });
 

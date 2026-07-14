@@ -554,7 +554,8 @@ kit_frame_build() {
 kit_frame_push() {
   [[ -x $kit_frame_build_dir/tv-frame ]] || { echo 'tvctl: no built tv-frame binary; run tvctl kit frame build' >&2; return 66; }
   remote "mkdir -p ~/$kit_home/frame-build"
-  kit_systemctl 'stop tv-frame.service' || true
+  kit_systemctl 'stop tv-frame.service'
+  remote "rm -f ~/$kit_home/frame-health.json"
   timeout 120 rsync -e "ssh $(printf '%q ' "${batch_opts[@]}")" -a "$kit_frame_build_dir/tv-frame" "$target:$kit_home/frame-build/tv-frame"
 }
 
@@ -592,8 +593,7 @@ kit_frame_verify() {
 
 kit_frame_deploy() {
   (($# <= 1)) || { echo 'tvctl: kit frame deploy accepts at most one message' >&2; return 64; }
-  local deploy_started_at
-  deploy_started_at=$(date +%s%3N)
+  local frame_restart_boundary
   echo '== stop orphaned players'
   kit_orphan_cleanup
   echo "== sync source -> $target:$kit_remote_dir"
@@ -606,10 +606,11 @@ kit_frame_deploy() {
   kit_frame_build
   echo '== push binary to TV'
   kit_frame_push
+  frame_restart_boundary=$(remote 'date +%s%3N')
   echo '== switch display client'
   kit_systemctl 'daemon-reload'
   kit_systemctl "enable --now ${kit_enable[*]}"
-  kit_frame_verify_since "$deploy_started_at"
+  kit_frame_verify_since "$frame_restart_boundary"
   (kit_archive "${1:-Deploy native TV Frame}" >>/tmp/tv-kit-archive.log 2>&1 && echo "archive ok $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log || echo "archive FAILED $(date -u +%FT%TZ)" >>/tmp/tv-kit-archive.log) &
   disown
 }
