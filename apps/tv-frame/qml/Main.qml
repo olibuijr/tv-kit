@@ -42,6 +42,10 @@ ApplicationWindow {
         ? frameWallpaperUrl + (frameWallpaperUrl.indexOf("?") >= 0 ? "&" : "?")
             + "refresh=" + wallpaperRevision
         : ""
+    readonly property real homeVideoWidth: Math.min(
+        homeView.liveVideoContainer.width,
+        Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) * 16 / 9)
+    readonly property real homeVideoHeight: homeVideoWidth * 9 / 16
 
     // Screen element snapshot for frame-health.json — lets non-vision
     // agents verify what the native frame displays without a screenshot.
@@ -143,13 +147,13 @@ ApplicationWindow {
 
     MpvVideo {
         id: video
-        cropToFill: root.ambientActive && root.view === "home"
-        x: root.ambientActive && root.view === "home" ? Theme.marginX : 0
+        cropToFill: false
+        x: root.ambientActive && root.view === "home"
+            ? Theme.marginX + homeView.liveVideoContainer.width - root.homeVideoWidth : 0
         y: root.ambientActive && root.view === "home"
             ? Theme.headerHeight + Theme.viewTopMargin + Theme.videoTopInset : 0
-        width: root.ambientActive && root.view === "home" ? homeView.liveVideoContainer.width : root.width
-        height: root.ambientActive && root.view === "home"
-            ? Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) : root.height
+        width: root.ambientActive && root.view === "home" ? root.homeVideoWidth : root.width
+        height: root.ambientActive && root.view === "home" ? root.homeVideoHeight : root.height
         layer.enabled: Boolean(root.media.panel)
 
         onPositionChanged: {
