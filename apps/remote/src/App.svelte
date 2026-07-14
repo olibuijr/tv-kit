@@ -21,7 +21,6 @@
   import Pause from "lucide-svelte/icons/pause";
   import Play from "lucide-svelte/icons/play";
   import Plus from "lucide-svelte/icons/plus";
-  import Power from "lucide-svelte/icons/power";
   import Radio from "lucide-svelte/icons/radio";
   import Podcast from "lucide-svelte/icons/podcast";
   import RadioTower from "lucide-svelte/icons/radio-tower";
@@ -34,7 +33,6 @@
   import SpeakerX from "lucide-svelte/icons/volume-x";
   import Sunrise from "lucide-svelte/icons/sunrise";
   import Tv from "lucide-svelte/icons/tv";
-  import Wifi from "lucide-svelte/icons/wifi";
   import ScheduledTaskNotice from "../../../packages/protocol/ScheduledTaskNotice.svelte";
   import { startSolarTheme, type SolarTheme } from "../../../packages/protocol/solar";
   import { browserClientId, tvServerUrl, tvServerWebSocketUrl, type DashboardContent, type GolfFriend, type GolfPersonDetail, type HomeState, type RuvNewsArticle, type RuvProgramResponse, type Station } from "../../../packages/protocol";
@@ -42,6 +40,7 @@
   import DeilduPage from "./DeilduPage.svelte";
   import AgentChatPage from "./AgentChatPage.svelte";
   import PodcastPage from "./PodcastPage.svelte";
+  import Header from "./Header.svelte";
 
   type Tab = "Heim" | "Útvarp" | "Hlaðvörp" | "Deildu" | "Sarpur" | "Fréttir" | "Spjall";
   let state: HomeState | undefined;
@@ -296,7 +295,7 @@
 
 {#if state}
 <div class="app-shell" class:chat-active={activeTab === "Spjall"}>
-  <header><div class="brand"><div><strong>TV Kit</strong><span>{formatDate(now)}</span></div></div><time>{formatClock(now)}</time><div class:offline={!connected} class="connection"><Wifi size={16}/>{connected ? contentError || "Tengt" : "Tengi"}</div><button class:off={!state.power} aria-label={state.power ? "Slökkva" : "Kveikja"} on:click={() => command("power", undefined, state.power ? "Slökkt" : "Kveikt")}><Power size={21}/></button></header>
+  <Header {state} {now} {connected} {contentError} {command}/>
 
   <main class:chat-mode={activeTab === "Spjall"}>
     {#if activeTab !== "Spjall"}
