@@ -450,6 +450,7 @@ export type Command =
 			action:
 				| "toggle-play"
 				| "stop-playback"
+				| "abort-playback"
 				| "toggle-mute"
 				| "back"
 				| "power"

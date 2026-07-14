@@ -197,16 +197,20 @@ const broadcastPodcastContentRefresh = () => {
 // so we can restore it when ambient ends (tune, leave, fullscreen, stop).
 let _savedAmbientVolume = 35;
 let _savedAmbientMuted = false;
+let playbackGeneration = 0;
 
 function restoreAmbientAudio() {
   state.volume = _savedAmbientVolume;
   state.muted = _savedAmbientMuted;
 }
 
-// Start ambient RÚV on home screen at boot if idle
-if (state.view === "home" && !state.media.src) startAmbientTv();
+function beginPlayback(terminateTorrent = true) {
+  const generation = ++playbackGeneration;
+  if (terminateTorrent) void stopDeilduStream();
+  return generation;
+}
 
-function stopPlayback(message = "Spilun stöðvuð", error = false) {
+function clearPlayback(message: string, error = false) {
   restoreAmbientAudio();
   state.playing = false;
   state.media = {
@@ -217,17 +221,42 @@ function stopPlayback(message = "Spilun stöðvuð", error = false) {
     ambient: false,
   };
   state.lastAction = message;
-  void stopDeilduStream();
   broadcast();
 }
+
+// A user stop unloads mpv but deliberately leaves aria2 downloading. Terminal
+// failures and shutdown use abortPlayback instead.
+function stopPlayback(message = "Spilun stöðvuð") {
+  playbackGeneration++;
+  clearPlayback(message);
+}
+
+async function abortPlayback(message: string, error = true) {
+  playbackGeneration++;
+  clearPlayback(message, error);
+  await stopDeilduStream();
+}
+
+function failTorrentPlayback(
+  generation: number,
+  mediaId: string,
+  error: Error,
+) {
+  if (generation !== playbackGeneration || state.media.id !== mediaId) return;
+  log.error({ mediaId, error: error.message }, "torrent producer failed");
+  void abortPlayback(error.message);
+}
+
+// Start ambient RÚV on home screen at boot if idle
+if (state.view === "home" && !state.media.src) startAmbientTv();
 
 
 // Push aria2 transfer telemetry (peers, speed, downloaded bytes) into the
 // active torrent's media state so the loading overlay can render it.
-function torrentProgressBroadcast(mediaId: string) {
+function torrentProgressBroadcast(mediaId: string, generation: number) {
   let lastPush = 0;
   return () => {
-    if (state.media.id !== mediaId) return;
+    if (generation !== playbackGeneration || state.media.id !== mediaId) return;
     const stats = transferStats();
     if (!stats) return;
     state.media.transfer = stats;
@@ -246,6 +275,7 @@ function startAmbientTv() {
 	const channels = listRuvChannels("tv");
 	const channel = channels[0];
 	if (!channel) return false;
+	beginPlayback();
 	const now = getRuvNow(channel.slug);
 	const current = now?.current;
 	_savedAmbientVolume = state.volume;
@@ -324,6 +354,7 @@ const radioGuide = (station: Station): Programme[] => [
 function tuneRadio(id: number) {
   const station = radioStations().find((item) => item.id === id);
   if (!station) return false;
+  beginPlayback();
   state.previousView = state.view;
   state.view = "radio";
   state.playing = true;
@@ -400,6 +431,7 @@ function tuneTvSlug(slug: string) {
   const index = channels.findIndex((channel) => channel.slug === slug);
   const channel = channels[index];
   if (!channel) return false;
+  beginPlayback();
   const now = getRuvNow(slug);
   const current = now?.current;
   const programme: Programme[] = [current, ...(now?.upcoming ?? [])]
@@ -476,6 +508,7 @@ function stepTv(direction: number) {
 function playRuvEpisode(id: string) {
   const episode = getRuvEpisode(id);
   if (!episode?.available || !episode.fileUrl) return false;
+  beginPlayback();
   const resumeAt = resumePosition(
     getWatchProgress(episode.id),
     episode.duration,
@@ -524,6 +557,7 @@ function playPodcastEpisode(id: string) {
   if (!episode) return false;
   const podcast = listPodcasts().find((item) => item.id === episode.podcastId);
   if (!podcast) return false;
+  beginPlayback();
   state.previousView = state.view;
   state.view = "podcasts";
   state.playing = true;
@@ -575,6 +609,7 @@ function playRuvProgram(id: number) {
 async function playTorrentMedia(id: string) {
   const item = getTorrentMedia(id);
   if (!item) return false;
+  const generation = beginPlayback(false);
   state.previousView = state.view;
   state.view = "media";
   state.playing = false;
@@ -606,8 +641,10 @@ async function playTorrentMedia(id: string) {
   try {
     const playback = await startTorrentMediaPlayback(
       id,
-      torrentProgressBroadcast(`torrent-${id}`),
+      torrentProgressBroadcast(`torrent-${id}`, generation),
+      (error) => failTorrentPlayback(generation, `torrent-${id}`, error),
     );
+    if (generation !== playbackGeneration) return false;
     console.log(`torrent playback ${id} engine=mpv`);
     state.media = {
       ...state.media,
@@ -624,14 +661,10 @@ async function playTorrentMedia(id: string) {
     broadcast();
     return true;
   } catch (error) {
-    await stopDeilduStream();
-    const message =
-      error instanceof Error ? error.message : "Torrent-spilun mistókst";
-    state.playing = false;
-    state.media.status = "error";
-    state.media.subtitle = message;
-    state.lastAction = message;
-    broadcast();
+    if (generation !== playbackGeneration) return false;
+    const failure =
+      error instanceof Error ? error : new Error("Torrent-spilun mistókst");
+    await abortPlayback(failure.message);
     return false;
   }
 }
@@ -640,6 +673,7 @@ async function playPublicTorrent(infoHash: string) {
   const meta = getPublicTorrentMeta(infoHash);
   if (!meta) return false;
   const mediaId = `public-${infoHash}`;
+  const generation = beginPlayback(false);
   state.previousView = state.view;
   state.view = "media";
   state.playing = false;
@@ -671,8 +705,10 @@ async function playPublicTorrent(infoHash: string) {
   try {
     const playback = await startPublicTorrentPlayback(
       infoHash,
-      torrentProgressBroadcast(mediaId),
+      torrentProgressBroadcast(mediaId, generation),
+      (error) => failTorrentPlayback(generation, mediaId, error),
     );
+    if (generation !== playbackGeneration) return false;
     console.log(`public torrent playback ${infoHash} engine=mpv`);
     state.media = {
       ...state.media,
@@ -689,14 +725,10 @@ async function playPublicTorrent(infoHash: string) {
     broadcast();
     return true;
   } catch (error) {
-    await stopDeilduStream();
-    const message =
-      error instanceof Error ? error.message : "Torrent-spilun mistókst";
-    state.playing = false;
-    state.media.status = "error";
-    state.media.subtitle = message;
-    state.lastAction = message;
-    broadcast();
+    if (generation !== playbackGeneration) return false;
+    const failure =
+      error instanceof Error ? error : new Error("Torrent-spilun mistókst");
+    await abortPlayback(failure.message);
     return false;
   }
 }
@@ -704,6 +736,7 @@ async function playPublicTorrent(infoHash: string) {
 async function playDeilduItem(id: number) {
   const item = getDeilduItem(id);
   if (!item || !item.playable) return false;
+  const generation = beginPlayback(false);
   state.previousView = state.view;
   state.view = "deildu";
   state.playing = false;
@@ -740,8 +773,10 @@ async function playDeilduItem(id: number) {
   try {
     const playback = await startDeilduPlayback(
       id,
-      torrentProgressBroadcast(`deildu-${id}`),
+      torrentProgressBroadcast(`deildu-${id}`, generation),
+      (error) => failTorrentPlayback(generation, `deildu-${id}`, error),
     );
+    if (generation !== playbackGeneration) return false;
     console.log(`Deildu playback ${id} engine=mpv`);
     const refreshed = getDeilduItem(id) ?? item;
     const labels = deilduPlaybackLabels(id);
@@ -762,14 +797,10 @@ async function playDeilduItem(id: number) {
     broadcast();
     return true;
   } catch (error) {
-    await stopDeilduStream();
-    const message =
-      error instanceof Error ? error.message : "Deildu-spilun mistókst";
-    state.playing = false;
-    state.media.status = "error";
-    state.media.subtitle = message;
-    state.lastAction = message;
-    broadcast();
+    if (generation !== playbackGeneration) return false;
+    const failure =
+      error instanceof Error ? error : new Error("Deildu-spilun mistókst");
+    await abortPlayback(failure.message);
     return false;
   }
 }
@@ -791,6 +822,7 @@ function startCast(input: {
 }) {
   if (!/^https?:\/\/[^\s]{1,2000}$/.test(input.url) || input.url.includes("@"))
     return false;
+  beginPlayback();
   castPrevious ??= {
     media: { ...state.media },
     playing: state.playing,
@@ -1757,6 +1789,9 @@ const server = Bun.serve<WebSocketData>({
         return;
       } else if (message.action === "stop-playback") {
         stopPlayback(message.label || "Spilun stöðvuð");
+        return;
+      } else if (message.action === "abort-playback") {
+        void abortPlayback(message.label || "Spilun stöðvuð");
         return;
       } else if (message.action === "set-playing")
         state.playing = message.value;

@@ -6,10 +6,13 @@ import { statement } from "./db";
 import {
 	beginStream,
 	type DownloadState,
+	hasTorrentControlFile,
+	isTorrentFileComplete,
 	mpvStreamSource,
 	playbackKind,
 	serveStream,
 	type StreamContext,
+	waitForContiguousPieces,
 } from "./deilduStream";
 import { corsHeaders } from "./httpAccess";
 
@@ -40,6 +43,8 @@ function mediaPath(relativePath: string) {
 
 function refresh(row: TorrentMediaRow) {
 	const path = mediaPath(row.file_path);
+	const itemDir = mediaPath(row.id);
+	const hasPath = row.file_path.length > 0;
 	let downloadedBytes = 0;
 	try {
 		downloadedBytes = statSync(path).size;
@@ -47,9 +52,9 @@ function refresh(row: TorrentMediaRow) {
 		// Missing files remain visible as unavailable catalog items.
 	}
 	const status: TorrentMedia["status"] =
-		downloadedBytes >= row.total_bytes && !existsSync(`${path}.aria2`)
+		hasPath && isTorrentFileComplete(path, row.total_bytes, itemDir)
 			? "ready"
-			: existsSync(`${path}.aria2`)
+			: hasPath && hasTorrentControlFile(path, itemDir)
 				? "downloading"
 				: downloadedBytes
 					? "incomplete"
@@ -177,6 +182,7 @@ export type TorrentPlayback = {
 export async function startTorrentMediaPlayback(
 	id: string,
 	onProgress?: () => void,
+	onError?: (error: Error) => void,
 ): Promise<TorrentPlayback> {
 	const value = statement(
 		"SELECT title,torrent_uri FROM torrent_media WHERE id=?",
@@ -185,7 +191,11 @@ export async function startTorrentMediaPlayback(
 	const stream = await beginStream(
 		torrentMediaContext(id, value.torrent_uri),
 		onProgress,
+		undefined,
+		undefined,
+		onError,
 	);
+	await waitForContiguousPieces(stream, 16, onProgress);
 	const src = `${config.serverUrl}/torrent/media/stream/${id}`;
 	return {
 		id,

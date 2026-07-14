@@ -6,6 +6,7 @@ const views: Record<View, true> = { home: true, tv: true, radio: true, podcasts:
 const noValueActions = new Set([
 	"toggle-play",
 	"stop-playback",
+	"abort-playback",
 	"toggle-mute",
 	"back",
 	"power",

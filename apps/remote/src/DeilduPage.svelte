@@ -5,16 +5,13 @@
   import RefreshCw from "lucide-svelte/icons/refresh-cw";
   import Search from "lucide-svelte/icons/search";
   import Star from "lucide-svelte/icons/star";
-  import type { DeilduCategory, DeilduItem, DeilduPagination, DeilduScrapeState, DeilduShow, TmdbToday } from "../../../packages/protocol";
+  import type { DeilduCategory, DeilduScrapeState, DeilduShow, TmdbToday } from "../../../packages/protocol";
 
   export let categories: DeilduCategory[] = [];
-  export let items: DeilduItem[] = [];
   export let shows: DeilduShow[] = [];
   export let show: DeilduShow | null = null;
   export let scrape: DeilduScrapeState;
-  export let pagination: DeilduPagination = { categoryId: 0, page: 1, pageSize: 24, totalItems: 0, totalPages: 0 };
   export let loading = false;
-  export let loadPage: (page: number) => void = () => {};
   export let command: (action: string, value?: unknown, label?: string) => void;
   export let selectedCategoryId = 0;
   export let tmdbToday: TmdbToday | null = null;

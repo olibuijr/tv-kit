@@ -110,12 +110,13 @@ export type PublicTorrentPlayback = {
 export async function startPublicTorrentPlayback(
 	infoHash: string,
 	onProgress?: () => void,
+	onError?: (error: Error) => void,
 ): Promise<PublicTorrentPlayback> {
 	const row = publicRow(infoHash);
 	if (!row) throw new Error("Torrent fannst ekki í opinberum lista");
 	const ctx = publicContext(infoHash, row.torrent_uri, row.media_kind);
-	const stream = await beginStream(ctx, onProgress);
-	await waitForContiguousPieces(stream, 80, onProgress);
+	const stream = await beginStream(ctx, onProgress, undefined, undefined, onError);
+	await waitForContiguousPieces(stream, 16, onProgress);
 	const src = `${config.serverUrl}/public-torrents/stream/${infoHash}`;
 	return {
 		infoHash,

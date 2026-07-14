@@ -817,6 +817,7 @@ export function dashboardContent(): Omit<
 	| "deilduShow"
 	| "deilduPagination"
 	| "deilduScrape"
+	| "tmdbToday"
 	| "podcasts"
 	| "golfTeeTimes"
 	| "golfPerson"
