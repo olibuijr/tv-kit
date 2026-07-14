@@ -12,9 +12,7 @@
 </script>
 
 <header>
-  <div class="brand">
-    <div><strong>TV Kit</strong><span>{formatDate(now)}</span></div>
-  </div>
+  <div class="brand"><span>{formatDate(now)}</span></div>
   <time>{formatClock(now)}</time>
   <div class:offline={!connected} class="connection"><Wifi size={16}/>{connected ? contentError || "Tengt" : "Tengi"}</div>
   <button class:off={!state.power} aria-label={state.power ? "Slökkva" : "Kveikja"} on:click={() => command("power", undefined, state.power ? "Slökkt" : "Kveikt")}><Power size={21}/></button>
