@@ -5,11 +5,17 @@ import { config } from "./config";
 import { statement } from "./db";
 import {
 	beginStream,
+	type DownloadState,
 	mpvStreamSource,
 	playbackKind,
 	serveStream,
 	type StreamContext,
 } from "./deilduStream";
+
+// Transient per-info-hash download state, shared between the playback context
+// and each stream-serving context in this process. Torrent playback is cleared
+// on restart, so an in-memory map (not SQLite) is the correct lifetime.
+const publicDownloads = new Map<string, DownloadState>();
 
 const publicRoot = resolve(config.torrentMediaDir, "public");
 mkdirSync(publicRoot, { recursive: true, mode: 0o700 });
@@ -84,10 +90,10 @@ function publicContext(
 		itemDir: join(publicRoot, infoHash),
 		mediaKind,
 		fetchTorrent: () => fetchPublicTorrentFile(infoHash, torrentUri),
-		// On-demand transient stream: torrent playback is cleared on restart
-		// anyway, so keep no persisted download state and always start fresh.
-		load: () => null,
-		save: () => {},
+		load: () => publicDownloads.get(infoHash) ?? null,
+		save: (state) => {
+			publicDownloads.set(infoHash, state);
+		},
 	};
 }
 
