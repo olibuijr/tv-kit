@@ -28,6 +28,28 @@ ApplicationWindow {
         && media.kind !== "radio" && media.kind !== "music" && media.kind !== "podcast"
     property real now: Date.now()
 
+    // Screen element snapshot for frame-health.json — lets non-vision
+    // agents verify what the native frame displays without a screenshot.
+    function updateScreenElements() {
+        const viewLabels = {home:"Heim", tv:"Sjónvarp", radio:"Útvarp", podcasts:"Hlaðvörp", media:"Sarpurinn", deildu:"Deildu", news:"Fréttir"}
+        const viewName = viewLabels[root.view] || "TV Kit"
+        const dateText = Qt.formatDateTime(new Date(root.now), "dddd, d. MMMM")
+        const clockText = Qt.formatDateTime(new Date(root.now), "hh:mm:ss")
+        const connText = frame.connected ? "Tengt" : "Tengist"
+        const statusText = root.media.title || (root.media.live ? "Í BEINNI" : "")
+        const arr = [
+            {role: "heading", text: viewName},
+            {role: "date", text: dateText},
+            {role: "clock", text: clockText},
+            {role: "connection", text: connText},
+        ]
+        if (statusText) arr.push({role: "now_playing", text: statusText})
+        frame.screenElements = arr
+    }
+
+    onNowChanged: updateScreenElements()
+    onViewChanged: updateScreenElements()
+
     // Auto-hide HUD and cursor after 5s of no media changes.
     property int hudAutoToken: 0
     property bool hudAutoVisible: false

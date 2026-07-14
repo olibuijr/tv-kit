@@ -77,6 +77,8 @@ QVariantMap FrameClient::content() const { return content_.toVariantMap(); }
 QVariantList FrameClient::stations() const { return stations_; }
 QVariantMap FrameClient::article() const { return article_.toVariantMap(); }
 QString FrameClient::error() const { return error_; }
+QVariantList FrameClient::screenElements() const { return screenElements_; }
+void FrameClient::setScreenElements(const QVariantList &elements) { if (screenElements_ != elements) { screenElements_ = elements; emit screenElementsChanged(); } }
 
 void FrameClient::start()
 {
@@ -222,12 +224,12 @@ void FrameClient::writeHealth() const
     QDir().mkpath(info.dir().absolutePath());
     QSaveFile file(info.filePath());
     if (!file.open(QIODevice::WriteOnly)) return;
-    QJsonObject health{
-        {QStringLiteral("connected"), connected()},
-        {QStringLiteral("updatedAt"), QDateTime::currentMSecsSinceEpoch()},
-        {QStringLiteral("lastMessageAt"), lastMessageAt_},
-        {QStringLiteral("view"), state_.value(QStringLiteral("view")).toString()},
-    };
+    QJsonObject health;
+    health.insert(QStringLiteral("connected"), connected());
+    health.insert(QStringLiteral("updatedAt"), QDateTime::currentMSecsSinceEpoch());
+    health.insert(QStringLiteral("lastMessageAt"), lastMessageAt_);
+    health.insert(QStringLiteral("view"), state_.value(QStringLiteral("view")).toString());
+    health.insert(QStringLiteral("elements"), QJsonArray::fromVariantList(screenElements_));
     file.write(QJsonDocument(health).toJson(QJsonDocument::Compact));
     file.commit();
 }

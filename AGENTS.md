@@ -126,6 +126,8 @@
 - After every remote interaction that changes the TV state (navigation, tuning, playback, fullscreen), verify the TV reflects the change. Do not assume a remote click succeeded just because the remote UI updated.
 - **Primary verification**: `tvctl kit playback state` (id, engine, advancing position) plus `~/.tv-kit/frame-health.json` (`view` field) for navigation. The frame is native — there is no dashboard DOM to inspect.
 - **Physical screenshot** (`tvctl screenshot /tmp/tv-verify.png`): the authoritative check for frame layout, video pixels, and visual regressions.
+- For UI changes spanning both clients, verify them as two distinct surfaces: use native `agent_browser` only for the tablet remote (`http://192.168.1.12:3112/`) and use `tvctl screenshot` for the native TV dashboard (`tv-frame`). Do not treat `http://192.168.1.12:3110/` as a dashboard DOM; it is the `tvserverd` API.
+- When validating remote control, interact in the remote browser tab first, then confirm the resulting native TV view with `frame-health.json` and a physical screenshot. A remote DOM change alone is not proof that the TV changed.
 - When screenshot analysis is needed and the current model lacks vision support, spawn a one-shot agent:
 
   ```sh
