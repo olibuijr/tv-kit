@@ -52,6 +52,7 @@ signals:
     void articleChanged();
     void mediaProgramChanged();
     void errorChanged();
+    void toastRequested(const QString &message);
 
 private:
     void connectSocket();

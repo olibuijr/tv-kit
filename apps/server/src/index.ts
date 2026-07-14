@@ -1561,6 +1561,11 @@ const server = Bun.serve<WebSocketData>({
         log.warn({ clientId: ws.data.clientId }, "ws invalid command");
         return;
       }
+      if (ws.data.clientId.startsWith("remote-") && message.label) {
+        const toast = JSON.stringify({ type: "toast", message: message.label });
+        for (const client of clients)
+          if (client.data.clientId.startsWith("native-frame-")) client.send(toast);
+      }
       log.debug(
         { clientId: ws.data.clientId, action: message.action },
         "ws command received",

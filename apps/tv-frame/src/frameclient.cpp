@@ -149,6 +149,9 @@ void FrameClient::handleMessage(const QString &raw)
             articleId_ = articleId;
             refreshArticle();
         }
+    } else if (type == QStringLiteral("toast")) {
+        const auto text = message.value(QStringLiteral("message")).toString();
+        if (!text.isEmpty()) emit toastRequested(text);
     } else if (type == QStringLiteral("content-refresh")) {
         refreshContent();
     }

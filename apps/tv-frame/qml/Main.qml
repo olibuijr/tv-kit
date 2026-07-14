@@ -45,6 +45,8 @@ ApplicationWindow {
         Math.max(1, homeView.liveVideoContainer.height - Theme.videoTopInset) * 16 / 9
             * Theme.videoScale)
     readonly property real homeVideoHeight: homeVideoWidth * 9 / 16
+    property string toastMessage: ""
+    property bool toastVisible: false
 
     // Screen element snapshot for frame-health.json — lets non-vision
     // agents verify what the native frame displays without a screenshot.
@@ -62,6 +64,8 @@ ApplicationWindow {
             {role: "connection", text: connText},
         ]
         if (statusText) arr.push({role: "now_playing", text: statusText})
+        if (root.toastVisible && root.toastMessage)
+            arr.push({role: "toast", text: root.toastMessage})
         frame.screenElements = arr
     }
 
@@ -99,6 +103,23 @@ ApplicationWindow {
         hudHideTimer.restart()
         root.cursorHidden = false
         cursorHideTimer.restart()
+    }
+
+    function showToast(message) {
+        if (!message) return
+        root.toastMessage = message
+        root.toastVisible = true
+        toastTimer.restart()
+        updateScreenElements()
+    }
+
+    Timer {
+        id: toastTimer
+        interval: 3000
+        onTriggered: {
+            root.toastVisible = false
+            updateScreenElements()
+        }
     }
 
     Timer {
@@ -197,6 +218,9 @@ ApplicationWindow {
 
     Connections {
         target: frame
+        function onToastRequested(message) {
+            root.showToast(message)
+        }
         function onStateChanged() {
             // HUD auto-show on view, media identity, status, or playing changes
             const curView = root.state.view || "home"
@@ -406,6 +430,37 @@ ApplicationWindow {
             && root.media.status === "loading"
             && (root.media.id || "").match(/^(deildu|torrent)-/) !== null
         media: root.media
+    }
+
+    Rectangle {
+        z: 200
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 24
+        anchors.bottomMargin: hud.visible ? hud.height + 24 : 24
+        width: Math.min(440, toastLabel.implicitWidth + 48)
+        height: 58
+        radius: Theme.radiusPanel
+        color: Theme.glassPanel
+        border.color: Theme.glassEdge
+        border.width: Theme.stroke
+        opacity: root.toastVisible ? 1 : 0
+        visible: opacity > 0
+
+        Behavior on opacity {
+            NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic }
+        }
+
+        Text {
+            id: toastLabel
+            anchors.centerIn: parent
+            width: Math.min(392, implicitWidth)
+            text: root.toastMessage
+            color: Theme.ink
+            font.pixelSize: Theme.fontCallout
+            font.weight: Theme.weightSemibold
+            elide: Text.ElideRight
+        }
     }
 
     // The frame is display-only; this passive overlay only controls the cursor.
