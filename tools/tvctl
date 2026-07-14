@@ -326,7 +326,7 @@ kit_check() {
     test_dir=\$(mktemp -d) && \
     trap 'rm -rf \"\$test_dir\"' EXIT && \
     mkdir -p \"\$test_dir/torrents\" && \
-    TV_KIT_DB=\"\$test_dir/tv-kit.sqlite\" TORRENT_MEDIA_DIR=\"\$test_dir/torrents\" ~/.bun/bin/bun test && \
+    for test_file in tests/*.test.ts; do TV_KIT_DB=\"\$test_dir/tv-kit.sqlite\" TORRENT_MEDIA_DIR=\"\$test_dir/torrents\" ~/.bun/bin/bun test \"\$test_file\" || exit; done && \
     ~/.bun/bin/bun x tsc -p tsconfig.json --noEmit && \
     $svelte_check"
 }
