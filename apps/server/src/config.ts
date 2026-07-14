@@ -94,7 +94,7 @@ export const config = Object.freeze({
 	),
 	deilduStreamBufferBytes: optionalNumber(
 		"DEILDU_STREAM_BUFFER_BYTES",
-		16_777_216,
+		134_217_728,
 		1_048_576,
 		268_435_456,
 	),
